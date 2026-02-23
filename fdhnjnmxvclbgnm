@@ -1904,6 +1904,7 @@ touchFlingMinimizeButton.MouseButton1Click:Connect(function()
     isTouchFlingContentVisible = not isTouchFlingContentVisible
     noclipButton.Visible = isTouchFlingContentVisible
     reachButton.Visible = isTouchFlingContentVisible
+    desyncButton.Visible = isAirStrafeContentVisible
     touchFlingButton.Visible = isTouchFlingContentVisible
     valueCalcButton.Visible = isTouchFlingContentVisible
     if isTouchFlingContentVisible then
@@ -2541,6 +2542,7 @@ airStrafeMinimizeButton.MouseButton1Click:Connect(function()
     isAirStrafeContentVisible = not isAirStrafeContentVisible
     airStrafeButton.Visible = isAirStrafeContentVisible
     antiAimButton.Visible = isAirStrafeContentVisible
+    desyncButton.Visible = isAirStrafeContentVisible
     rotate90Button.Visible = isAirStrafeContentVisible
     rotate180Button.Visible = isAirStrafeContentVisible
     tweenRotate180Button.Visible = isAirStrafeContentVisible
