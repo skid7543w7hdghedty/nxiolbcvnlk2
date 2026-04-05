@@ -8,7 +8,7 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
--- Desync (P1000) – добавлено
+-- Desync (P1000)
 local checkcaller = checkcaller
 local newcclosure = newcclosure
 local hookmetamethod = hookmetamethod
@@ -450,53 +450,58 @@ local function toggleReach()
     end
 end
 
--- Fake Speed Glitch variables
+-- Fake Speed Glitch variables (CFrame-based)
 local fakeSpeedEnabled = false
-local fakeSpeedConnection = nil
+local fakeSpeedRenderConnection = nil
 local fakeSpeedDiedConnection = nil
+local FAKE_SPEED_CFRAME_SPEED = 130
 
--- Fake Speed Glitch setup function
+-- Fake Speed Glitch setup function (CFrame-based, immune to loopspeed)
 local function setupFakeSpeed()
-    local character = player.Character
-    if character and character:FindFirstChild("Humanoid") then
-        local humanoid = character.Humanoid
-        if fakeSpeedEnabled then
-            fakeSpeedConnection = humanoid.StateChanged:Connect(function(oldState, newState)
-                if newState == Enum.HumanoidStateType.Freefall then
-                    humanoid.WalkSpeed = 120
-                elseif newState == Enum.HumanoidStateType.Landed then
-                    humanoid.WalkSpeed = 18
+    local char = player.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not (hum and hrp) then return end
+
+    if fakeSpeedEnabled then
+        fakeSpeedRenderConnection = RunService.Heartbeat:Connect(function(dt)
+            local c = player.Character
+            if not c then return end
+            local h = c:FindFirstChild("Humanoid")
+            local r = c:FindFirstChild("HumanoidRootPart")
+            if not (h and r) then return end
+
+            local state = h:GetState()
+            if state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
+                local moveDir = h.MoveDirection
+                if moveDir.Magnitude > 0 then
+                    local extraSpeed = FAKE_SPEED_CFRAME_SPEED - h.WalkSpeed
+                    if extraSpeed > 0 then
+                        r.CFrame = r.CFrame + moveDir * extraSpeed * dt
+                    end
                 end
-            end)
-            if humanoid:GetState() == Enum.HumanoidStateType.Freefall then
-                humanoid.WalkSpeed = 120
             end
-            fakeSpeedDiedConnection = humanoid.Died:Connect(function()
-                if fakeSpeedConnection then
-                    fakeSpeedConnection:Disconnect()
-                    fakeSpeedConnection = nil
-                end
-                if fakeSpeedDiedConnection then
-                    fakeSpeedDiedConnection:Disconnect()
-                    fakeSpeedDiedConnection = nil
-                end
-            end)
-            if button4 then
-                button4.Text = "Fake Speed: ON"
-            end
-        else
-            if fakeSpeedConnection then
-                fakeSpeedConnection:Disconnect()
-                fakeSpeedConnection = nil
+        end)
+
+        fakeSpeedDiedConnection = hum.Died:Connect(function()
+            if fakeSpeedRenderConnection then
+                fakeSpeedRenderConnection:Disconnect()
+                fakeSpeedRenderConnection = nil
             end
             if fakeSpeedDiedConnection then
                 fakeSpeedDiedConnection:Disconnect()
                 fakeSpeedDiedConnection = nil
             end
-            humanoid.WalkSpeed = 18
-            if button4 then
-                button4.Text = "Fake Speed: OFF"
-            end
+        end)
+    else
+        if fakeSpeedRenderConnection then
+            fakeSpeedRenderConnection:Disconnect()
+            fakeSpeedRenderConnection = nil
+        end
+        if fakeSpeedDiedConnection then
+            fakeSpeedDiedConnection:Disconnect()
+            fakeSpeedDiedConnection = nil
         end
     end
 end
@@ -509,82 +514,82 @@ end
 
 -- Value Calculator variables
 local ancientValues = {
-	["Corrupt"] = 800,
-    ["Gingerscope"] = 19000,
-    ["Traveler's Axe"] = 8000,
-    ["Harvester"] = 400,
+	["Corrupt"] = 600,
+    ["Gingerscope"] = 18500,
+    ["Traveler's Axe"] = 7700,
+    ["Harvester"] = 340,
     ["Celestial"] = 1775,
-    ["Icepiercer"] = 300,
+    ["Icepiercer"] = 240,
     ["Vampire's Axe"] = 925,
-    ["Icebreaker"] = 110,
-    ["Swirly Axe"] = 55,
-    ["Batwing"] = 55,
-    ["Elderwood Scythe"] = 55,
-    ["Hallowscythe"] = 40,
+    ["Icebreaker"] = 105,
+    ["Swirly Axe"] = 52,
+    ["Batwing"] = 50,
+    ["Elderwood Scythe"] = 50,
+    ["Hallowscythe"] = 35,
     ["Logchopper"] = 20,
-    ["Icewing"] = 13,
-	["Traveler's Gun"] = 4400,
+    ["Icewing"] = 15,
+	["Traveler's Gun"] = 4100,
 	["Evergun"] = 3550,
 	["Turkey"] = 1825,
 	["Evergreen"] = 2700,
-	["Blossom"] = 985,
-	["Sakura"] = 975,
-	["Vampire's Gun"] = 1800,
+	["Blossom"] = 1080,
+	["Sakura"] = 1070,
+	["Vampire's Gun"] = 1775,
 	["Constellation"] = 3000,
 	["Bauble"] = 925,
-	["Darkshot"] = 1060,
-	["Darksword"] = 1040,
+	["Darkshot"] = 1200,
+	["Darksword"] = 1180,
     ["Bloom"] = 255,
     ["Flora"] = 265,
-    ["Treat"] = 225,
-    ["Heart Wand"] = 250,
-    ["Sweet"] = 225,
-	["Bat"] = 205,
-    ["Alienbeam"] = 1100,
-    ["Raygun"] = 650,
-    ["Sunrise"] = 575,
-    ["Sunset"] = 275,
-    ["Snowcannon"] = 325,
-    ["Snow Dagger"] = 215,
+    ["Treat"] = 235,
+    ["Heart Wand"] = 240,
+    ["Sweet"] = 230,
+	["Bat"] = 165,
+    ["Alienbeam"] = 1425,
+    ["Raygun"] = 925,
+    ["Sunrise"] = 700,
+    ["Sunset"] = 325,
+    ["Snowcannon"] = 500,
+    ["Snow Dagger"] = 185,
     ["Blizzard"] = 150,
     ["Snowstorm"] = 150,
-    ["Xenoknife"] = 150,
-    ["Xenoshot"] = 150,
-	["Rainbow Gun"] = 305 ,
-	["Rainbow"] = 295,
-	["Candy"] = 115,
-	["Heartblade"] = 110,
-	["Flowerwood Gun"] = 185,
-	["Ocean"] = 150,
+    ["Xenoknife"] = 190,
+    ["Xenoshot"] = 190,
+	["Rainbow Gun"] = 300 ,
+	["Rainbow"] = 290,
+	["Candy"] = 105,
+	["Heartblade"] = 105,
+	["Flowerwood Gun"] = 205,
+	["Ocean"] = 170,
 	["Soul"] = 310,
 	["Spirit"] = 300,
-	["Flowerwood"] = 180,
-	["Waves"] = 145,
+	["Flowerwood"] = 200,
+	["Waves"] = 165,
 	["Borealis"] = 105,
-	["Sugar"] = 55,
+	["Sugar"] = 50,
 	["Australis"] = 100,
-	["Luger"] = 55,
+	["Luger"] = 50,
 	["Red Luger"] = 45,
-	["Swirly Gun"] = 40,
-	["Iceblaster"] = 50,
-	["Candleflame"] = 50,
-	["Elderwood Blade"] = 50,
-	["Makeshift"] = 50,
-	["Watergun"] = 115,
-	["Pearl"] = 55,
+	["Swirly Gun"] = 35,
+	["Iceblaster"] = 45,
+	["Candleflame"] = 45,
+	["Elderwood Blade"] = 45,
+	["Makeshift"] = 45,
+	["Watergun"] = 120,
+	["Pearl"] = 50,
 	["Pearlshine"] = 55,
-	["Darkbringer"] = 50,
-	["Elderwood Revolver"] = 50,
-	["Phantom"] = 50,
-	["Spectre"] = 50,
-	["Lightbringer"] = 45,
+	["Darkbringer"] = 45,
+	["Elderwood Revolver"] = 45,
+	["Phantom"] = 45,
+	["Spectre"] = 45,
+	["Lightbringer"] = 40,
     ["Ornament"] = 40,
-	["Swirly Blade"] = 25,
+	["Swirly Blade"] = 23,
 	["Green Luger"] = 30,
 	["Hallowgun"] = 27,
 	["Laser"] = 27,
 	["Icebeam"] = 25,
-	["Iceflake"] = 25,
+	["Iceflake"] = 23,
 	["Plasmabeam"] = 25,
 	["Plasmablade"] = 25,
 	["Amerilaser"] = 25,
@@ -645,41 +650,44 @@ local ancientValues = {
 	["Seer"] = 3,
 	["Orange Seer"] = 2,
 	["Yellow Seer"] = 2,
-	["Chroma Traveler's Gun"] = 220000,
-    ["Chroma Evergun"] = 95000,
-    ["Chroma Evergreen"] = 64000,
-    ["Chroma Vampire's Gun"] = 40000,
+	["Chroma Traveler's Gun"] = 225000,
+    ["Chroma Evergun"] = 104000,
+    ["Chroma Evergreen"] = 71000,
+    ["Chroma Vampire's Gun"] = 38000,
     ["Chroma Bauble"] = 47500,
     ["Chroma Constellation"] = 37000,
-    ["Chroma AlienBeam"] = 23000,
-    ["Chroma Raygun"] = 16000,
-    ["Chroma Blizzard"] = 14500,
-    ["Chroma Sunrise"] = 10500,
-    ["Chroma Snowstorm"] = 8500,
-    ["Chroma Snowcannon"] = 8250,
-    ["Chroma Snow Dagger"] = 6000,
-    ["Chroma Sunset"] = 6200,
-    ["Chroma Ornament"] = 4200,
+    ["Chroma AlienBeam"] = 33000,
+    ["Chroma Raygun"] = 17500,
+    ["Chroma Treat"] = 9000,
+    ["Chroma Sweet"] = 7500,
+    ["Chroma Heart Wand"] = 6000,
+    ["Chroma Blizzard"] = 10000,
+    ["Chroma Sunrise"] = 11000,
+    ["Chroma Snowstorm"] = 6750,
+    ["Chroma Snowcannon"] = 9250,
+    ["Chroma Snow Dagger"] = 3900,
+    ["Chroma Sunset"] = 6500,
+    ["Chroma Ornament"] = 3300,
     ["Chroma Watergun"] = 3400,
-    ["Chroma Darkbringer"] = 95,
-    ["Chroma Lightbringer"] = 90,
-    ["Chroma Luger"] = 60,
-    ["Chroma Laser"] = 55,
-    ["Chroma Candleflame"] = 70,
-    ["Chroma Elderwood Blade"] = 60,
-    ["Chroma Swirly Gun"] = 60,
-    ["Chroma Cookiecane"] = 60,
-    ["Chroma Deathshard"] = 50,
-    ["Chroma Heat"] = 45,
-    ["Chroma Shark"] = 50,
-    ["Chroma Slasher"] = 50,
-    ["Chroma Tides"] = 42,
-    ["Chroma Fang"] = 45,
-    ["Chroma Gemstone"] = 45,
-    ["Chroma Gingerblade"] = 40,
-    ["Chroma Seer"] = 40,
-    ["Chroma Boneblade"] = 40,
-    ["Chroma Saw"] = 40,
+    ["Chroma Darkbringer"] = 90,
+    ["Chroma Lightbringer"] = 85,
+    ["Chroma Luger"] = 57,
+    ["Chroma Laser"] = 50,
+    ["Chroma Candleflame"] = 65,
+    ["Chroma Elderwood Blade"] = 55,
+    ["Chroma Swirly Gun"] = 55,
+    ["Chroma Cookiecane"] = 50,
+    ["Chroma Deathshard"] = 45,
+    ["Chroma Heat"] = 38,
+    ["Chroma Shark"] = 43,
+    ["Chroma Slasher"] = 45,
+    ["Chroma Tides"] = 35,
+    ["Chroma Fang"] = 42,
+    ["Chroma Gemstone"] = 38,
+    ["Chroma Gingerblade"] = 37,
+    ["Chroma Seer"] = 37,
+    ["Chroma Boneblade"] = 30,
+    ["Chroma Saw"] = 37,
 	["Ghost"] = 10,
     ["America"] = 7,
     ["Blood"] = 8,
@@ -725,31 +733,31 @@ local ancientValues = {
     ["Frostfade Knife"] = 1,
     ["Vampire Knife"] = 1,
     ["Cavern Gun"] = 1,
-    ["Cane"] = 575,
-    ["Silent Night"] = 60,
-    ["Aurora"] = 28,
-    ["Icicles"] = 25,
-    ["Dungeon"] = 20,
-    ["Candy Swirl"] = 20,
-    ["Toxic"] = 20,
-    ["Vampire"] = 20,
-    ["Snakebite"] = 17,
-    ["Monster"] = 17,
-    ["Magma"] = 10,
-    ["Bats"] = 7,
-    ["Green Marble"] = 7,
-    ["Jack"] = 4,
-    ["Orange Marble"] = 3,
-    ["Floral"] = 2,
-    ["Starry"] = 2,
-    ["Darkknife"] = 1,
+    ["Cane"] = 725,
+    ["Silent Night"] = 50,
+    ["Aurora"] = 13,
+    ["Icicles"] = 10,
+    ["Dungeon"] = 30,
+    ["Candy Swirl"] = 5,
+    ["Toxic"] = 7,
+    ["Vampire"] = 8,
+    ["Snakebite"] = 3,
+    ["Monster"] = 5,
+    ["Magma"] = 5,
+    ["Bats"] = 3,
+    ["Green Marble"] = 3,
+    ["Jack"] = 3,
+    ["Orange Marble"] = 2,
+    ["Floral"] = 5,
+    ["Starry"] = 8,
+    ["Darkknife"] = 7,
     ["Gingerbread"] = 1,
     ["Mummy"] = 1,
-	["Zombified Knife"] = 55,
-    ["Bones"] = 50,
+	["Zombified Knife"] = 65,
+    ["Bones"] = 70,
     ["Gingerbread Knife"] = 50,
     ["Brains"] = 40,
-    ["Sweater Knife"] = 35,
+    ["Sweater Knife"] = 50,
     ["Branches"] = 25,
     ["Frozen Gun"] = 22,
     ["Lights Gun"] = 20,
@@ -777,7 +785,7 @@ local ancientValues = {
     ["Wrapped Gun"] = 1,
     ["Wrapped Knife"] = 1,
     ["Gifted"] = 1,
-    ["Cane"] = 675,
+    ["Cane"] = 725,
     ["Silent Night"] = 50,
     ["Aurora"] = 28,
     ["Icicles"] = 25,
@@ -797,8 +805,8 @@ local ancientValues = {
     ["Mummy"] = 1,
     ["Glitch2"] = 55,
     ["Glitch1"] = 75,
-    ["Bats"] = 170,
-    ["Gifts"] = 140,
+    ["Bats"] = 110,
+    ["Gifts"] = 70,
     ["Pine"] = 140,
     ["Sparkle9"] = 35,
     ["Sparkle8"] = 25,
@@ -855,9 +863,9 @@ local ancientValues = {
     ["Santa"] = 1,
     ["Infected"] = 1,
     ["TNL"] = 1,
-	["Zombie Dog"] = 450,
+	["Zombie Dog"] = 725,
     ["Elf"] = 200,
-    ["Blue Pumpkin"] = 150,
+    ["Blue Pumpkin"] = 160,
     ["Black Cat"] = 60,
     ["Dogey"] = 90,
     ["Red Pumpkin"] = 100,
@@ -904,13 +912,13 @@ local ancientValues = {
     ["Fire Fox"] = 1,
     ["Fire Pig"] = 1,
     ["Ghosty"] = 1,
-	["Chroma Fire Bunny"] = 8,
-    ["Chroma Fire Cat"] = 8,
-    ["Chroma Fire Dog"] = 8,
-    ["Chroma Fire Fox"] = 8,
-    ["Chroma Fire Bat"] = 8,
-    ["Chroma Fire Pig"] = 8,
-    ["Chroma Fire Bear"] = 8,
+	["Chroma Fire Bunny"] = 7,
+    ["Chroma Fire Cat"] = 7,
+    ["Chroma Fire Dog"] = 7,
+    ["Chroma Fire Fox"] = 7,
+    ["Chroma Fire Bat"] = 7,
+    ["Chroma Fire Pig"] = 7,
+    ["Chroma Fire Bear"] = 7,
 }
 local isValueCalcEnabled = false
 local valueCalcAddedConnection = nil
@@ -1087,12 +1095,14 @@ local linkedFrameStart
 local linkedAirStrafeStart
 local linkedTouchStart
 local linkedFlingStart
+local linkedAnimStart
 
 -- Lock drag variables
 local isFrameLocked = false
 local isAirStrafeLocked = false
 local isTouchFlingLocked = false
 local isFlingLocked = false
+local isAnimLocked = false
 
 -- Handle camera to ensure first-person compatibility
 local function updateCamera()
@@ -1137,7 +1147,7 @@ local function onCharacterAdded(char)
         end
         noclipEnabled = false
         if noclipButton then
-            noclipButton.Text = "Noclip"
+            noclipButton.Text = "Noclip: OFF"
             noclipButton.TextColor3 = Color3.fromRGB(255, 255, 255)
         end
         if noclipConnection then
@@ -1146,7 +1156,7 @@ local function onCharacterAdded(char)
         end
         reachEnabled = false
         if reachButton then
-            reachButton.Text = "KillAura"
+            reachButton.Text = "KillAura: OFF"
             reachButton.TextColor3 = Color3.fromRGB(255, 255, 255)
         end
         if reachConnection then
@@ -1154,9 +1164,9 @@ local function onCharacterAdded(char)
             reachConnection = nil
         end
         fakeSpeedEnabled = false
-        if fakeSpeedConnection then
-            fakeSpeedConnection:Disconnect()
-            fakeSpeedConnection = nil
+        if fakeSpeedRenderConnection then
+            fakeSpeedRenderConnection:Disconnect()
+            fakeSpeedRenderConnection = nil
         end
         if fakeSpeedDiedConnection then
             fakeSpeedDiedConnection:Disconnect()
@@ -1168,7 +1178,7 @@ local function onCharacterAdded(char)
         end
         isValueCalcEnabled = false
         if valueCalcButton then
-            valueCalcButton.Text = "Value Checker"
+            valueCalcButton.Text = "Trade Helper"
         end
         if valueCalcAddedConnection then
             valueCalcAddedConnection:Disconnect()
@@ -1194,7 +1204,7 @@ player.CharacterRemoving:Connect(function()
     end
     noclipEnabled = false
     if noclipButton then
-        noclipButton.Text = "Noclip"
+        noclipButton.Text = "Noclip: OFF"
         noclipButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     end
     if noclipConnection then
@@ -1203,16 +1213,16 @@ player.CharacterRemoving:Connect(function()
     end
     reachEnabled = false
     if reachButton then
-        reachButton.Text = "KillAura"
+        reachButton.Text = "KillAura: OFF"
         reachButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     end
     if reachConnection then
         reachConnection:Disconnect()
         reachConnection = nil
     end
-    if fakeSpeedConnection then
-        fakeSpeedConnection:Disconnect()
-        fakeSpeedConnection = nil
+    if fakeSpeedRenderConnection then
+        fakeSpeedRenderConnection:Disconnect()
+        fakeSpeedRenderConnection = nil
     end
     if fakeSpeedDiedConnection then
         fakeSpeedDiedConnection:Disconnect()
@@ -1224,7 +1234,7 @@ player.CharacterRemoving:Connect(function()
     end
     isValueCalcEnabled = false
     if valueCalcButton then
-        valueCalcButton.Text = "Value Checker"
+        valueCalcButton.Text = "Trade Helper"
     end
     if valueCalcAddedConnection then
         valueCalcAddedConnection:Disconnect()
@@ -1291,8 +1301,8 @@ screenGui.Parent = playerGui
 -- Create the draggable Frame for first GUI
 local frame = Instance.new("Frame")
 frame.Name = "DraggableFrame"
-frame.Size = UDim2.new(0, 220, 0, 280)
-frame.Position = UDim2.new(0.5, -400, 0.5, -150)
+frame.Size = UDim2.new(0, 160, 0, 160)
+frame.Position = UDim2.new(0.5, -340, 0.5, -150)
 frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -1301,48 +1311,48 @@ frame.Parent = screenGui
 -- Title bar for first GUI
 local titleBar = Instance.new("TextLabel")
 titleBar.Name = "TitleBar"
-titleBar.Size = UDim2.new(1, -120, 0, 30)
+titleBar.Size = UDim2.new(1, -88, 0, 22)
 titleBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleBar.Text = "Adrenalin X: T1"
 titleBar.Font = Enum.Font.SourceSansBold
-titleBar.TextSize = 12.5
+titleBar.TextSize = 9
 titleBar.Parent = frame
 
 -- Lock button for first GUI
 local lockButton1 = Instance.new("TextButton")
 lockButton1.Name = "LockButton1"
-lockButton1.Size = UDim2.new(0, 30, 0, 30)
-lockButton1.Position = UDim2.new(1, -120, 0, 0)
+lockButton1.Size = UDim2.new(0, 22, 0, 22)
+lockButton1.Position = UDim2.new(1, -88, 0, 0)
 lockButton1.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 lockButton1.TextColor3 = Color3.fromRGB(255, 255, 255)
 lockButton1.Text = "🔓"
 lockButton1.Font = Enum.Font.SourceSansBold
-lockButton1.TextSize = 18
+lockButton1.TextSize = 13
 lockButton1.Parent = frame
 
 -- Minimize button for first GUI
 local minimizeButton = Instance.new("TextButton")
 minimizeButton.Name = "MinimizeButton"
-minimizeButton.Size = UDim2.new(0, 30, 0, 30)
-minimizeButton.Position = UDim2.new(1, -60, 0, 0)
+minimizeButton.Size = UDim2.new(0, 22, 0, 22)
+minimizeButton.Position = UDim2.new(1, -44, 0, 0)
 minimizeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeButton.Text = "—"
 minimizeButton.Font = Enum.Font.SourceSansBold
-minimizeButton.TextSize = 18
+minimizeButton.TextSize = 13
 minimizeButton.Parent = frame
 
 -- Close button for first GUI
 local closeButton1 = Instance.new("TextButton")
 closeButton1.Name = "CloseButton1"
-closeButton1.Size = UDim2.new(0, 30, 0, 30)
-closeButton1.Position = UDim2.new(1, -30, 0, 0)
+closeButton1.Size = UDim2.new(0, 22, 0, 22)
+closeButton1.Position = UDim2.new(1, -22, 0, 0)
 closeButton1.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 closeButton1.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeButton1.Text = "X"
 closeButton1.Font = Enum.Font.SourceSansBold
-closeButton1.TextSize = 18
+closeButton1.TextSize = 13
 closeButton1.Parent = frame
 
 closeButton1.MouseButton1Click:Connect(function()
@@ -1352,43 +1362,42 @@ end)
 -- Link button for first GUI
 local linkButton1 = Instance.new("TextButton")
 linkButton1.Name = "LinkButton1"
-linkButton1.Size = UDim2.new(0, 30, 0, 30)
-linkButton1.Position = UDim2.new(1, -90, 0, 0)
+linkButton1.Size = UDim2.new(0, 22, 0, 22)
+linkButton1.Position = UDim2.new(1, -66, 0, 0)
 linkButton1.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 linkButton1.TextColor3 = Color3.fromRGB(255, 255, 255)
 linkButton1.Text = "🗝️"
 linkButton1.Font = Enum.Font.SourceSansBold
-linkButton1.TextSize = 14
+linkButton1.TextSize = 11
 linkButton1.Parent = frame
 
 -- Add the first button (Infinite Jump)
 local button1 = Instance.new("TextButton")
 button1.Name = "InfiniteJumpButton"
-button1.Size = UDim2.new(1, 0, 0, 50)
-button1.Position = UDim2.new(0, 0, 0, 30)
+button1.Size = UDim2.new(1, 0, 0, 34)
+button1.Position = UDim2.new(0, 0, 0, 22)
 button1.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 button1.TextColor3 = Color3.fromRGB(255, 255, 255)
 button1.Text = "Infinite Jump: OFF"
 button1.Font = Enum.Font.SourceSansBold
-button1.TextSize = 18.5
+button1.TextSize = 13
 button1.Parent = frame
 
 button1.MouseButton1Click:Connect(function()
     isEnabled = not isEnabled
     button1.Text = "Infinite Jump: " .. (isEnabled and "ON" or "OFF")
-    button1.BackgroundColor3 = isEnabled and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(0, 0, 0)
 end)
 
 -- Add the second button (Wallhop)
 local button2 = Instance.new("TextButton")
 button2.Name = "WallhopButton"
-button2.Size = UDim2.new(1, 0, 0, 50)
-button2.Position = UDim2.new(0, 0, 0, 80)
+button2.Size = UDim2.new(1, 0, 0, 34)
+button2.Position = UDim2.new(0, 0, 0, 56)
 button2.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 button2.TextColor3 = Color3.fromRGB(255, 255, 255)
 button2.Text = "Wallhop: OFF"
 button2.Font = Enum.Font.SourceSansBold
-button2.TextSize = 18.5
+button2.TextSize = 13
 button2.Parent = frame
 
 button2.MouseButton1Click:Connect(function()
@@ -1399,13 +1408,13 @@ end)
 -- Add the third button (Jump Boost)
 local button3 = Instance.new("TextButton")
 button3.Name = "JumpButton"
-button3.Size = UDim2.new(1, 0, 0, 50)
-button3.Position = UDim2.new(0, 0, 0, 130)
+button3.Size = UDim2.new(1, 0, 0, 34)
+button3.Position = UDim2.new(0, 0, 0, 90)
 button3.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 button3.TextColor3 = Color3.fromRGB(255, 255, 255)
 button3.Text = "Jump Boost"
 button3.Font = Enum.Font.SourceSansBold
-button3.TextSize = 18.5
+button3.TextSize = 13
 button3.Parent = frame
 
 button3.MouseButton1Click:Connect(function()
@@ -1420,30 +1429,57 @@ button3.MouseButton1Click:Connect(function()
     end
 end)
 
--- Add the fourth button (Fake Speed Glitch)
+-- Add the fourth button (CFrame Speed Glitch)
 local button4 = Instance.new("TextButton")
 button4.Name = "SpeedButton"
-button4.Size = UDim2.new(1, 0, 0, 50)
-button4.Position = UDim2.new(0, 0, 0, 180)
+button4.Size = UDim2.new(0, 112, 0, 34)
+button4.Position = UDim2.new(0, 0, 0, 124)
 button4.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 button4.TextColor3 = Color3.fromRGB(255, 255, 255)
-button4.Text = "Fake Speed Glitch (On/Off)"
+button4.Text = "Speed: OFF"
 button4.Font = Enum.Font.SourceSansBold
-button4.TextSize = 15
+button4.TextSize = 11
 button4.Parent = frame
 
-button4.MouseButton1Click:Connect(toggleFakeSpeed)
+button4.MouseButton1Click:Connect(function()
+    toggleFakeSpeed()
+    button4.Text = fakeSpeedEnabled and "Speed: ON" or "Speed: OFF"
+end)
+
+-- Speed Input Box
+local speedInputBox = Instance.new("TextBox")
+speedInputBox.Name = "SpeedInputBox"
+speedInputBox.Size = UDim2.new(0, 48, 0, 34)
+speedInputBox.Position = UDim2.new(0, 112, 0, 124)
+speedInputBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+speedInputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedInputBox.PlaceholderText = "Speed"
+speedInputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+speedInputBox.Text = tostring(FAKE_SPEED_CFRAME_SPEED)
+speedInputBox.Font = Enum.Font.SourceSansBold
+speedInputBox.TextSize = 11
+speedInputBox.ClearTextOnFocus = false
+speedInputBox.Parent = frame
+
+speedInputBox.FocusLost:Connect(function(enterPressed)
+    local val = tonumber(speedInputBox.Text)
+    if val and val > 0 then
+        FAKE_SPEED_CFRAME_SPEED = val
+    else
+        speedInputBox.Text = tostring(FAKE_SPEED_CFRAME_SPEED)
+    end
+end)
 
 -- Add the fifth button (Invis Toggle)
 local button5 = Instance.new("TextButton")
 button5.Name = "InvisButton"
-button5.Size = UDim2.new(1, 0, 0, 50)
-button5.Position = UDim2.new(0, 0, 0, 230)
+button5.Size = UDim2.new(1, 0, 0, 34)
+button5.Position = UDim2.new(0, 0, 0, 158)
 button5.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 button5.TextColor3 = Color3.fromRGB(255, 255, 255)
 button5.Text = "Invis: OFF"
 button5.Font = Enum.Font.SourceSansBold
-button5.TextSize = 18.5
+button5.TextSize = 13
 button5.Parent = frame
 
 local invis_on = false
@@ -1494,8 +1530,8 @@ airStrafeGui.Parent = playerGui
 -- Create the draggable Frame for Air Strafe GUI
 local airStrafeFrame = Instance.new("Frame")
 airStrafeFrame.Name = "AirStrafeFrame"
-airStrafeFrame.Size = UDim2.new(0, 220, 0, 280)
-airStrafeFrame.Position = UDim2.new(0.5, 40, 0.5, -150)
+airStrafeFrame.Size = UDim2.new(0, 160, 0, 160)
+airStrafeFrame.Position = UDim2.new(0.5, -18, 0.5, -150)
 airStrafeFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 airStrafeFrame.BorderSizePixel = 0
 airStrafeFrame.Active = true
@@ -1504,48 +1540,48 @@ airStrafeFrame.Parent = airStrafeGui
 -- Title bar for Air Strafe GUI
 local airStrafeTitleBar = Instance.new("TextLabel")
 airStrafeTitleBar.Name = "TitleBar"
-airStrafeTitleBar.Size = UDim2.new(1, -120, 0, 30)
+airStrafeTitleBar.Size = UDim2.new(1, -88, 0, 22)
 airStrafeTitleBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 airStrafeTitleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 airStrafeTitleBar.Text = "Adrenalin X: T3"
 airStrafeTitleBar.Font = Enum.Font.SourceSansBold
-airStrafeTitleBar.TextSize = 12.5
+airStrafeTitleBar.TextSize = 9
 airStrafeTitleBar.Parent = airStrafeFrame
 
 -- Lock button for Air Strafe GUI
 local lockButton2 = Instance.new("TextButton")
 lockButton2.Name = "LockButton2"
-lockButton2.Size = UDim2.new(0, 30, 0, 30)
-lockButton2.Position = UDim2.new(1, -120, 0, 0)
+lockButton2.Size = UDim2.new(0, 22, 0, 22)
+lockButton2.Position = UDim2.new(1, -88, 0, 0)
 lockButton2.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 lockButton2.TextColor3 = Color3.fromRGB(255, 255, 255)
 lockButton2.Text = "🔓"
 lockButton2.Font = Enum.Font.SourceSansBold
-lockButton2.TextSize = 18
+lockButton2.TextSize = 13
 lockButton2.Parent = airStrafeFrame
 
 -- Minimize button for Air Strafe GUI
 local airStrafeMinimizeButton = Instance.new("TextButton")
 airStrafeMinimizeButton.Name = "MinimizeButton"
-airStrafeMinimizeButton.Size = UDim2.new(0, 30, 0, 30)
-airStrafeMinimizeButton.Position = UDim2.new(1, -60, 0, 0)
+airStrafeMinimizeButton.Size = UDim2.new(0, 22, 0, 22)
+airStrafeMinimizeButton.Position = UDim2.new(1, -44, 0, 0)
 airStrafeMinimizeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 airStrafeMinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 airStrafeMinimizeButton.Text = "—"
 airStrafeMinimizeButton.Font = Enum.Font.SourceSansBold
-airStrafeMinimizeButton.TextSize = 18
+airStrafeMinimizeButton.TextSize = 13
 airStrafeMinimizeButton.Parent = airStrafeFrame
 
 -- Close button for Air Strafe GUI
 local closeButton2 = Instance.new("TextButton")
 closeButton2.Name = "CloseButton2"
-closeButton2.Size = UDim2.new(0, 30, 0, 30)
-closeButton2.Position = UDim2.new(1, -30, 0, 0)
+closeButton2.Size = UDim2.new(0, 22, 0, 22)
+closeButton2.Position = UDim2.new(1, -22, 0, 0)
 closeButton2.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 closeButton2.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeButton2.Text = "X"
 closeButton2.Font = Enum.Font.SourceSansBold
-closeButton2.TextSize = 18
+closeButton2.TextSize = 13
 closeButton2.Parent = airStrafeFrame
 
 closeButton2.MouseButton1Click:Connect(function()
@@ -1555,25 +1591,25 @@ end)
 -- Link button for Air Strafe GUI
 local linkButton2 = Instance.new("TextButton")
 linkButton2.Name = "LinkButton2"
-linkButton2.Size = UDim2.new(0, 30, 0, 30)
-linkButton2.Position = UDim2.new(1, -90, 0, 0)
+linkButton2.Size = UDim2.new(0, 22, 0, 22)
+linkButton2.Position = UDim2.new(1, -66, 0, 0)
 linkButton2.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 linkButton2.TextColor3 = Color3.fromRGB(255, 255, 255)
 linkButton2.Text = "🗝️"
 linkButton2.Font = Enum.Font.SourceSansBold
-linkButton2.TextSize = 14
+linkButton2.TextSize = 11
 linkButton2.Parent = airStrafeFrame
 
 -- Add the Air Strafe button
 local airStrafeButton = Instance.new("TextButton")
 airStrafeButton.Name = "AirStrafeButton"
-airStrafeButton.Size = UDim2.new(1, 0, 0, 50)
-airStrafeButton.Position = UDim2.new(0, 0, 0, 30)
+airStrafeButton.Size = UDim2.new(1, 0, 0, 34)
+airStrafeButton.Position = UDim2.new(0, 0, 0, 22)
 airStrafeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 airStrafeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 airStrafeButton.Text = "Air Strafe: OFF"
 airStrafeButton.Font = Enum.Font.SourceSansBold
-airStrafeButton.TextSize = 18.5
+airStrafeButton.TextSize = 13
 airStrafeButton.Parent = airStrafeFrame
 
 airStrafeButton.MouseButton1Click:Connect(function()
@@ -1584,13 +1620,13 @@ end)
 -- Add the Anti-Aim button
 local antiAimButton = Instance.new("TextButton")
 antiAimButton.Name = "AntiAimButton"
-antiAimButton.Size = UDim2.new(1, 0, 0, 50)
-antiAimButton.Position = UDim2.new(0, 0, 0, 80)
+antiAimButton.Size = UDim2.new(1, 0, 0, 34)
+antiAimButton.Position = UDim2.new(0, 0, 0, 56)
 antiAimButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 antiAimButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 antiAimButton.Text = "Anti-Aim (4 Types)"
 antiAimButton.Font = Enum.Font.SourceSansBold
-antiAimButton.TextSize = 18.5
+antiAimButton.TextSize = 13
 antiAimButton.Parent = airStrafeFrame
 
 antiAimButton.MouseButton1Click:Connect(cycleMode)
@@ -1598,13 +1634,13 @@ antiAimButton.MouseButton1Click:Connect(cycleMode)
 -- Add the third button (Rotate 90)
 local rotate90Button = Instance.new("TextButton")
 rotate90Button.Name = "Rotate90Button"
-rotate90Button.Size = UDim2.new(1, 0, 0, 50)
-rotate90Button.Position = UDim2.new(0, 0, 0, 130)
+rotate90Button.Size = UDim2.new(1, 0, 0, 34)
+rotate90Button.Position = UDim2.new(0, 0, 0, 90)
 rotate90Button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 rotate90Button.TextColor3 = Color3.fromRGB(255, 255, 255)
 rotate90Button.Text = "90° Flick: OFF"
 rotate90Button.Font = Enum.Font.SourceSansBold
-rotate90Button.TextSize = 18.5
+rotate90Button.TextSize = 13
 rotate90Button.Parent = airStrafeFrame
 
 rotate90Button.MouseButton1Click:Connect(function()
@@ -1622,13 +1658,13 @@ end)
 -- Add the fourth button (Rotate 180)
 local rotate180Button = Instance.new("TextButton")
 rotate180Button.Name = "Rotate180Button"
-rotate180Button.Size = UDim2.new(1, 0, 0, 50)
-rotate180Button.Position = UDim2.new(0, 0, 0, 180)
+rotate180Button.Size = UDim2.new(1, 0, 0, 34)
+rotate180Button.Position = UDim2.new(0, 0, 0, 124)
 rotate180Button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 rotate180Button.TextColor3 = Color3.fromRGB(255, 255, 255)
 rotate180Button.Text = "180° Flick: OFF"
 rotate180Button.Font = Enum.Font.SourceSansBold
-rotate180Button.TextSize = 18.5
+rotate180Button.TextSize = 13
 rotate180Button.Parent = airStrafeFrame
 
 rotate180Button.MouseButton1Click:Connect(function()
@@ -1646,13 +1682,13 @@ end)
 -- Add the fifth button (Tween Rotate 180)
 local tweenRotate180Button = Instance.new("TextButton")
 tweenRotate180Button.Name = "TweenRotate180Button"
-tweenRotate180Button.Size = UDim2.new(1, 0, 0, 50)
-tweenRotate180Button.Position = UDim2.new(0, 0, 0, 230)
+tweenRotate180Button.Size = UDim2.new(1, 0, 0, 34)
+tweenRotate180Button.Position = UDim2.new(0, 0, 0, 158)
 tweenRotate180Button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 tweenRotate180Button.TextColor3 = Color3.fromRGB(255, 255, 255)
 tweenRotate180Button.Text = "360° Flick: OFF"
 tweenRotate180Button.Font = Enum.Font.SourceSansBold
-tweenRotate180Button.TextSize = 18.5
+tweenRotate180Button.TextSize = 13
 tweenRotate180Button.Parent = airStrafeFrame
 
 tweenRotate180Button.MouseButton1Click:Connect(function()
@@ -1676,7 +1712,7 @@ touchFlingGui.Parent = playerGui
 -- Create the draggable Frame for Noclip and Reach GUI
 local touchFlingFrame = Instance.new("Frame")
 touchFlingFrame.Name = "TouchFlingFrame"
-touchFlingFrame.Size = UDim2.new(0, 220, 0, 280)
+touchFlingFrame.Size = UDim2.new(0, 160, 0, 160)
 touchFlingFrame.Position = UDim2.new(0.5, -180, 0.5, -150)
 touchFlingFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 touchFlingFrame.BorderSizePixel = 0
@@ -1686,48 +1722,48 @@ touchFlingFrame.Parent = touchFlingGui
 -- Title bar for Noclip and Reach GUI
 local touchFlingTitleBar = Instance.new("TextLabel")
 touchFlingTitleBar.Name = "TitleBar"
-touchFlingTitleBar.Size = UDim2.new(1, -120, 0, 30)
+touchFlingTitleBar.Size = UDim2.new(1, -88, 0, 22)
 touchFlingTitleBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 touchFlingTitleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 touchFlingTitleBar.Text = "Adrenalin X: T2"
 touchFlingTitleBar.Font = Enum.Font.SourceSansBold
-touchFlingTitleBar.TextSize = 12.5
+touchFlingTitleBar.TextSize = 9
 touchFlingTitleBar.Parent = touchFlingFrame
 
 -- Lock button for Noclip and Reach GUI
 local lockButton3 = Instance.new("TextButton")
 lockButton3.Name = "LockButton3"
-lockButton3.Size = UDim2.new(0, 30, 0, 30)
-lockButton3.Position = UDim2.new(1, -120, 0, 0)
+lockButton3.Size = UDim2.new(0, 22, 0, 22)
+lockButton3.Position = UDim2.new(1, -88, 0, 0)
 lockButton3.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 lockButton3.TextColor3 = Color3.fromRGB(255, 255, 255)
 lockButton3.Text = "🔓"
 lockButton3.Font = Enum.Font.SourceSansBold
-lockButton3.TextSize = 18
+lockButton3.TextSize = 13
 lockButton3.Parent = touchFlingFrame
 
 -- Minimize button for Noclip and Reach GUI
 local touchFlingMinimizeButton = Instance.new("TextButton")
 touchFlingMinimizeButton.Name = "MinimizeButton"
-touchFlingMinimizeButton.Size = UDim2.new(0, 30, 0, 30)
-touchFlingMinimizeButton.Position = UDim2.new(1, -60, 0, 0)
+touchFlingMinimizeButton.Size = UDim2.new(0, 22, 0, 22)
+touchFlingMinimizeButton.Position = UDim2.new(1, -44, 0, 0)
 touchFlingMinimizeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 touchFlingMinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 touchFlingMinimizeButton.Text = "—"
 touchFlingMinimizeButton.Font = Enum.Font.SourceSansBold
-touchFlingMinimizeButton.TextSize = 18
+touchFlingMinimizeButton.TextSize = 13
 touchFlingMinimizeButton.Parent = touchFlingFrame
 
 -- Close button for Noclip and Reach GUI
 local closeButton3 = Instance.new("TextButton")
 closeButton3.Name = "CloseButton3"
-closeButton3.Size = UDim2.new(0, 30, 0, 30)
-closeButton3.Position = UDim2.new(1, -30, 0, 0)
+closeButton3.Size = UDim2.new(0, 22, 0, 22)
+closeButton3.Position = UDim2.new(1, -22, 0, 0)
 closeButton3.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 closeButton3.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeButton3.Text = "X"
 closeButton3.Font = Enum.Font.SourceSansBold
-closeButton3.TextSize = 18
+closeButton3.TextSize = 13
 closeButton3.Parent = touchFlingFrame
 
 closeButton3.MouseButton1Click:Connect(function()
@@ -1737,25 +1773,25 @@ end)
 -- Link button for Noclip and Reach GUI
 local linkButton3 = Instance.new("TextButton")
 linkButton3.Name = "LinkButton3"
-linkButton3.Size = UDim2.new(0, 30, 0, 30)
-linkButton3.Position = UDim2.new(1, -90, 0, 0)
+linkButton3.Size = UDim2.new(0, 22, 0, 22)
+linkButton3.Position = UDim2.new(1, -66, 0, 0)
 linkButton3.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 linkButton3.TextColor3 = Color3.fromRGB(255, 255, 255)
 linkButton3.Text = "🗝️"
 linkButton3.Font = Enum.Font.SourceSansBold
-linkButton3.TextSize = 14
+linkButton3.TextSize = 11
 linkButton3.Parent = touchFlingFrame
 
--- === НОВАЯ КНОПКА DESYNC (самая первая) ===
+-- === КНОПКА DESYNC ===
 local desyncButton = Instance.new("TextButton")
 desyncButton.Name = "DesyncButton"
-desyncButton.Size = UDim2.new(1, 0, 0, 50)
-desyncButton.Position = UDim2.new(0, 0, 0, 30)
+desyncButton.Size = UDim2.new(1, 0, 0, 34)
+desyncButton.Position = UDim2.new(0, 0, 0, 22)
 desyncButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 desyncButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 desyncButton.Text = "Desync: OFF"
 desyncButton.Font = Enum.Font.SourceSansBold
-desyncButton.TextSize = 18.5
+desyncButton.TextSize = 13
 desyncButton.Parent = touchFlingFrame
 
 desyncButton.MouseButton1Click:Connect(function()
@@ -1763,44 +1799,74 @@ desyncButton.MouseButton1Click:Connect(function()
 	desyncButton.Text = "Desync: " .. (PastedSources and "ON" or "OFF")
 end)
 
--- Noclip button (сдвинута вниз)
+-- Noclip button
 local noclipButton = Instance.new("TextButton")
 noclipButton.Name = "NoclipButton"
-noclipButton.Size = UDim2.new(1, 0, 0, 50)
-noclipButton.Position = UDim2.new(0, 0, 0, 80)
+noclipButton.Size = UDim2.new(1, 0, 0, 34)
+noclipButton.Position = UDim2.new(0, 0, 0, 56)
 noclipButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 noclipButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-noclipButton.Text = "Noclip (On/Off)"
+noclipButton.Text = "Noclip: OFF"
 noclipButton.Font = Enum.Font.SourceSansBold
-noclipButton.TextSize = 18.5
+noclipButton.TextSize = 13
 noclipButton.Parent = touchFlingFrame
 
-noclipButton.MouseButton1Click:Connect(toggleNoclip)
+noclipButton.MouseButton1Click:Connect(function()
+    toggleNoclip()
+    noclipButton.Text = noclipEnabled and "Noclip: ON" or "Noclip: OFF"
+end)
 
--- Reach button (сдвинута)
+-- Reach button
 local reachButton = Instance.new("TextButton")
 reachButton.Name = "ReachButton"
-reachButton.Size = UDim2.new(1, 0, 0, 50)
-reachButton.Position = UDim2.new(0, 0, 0, 130)
+reachButton.Size = UDim2.new(0, 112, 0, 34)
+reachButton.Position = UDim2.new(0, 0, 0, 90)
 reachButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 reachButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-reachButton.Text = "KillAura (On/Off)"
+reachButton.Text = "KillAura: OFF"
 reachButton.Font = Enum.Font.SourceSansBold
-reachButton.TextSize = 18.5
+reachButton.TextSize = 11
 reachButton.Parent = touchFlingFrame
 
-reachButton.MouseButton1Click:Connect(toggleReach)
+reachButton.MouseButton1Click:Connect(function()
+    toggleReach()
+    reachButton.Text = reachEnabled and "KillAura: ON" or "KillAura: OFF"
+end)
 
--- Touch Fling button (сдвинута)
+-- Range Input Box
+local rangeInputBox = Instance.new("TextBox")
+rangeInputBox.Name = "RangeInputBox"
+rangeInputBox.Size = UDim2.new(0, 48, 0, 34)
+rangeInputBox.Position = UDim2.new(0, 112, 0, 90)
+rangeInputBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+rangeInputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+rangeInputBox.PlaceholderText = "Range"
+rangeInputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+rangeInputBox.Text = tostring(range)
+rangeInputBox.Font = Enum.Font.SourceSansBold
+rangeInputBox.TextSize = 11
+rangeInputBox.ClearTextOnFocus = false
+rangeInputBox.Parent = touchFlingFrame
+
+rangeInputBox.FocusLost:Connect(function(enterPressed)
+    local val = tonumber(rangeInputBox.Text)
+    if val and val > 0 then
+        range = val
+    else
+        rangeInputBox.Text = tostring(range)
+    end
+end)
+
+-- Touch Fling button
 local touchFlingButton = Instance.new("TextButton")
 touchFlingButton.Name = "TouchFlingButton"
-touchFlingButton.Size = UDim2.new(1, 0, 0, 50)
-touchFlingButton.Position = UDim2.new(0, 0, 0, 180)
+touchFlingButton.Size = UDim2.new(1, 0, 0, 34)
+touchFlingButton.Position = UDim2.new(0, 0, 0, 124)
 touchFlingButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 touchFlingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 touchFlingButton.Text = "Touch Fling: OFF"
 touchFlingButton.Font = Enum.Font.SourceSansBold
-touchFlingButton.TextSize = 18.5
+touchFlingButton.TextSize = 13
 touchFlingButton.Parent = touchFlingFrame
 
 local hiddenfling = false
@@ -1844,16 +1910,16 @@ touchFlingButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Value Calculator button (сдвинута)
+-- Value Calculator button
 local valueCalcButton = Instance.new("TextButton")
 valueCalcButton.Name = "ValueCalcButton"
-valueCalcButton.Size = UDim2.new(1, 0, 0, 50)
-valueCalcButton.Position = UDim2.new(0, 0, 0, 230)
+valueCalcButton.Size = UDim2.new(1, 0, 0, 34)
+valueCalcButton.Position = UDim2.new(0, 0, 0, 158)
 valueCalcButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 valueCalcButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-valueCalcButton.Text = "Value Checker"
+valueCalcButton.Text = "Trade Helper"
 valueCalcButton.Font = Enum.Font.SourceSansBold
-valueCalcButton.TextSize = 18.5
+valueCalcButton.TextSize = 13
 valueCalcButton.Parent = touchFlingFrame
 
 valueCalcButton.MouseButton1Click:Connect(function()
@@ -1884,7 +1950,7 @@ valueCalcButton.MouseButton1Click:Connect(function()
                 Title = "Trade Helper";
                 Text = "Cracked by: Who? D A R K";
                 Icon = "";
-                Duration = 10;
+                Duration = 5;
                 Button1 = "Supreme Values";
                 Callback = NotificationBindable;
             })
@@ -1898,19 +1964,21 @@ valueCalcButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Minimize button functionality for Noclip and Reach GUI (без Destroy Gui)
+-- Minimize button functionality for Noclip and Reach GUI
 local isTouchFlingContentVisible = true
 touchFlingMinimizeButton.MouseButton1Click:Connect(function()
     isTouchFlingContentVisible = not isTouchFlingContentVisible
+    desyncButton.Visible = isTouchFlingContentVisible
     noclipButton.Visible = isTouchFlingContentVisible
     reachButton.Visible = isTouchFlingContentVisible
+    rangeInputBox.Visible = isTouchFlingContentVisible
     touchFlingButton.Visible = isTouchFlingContentVisible
     valueCalcButton.Visible = isTouchFlingContentVisible
     if isTouchFlingContentVisible then
-        touchFlingFrame.Size = UDim2.new(0, 220, 0, 280)
+        touchFlingFrame.Size = UDim2.new(0, 160, 0, 210)
         touchFlingMinimizeButton.Text = "—"
     else
-        touchFlingFrame.Size = UDim2.new(0, 220, 0, 30)
+        touchFlingFrame.Size = UDim2.new(0, 160, 0, 22)
         touchFlingMinimizeButton.Text = "+"
     end
 end)
@@ -1924,7 +1992,7 @@ flingGui.Parent = playerGui
 -- Create the draggable Frame for Multi Fling GUI
 local flingFrame = Instance.new("Frame")
 flingFrame.Name = "FlingFrame"
-flingFrame.Size = UDim2.new(0, 300, 0, 400)
+flingFrame.Size = UDim2.new(0, 220, 0, 295)
 flingFrame.Position = UDim2.new(0.5, -140, 0.5, -150)
 flingFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 flingFrame.BorderSizePixel = 0
@@ -1934,48 +2002,48 @@ flingFrame.Parent = flingGui
 -- Title bar for Multi Fling GUI
 local flingTitleBar = Instance.new("TextLabel")
 flingTitleBar.Name = "TitleBar"
-flingTitleBar.Size = UDim2.new(1, -120, 0, 30)
+flingTitleBar.Size = UDim2.new(1, -88, 0, 22)
 flingTitleBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 flingTitleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 flingTitleBar.Text = "Adrenalin X: T4 - Fling"
 flingTitleBar.Font = Enum.Font.SourceSansBold
-flingTitleBar.TextSize = 13
+flingTitleBar.TextSize = 9
 flingTitleBar.Parent = flingFrame
 
 -- Lock button for Multi Fling GUI
 local lockButton4 = Instance.new("TextButton")
 lockButton4.Name = "LockButton4"
-lockButton4.Size = UDim2.new(0, 30, 0, 30)
-lockButton4.Position = UDim2.new(1, -120, 0, 0)
+lockButton4.Size = UDim2.new(0, 22, 0, 22)
+lockButton4.Position = UDim2.new(1, -88, 0, 0)
 lockButton4.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 lockButton4.TextColor3 = Color3.fromRGB(255, 255, 255)
 lockButton4.Text = "🔓"
 lockButton4.Font = Enum.Font.SourceSansBold
-lockButton4.TextSize = 18
+lockButton4.TextSize = 13
 lockButton4.Parent = flingFrame
 
 -- Minimize button for Multi Fling GUI
 local flingMinimizeButton = Instance.new("TextButton")
 flingMinimizeButton.Name = "MinimizeButton"
-flingMinimizeButton.Size = UDim2.new(0, 30, 0, 30)
-flingMinimizeButton.Position = UDim2.new(1, -60, 0, 0)
+flingMinimizeButton.Size = UDim2.new(0, 22, 0, 22)
+flingMinimizeButton.Position = UDim2.new(1, -44, 0, 0)
 flingMinimizeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 flingMinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 flingMinimizeButton.Text = "—"
 flingMinimizeButton.Font = Enum.Font.SourceSansBold
-flingMinimizeButton.TextSize = 18
+flingMinimizeButton.TextSize = 13
 flingMinimizeButton.Parent = flingFrame
 
 -- Close button for Multi Fling GUI
 local closeButton4 = Instance.new("TextButton")
 closeButton4.Name = "CloseButton4"
-closeButton4.Size = UDim2.new(0, 30, 0, 30)
-closeButton4.Position = UDim2.new(1, -30, 0, 0)
+closeButton4.Size = UDim2.new(0, 22, 0, 22)
+closeButton4.Position = UDim2.new(1, -22, 0, 0)
 closeButton4.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 closeButton4.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeButton4.Text = "X"
 closeButton4.Font = Enum.Font.SourceSansBold
-closeButton4.TextSize = 18
+closeButton4.TextSize = 13
 closeButton4.Parent = flingFrame
 
 closeButton4.MouseButton1Click:Connect(function()
@@ -1985,39 +2053,39 @@ end)
 -- Link button for Multi Fling GUI
 local linkButton4 = Instance.new("TextButton")
 linkButton4.Name = "LinkButton4"
-linkButton4.Size = UDim2.new(0, 30, 0, 30)
-linkButton4.Position = UDim2.new(1, -90, 0, 0)
+linkButton4.Size = UDim2.new(0, 22, 0, 22)
+linkButton4.Position = UDim2.new(1, -66, 0, 0)
 linkButton4.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 linkButton4.TextColor3 = Color3.fromRGB(255, 255, 255)
 linkButton4.Text = "🗝️"
 linkButton4.Font = Enum.Font.SourceSansBold
-linkButton4.TextSize = 14
+linkButton4.TextSize = 11
 linkButton4.Parent = flingFrame
 
 -- Status Label
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Position = UDim2.new(0, 10, 0, 40)
-statusLabel.Size = UDim2.new(1, -20, 0, 25)
+statusLabel.Position = UDim2.new(0, 7, 0, 28)
+statusLabel.Size = UDim2.new(1, -14, 0, 18)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "Select targets to fling"
 statusLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
 statusLabel.Font = Enum.Font.SourceSans
-statusLabel.TextSize = 16
+statusLabel.TextSize = 11
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Parent = flingFrame
 
 -- Player Selection Frame
 local selectionFrame = Instance.new("Frame")
-selectionFrame.Position = UDim2.new(0, 10, 0, 70)
-selectionFrame.Size = UDim2.new(1, -20, 0, 250)
+selectionFrame.Position = UDim2.new(0, 7, 0, 50)
+selectionFrame.Size = UDim2.new(1, -14, 0, 185)
 selectionFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 selectionFrame.BorderSizePixel = 0
 selectionFrame.Parent = flingFrame
 
 -- Player List ScrollFrame
 local playerScrollFrame = Instance.new("ScrollingFrame")
-playerScrollFrame.Position = UDim2.new(0, 5, 0, 5)
-playerScrollFrame.Size = UDim2.new(1, -10, 1, -10)
+playerScrollFrame.Position = UDim2.new(0, 4, 0, 4)
+playerScrollFrame.Size = UDim2.new(1, -8, 1, -8)
 playerScrollFrame.BackgroundTransparency = 1
 playerScrollFrame.BorderSizePixel = 0
 playerScrollFrame.ScrollBarThickness = 6
@@ -2026,50 +2094,50 @@ playerScrollFrame.Parent = selectionFrame
 
 -- Start Fling Button
 local startButton = Instance.new("TextButton")
-startButton.Position = UDim2.new(0, 10, 0, 330)
-startButton.Size = UDim2.new(0.5, -15, 0, 40)
+startButton.Position = UDim2.new(0, 7, 0, 242)
+startButton.Size = UDim2.new(0.5, -10, 0, 28)
 startButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 startButton.BorderSizePixel = 0
 startButton.Text = "START FLING"
 startButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 startButton.Font = Enum.Font.SourceSansBold
-startButton.TextSize = 18
+startButton.TextSize = 12
 startButton.Parent = flingFrame
 
 -- Stop Fling Button
 local stopButton = Instance.new("TextButton")
-stopButton.Position = UDim2.new(0.5, 5, 0, 330)
-stopButton.Size = UDim2.new(0.5, -15, 0, 40)
+stopButton.Position = UDim2.new(0.5, 3, 0, 242)
+stopButton.Size = UDim2.new(0.5, -10, 0, 28)
 stopButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 stopButton.BorderSizePixel = 0
 stopButton.Text = "STOP FLING"
 stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 stopButton.Font = Enum.Font.SourceSansBold
-stopButton.TextSize = 18
+stopButton.TextSize = 12
 stopButton.Parent = flingFrame
 
 -- Select All Button
 local selectAllButton = Instance.new("TextButton")
-selectAllButton.Position = UDim2.new(0, 10, 0, 380)
-selectAllButton.Size = UDim2.new(0.5, -15, 0, 30)
+selectAllButton.Position = UDim2.new(0, 3, 0, 274)
+selectAllButton.Size = UDim2.new(0.5, -10, 0, 22)
 selectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 selectAllButton.BorderSizePixel = 0
 selectAllButton.Text = "SELECT ALL"
 selectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 selectAllButton.Font = Enum.Font.SourceSans
-selectAllButton.TextSize = 14
+selectAllButton.TextSize = 10
 selectAllButton.Parent = flingFrame
 
 -- Deselect All Button
 local deselectAllButton = Instance.new("TextButton")
-deselectAllButton.Position = UDim2.new(0.5, 5, 0, 380)
-deselectAllButton.Size = UDim2.new(0.5, -15, 0, 30)
+deselectAllButton.Position = UDim2.new(0.5, 3, 0, 274)
+deselectAllButton.Size = UDim2.new(0.5, -10, 0, 22)
 deselectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 deselectAllButton.BorderSizePixel = 0
 deselectAllButton.Text = "DESELECT ALL"
 deselectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 deselectAllButton.Font = Enum.Font.SourceSans
-deselectAllButton.TextSize = 14
+deselectAllButton.TextSize = 10
 deselectAllButton.Parent = flingFrame
 
 -- Multi-Fling variables and functions
@@ -2415,7 +2483,304 @@ refreshPlayerList()
 updateStatus()
 message("Loaded Successfully", "ADR-X loaded, Enjoy!", 3)
 
--- Link button functionality (shared for all)
+-- GUI contents
+Buttons = {79480770273758, "Anti-Aim", 77094699387328, "Glitch Spin", 121966805049108, "Hit the Griddy", 79757971761739, "Shattered", 83265734904502, "Take the L",
+115518346414107, "Gangnam Style", 114400428765989, "180° flip", 128334204821841, "Skib toilert", 101625387064604, "I alone am the Honored One", 110146282544198, "Organe Justice", 
+10714340543, "The Floss", 77984841414450, "Deltarune dance or smthn", 109873544976020, "Biblically Accurate Emote", 90333292347820, "The Worm", 88130117312312, "Fake Death", 111251252458517, "Uuuuuhhh",
+84623954062978, "Peter nooooo", 108747312576405, "And I turn into a convertable. Les goooo", 93014787120483, "Garry's Dance", 92618727772186, "IShowSpeed Dance", 99499783161907, "Aura farm",
+80177289449617, "Snow angel", 70432904702322, "Get skinwalked", 123916423751437, "Rat Dance", 129537633250603, "It's Peanut Butter Jelly Time"}
+
+-- General Variables
+CursedMode = false
+Player = game.Players.LocalPlayer
+Mouse = Player:GetMouse()
+HeaderSize = 25
+PlayingId = 0
+
+Red = Color3.fromRGB(255,0,0)
+Green = Color3.fromRGB(0,200,0)
+Black = Color3.fromRGB(0,0,0)
+White = Color3.fromRGB(255,255,255)
+
+-- Setting up 5th GUI (Animations)
+ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AdrenalinX_Animations"
+ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Container frame for 5th GUI (matching other GUIs' structure)
+local animFrame = Instance.new("Frame")
+animFrame.Name = "AnimFrame"
+animFrame.Size = UDim2.new(0, 170, 0, 245)
+animFrame.Position = UDim2.new(0, 20, 0, 50)
+animFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+animFrame.BorderSizePixel = 0
+animFrame.Active = true
+animFrame.Parent = ScreenGui
+
+-- Title bar for 5th GUI
+local animTitleBar = Instance.new("TextLabel")
+animTitleBar.Name = "TitleBar"
+animTitleBar.Size = UDim2.new(1, -88, 0, 22)
+animTitleBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+animTitleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+animTitleBar.Text = "Adrenalin X: T5"
+animTitleBar.Font = Enum.Font.SourceSansBold
+animTitleBar.TextSize = 9
+animTitleBar.Parent = animFrame
+
+-- Lock button for 5th GUI
+local lockButton5 = Instance.new("TextButton")
+lockButton5.Name = "LockButton5"
+lockButton5.Size = UDim2.new(0, 22, 0, 22)
+lockButton5.Position = UDim2.new(1, -88, 0, 0)
+lockButton5.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+lockButton5.TextColor3 = Color3.fromRGB(255, 255, 255)
+lockButton5.Text = "🔓"
+lockButton5.Font = Enum.Font.SourceSansBold
+lockButton5.TextSize = 13
+lockButton5.Parent = animFrame
+
+-- Link button for 5th GUI
+local linkButton5 = Instance.new("TextButton")
+linkButton5.Name = "LinkButton5"
+linkButton5.Size = UDim2.new(0, 22, 0, 22)
+linkButton5.Position = UDim2.new(1, -66, 0, 0)
+linkButton5.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+linkButton5.TextColor3 = Color3.fromRGB(255, 255, 255)
+linkButton5.Text = "🗝️"
+linkButton5.Font = Enum.Font.SourceSansBold
+linkButton5.TextSize = 11
+linkButton5.Parent = animFrame
+
+-- Minimize button for 5th GUI
+local animMinimizeButton = Instance.new("TextButton")
+animMinimizeButton.Name = "MinimizeButton"
+animMinimizeButton.Size = UDim2.new(0, 22, 0, 22)
+animMinimizeButton.Position = UDim2.new(1, -44, 0, 0)
+animMinimizeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+animMinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+animMinimizeButton.Text = "—"
+animMinimizeButton.Font = Enum.Font.SourceSansBold
+animMinimizeButton.TextSize = 13
+animMinimizeButton.Parent = animFrame
+
+-- Close button for 5th GUI
+local closeButton5 = Instance.new("TextButton")
+closeButton5.Name = "CloseButton5"
+closeButton5.Size = UDim2.new(0, 22, 0, 22)
+closeButton5.Position = UDim2.new(1, -22, 0, 0)
+closeButton5.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+closeButton5.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton5.Text = "X"
+closeButton5.Font = Enum.Font.SourceSansBold
+closeButton5.TextSize = 13
+closeButton5.Parent = animFrame
+
+closeButton5.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+-- ScrollingFrame for animation buttons (child of animFrame)
+Frame = Instance.new("ScrollingFrame")
+Frame.Size = UDim2.new(1, 0, 0, 223)
+Frame.Position = UDim2.new(0, 0, 0, 22)
+Frame.BackgroundColor3 = White
+Frame.BorderSizePixel = 0
+Frame.CanvasSize = UDim2.new(0,0,0,0)
+Frame.Parent = animFrame
+Instance.new("UICorner",Frame)
+
+Layout = Instance.new("UIListLayout",Frame)
+Layout.FillDirection = Enum.FillDirection.Horizontal
+Layout.Wraps = true
+Layout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Animation instance
+Anim = Instance.new("Animation", script)
+
+Track = nil
+
+-- UI style
+function Style(Button)
+    Instance.new("UICorner").Parent = Button
+    Button.TextColor3 = White
+    Button.Font = Enum.Font.SourceSansBold
+    Button.TextScaled = true
+end
+
+-- Create elements
+function CreateInteractable(Size,Name,Text,Color,Button,Class)
+
+    local Element = Instance.new(Class,Frame)
+
+    if Button then
+        Element.Name = Name.."Button"
+        Element.Text = Text
+    else
+        Element.Name = Name.."Box"
+        Element.Text = ""
+        Element.PlaceholderText = Text
+        Frame.CanvasSize += UDim2.new(0,0,0,Size.Y.Offset)
+    end
+
+    Element.Size = Size
+    Element.BackgroundColor3 = Color
+    Element.RichText = true
+
+    Style(Element)
+
+    return Element
+end
+
+-- Animation player
+function PlayAnimation(ID,Speed)
+
+    while not Player.Character do task.wait() end
+
+    local Character = Player.Character
+
+    Anim.AnimationId = ID
+
+    Track = Character:WaitForChild("Humanoid"):LoadAnimation(Anim)
+    Track:Play()
+    Track.Looped = true
+
+    if tonumber(Speed) then
+        Track:AdjustSpeed(tonumber(Speed))
+    else
+        Track:AdjustSpeed(1)
+    end
+
+    Track.Priority = Enum.AnimationPriority.Action
+
+end
+
+-- Button creator
+function CreateButton(Size,Color,Text,Name,ID)
+
+    local Button = CreateInteractable(Size,Name,Text,Color,true,"TextButton")
+
+    local Toggled = false
+
+    Button.MouseButton1Click:Connect(function()
+
+        if not (PlayingId == ID or PlayingId == 0) and not CursedMode then return end
+
+        Toggled = not Toggled
+
+        if Track and not CursedMode then
+            Track:Stop()
+        end
+
+        if Toggled then
+
+            PlayingId = ID
+            Button.BackgroundColor3 = Green
+
+            PlayAnimation("rbxassetid://"..ID,Frame:WaitForChild(Name.."Box").Text)
+
+        else
+
+            Button.BackgroundColor3 = Black
+            PlayingId = 0
+
+        end
+
+    end)
+
+end
+
+-- Speed textbox
+function TextboxSpeedAdjust(Box,ID)
+
+    Box.Changed:Connect(function(Property)
+
+        if Property == "Text" and Track then
+
+            if tonumber(Box.Text) then
+
+                if not (PlayingId == ID or PlayingId == 0) and not CursedMode then return end
+
+                Track:AdjustSpeed(tonumber(Box.Text))
+
+            else
+
+                Track:AdjustSpeed(1)
+
+            end
+
+        end
+
+    end)
+
+end
+
+function CreateTextbox(Size,Color,Name,ID)
+
+    local Box = CreateInteractable(Size,Name,"Play speed (default 1)",Color,false,"TextBox")
+
+    TextboxSpeedAdjust(Box,ID)
+
+end
+
+-- Search bar
+Searchbar = CreateInteractable(
+    UDim2.new(0.95,0,0,32),
+    "Searchbar",
+    "Search animations",
+    Black,
+    false,
+    "TextBox"
+)
+
+-- Search logic
+Searchbar.Changed:Connect(function()
+
+    local Search = string.lower(Searchbar.Text)
+
+    for _,Button in Frame:GetChildren() do
+
+        if (Button:IsA("TextButton") or Button:IsA("TextBox")) and Button.Name ~= "SearchbarBox" then
+
+            if string.find(string.lower(Button.Name),Search) then
+                Button.Visible = true
+            else
+                Button.Visible = false
+            end
+
+        end
+
+    end
+
+end)
+
+-- Create buttons
+Counter = 0
+
+for i = 1,#Buttons/2 do
+
+    CreateTextbox(
+        UDim2.new(0.45,0,0,32),
+        Black,
+        Buttons[Counter+2],
+        Buttons[Counter+1]
+    )
+
+    CreateButton(
+        UDim2.new(0.45,0,0,32),
+        Black,
+        Buttons[Counter+2],
+        Buttons[Counter+2],
+        Buttons[Counter+1]
+    )
+
+    Counter += 2
+
+end
+
+-- Link button functionality (shared for all 5 GUIs)
 local function toggleLinkedDrag()
     isLinkedDrag = not isLinkedDrag
     local color = isLinkedDrag and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(0, 0, 0)
@@ -2423,12 +2788,14 @@ local function toggleLinkedDrag()
     if linkButton2 then linkButton2.BackgroundColor3 = color end
     if linkButton3 then linkButton3.BackgroundColor3 = color end
     if linkButton4 then linkButton4.BackgroundColor3 = color end
+    if linkButton5 then linkButton5.BackgroundColor3 = color end
 end
 
 linkButton1.MouseButton1Click:Connect(toggleLinkedDrag)
 linkButton2.MouseButton1Click:Connect(toggleLinkedDrag)
 linkButton3.MouseButton1Click:Connect(toggleLinkedDrag)
 linkButton4.MouseButton1Click:Connect(toggleLinkedDrag)
+linkButton5.MouseButton1Click:Connect(toggleLinkedDrag)
 
 -- Lock button functionality for first GUI
 lockButton1.MouseButton1Click:Connect(function()
@@ -2458,6 +2825,13 @@ lockButton4.MouseButton1Click:Connect(function()
     lockButton4.BackgroundColor3 = isFlingLocked and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 0, 0)
 end)
 
+-- Lock button functionality for fifth GUI
+lockButton5.MouseButton1Click:Connect(function()
+    isAnimLocked = not isAnimLocked
+    lockButton5.Text = isAnimLocked and "🔒" or "🔓"
+    lockButton5.BackgroundColor3 = isAnimLocked and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 0, 0)
+end)
+
 -- Create the Toggle Button ScreenGui
 local toggleGui = Instance.new("ScreenGui")
 toggleGui.Name = "ToggleGui"
@@ -2467,8 +2841,8 @@ toggleGui.Parent = playerGui
 -- Create the round toggle button (as a Frame for the background)
 local toggleButton = Instance.new("Frame")
 toggleButton.Name = "ToggleButton"
-toggleButton.Size = UDim2.new(0, 50, 0, 50)
-toggleButton.Position = UDim2.new(0.5, -25, 0.5, -25)
+toggleButton.Size = UDim2.new(0, 44, 0, 44)
+toggleButton.Position = UDim2.new(0.5, -22, 0.5, -22)
 toggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 toggleButton.Active = true
 toggleButton.Parent = toggleGui
@@ -2482,7 +2856,7 @@ corner.Parent = toggleButton
 local stroke = Instance.new("UIStroke")
 stroke.Name = "ToggleButtonStroke"
 stroke.Color = Color3.fromRGB(255, 255, 255)
-stroke.Thickness = 2
+stroke.Thickness = 1.5
 stroke.Parent = toggleButton
 
 -- Add TextLabel for the "ADR:X" text
@@ -2492,30 +2866,13 @@ toggleText.Size = UDim2.new(1, 0, 1, 0)
 toggleText.Position = UDim2.new(0, 0, 0, 0)
 toggleText.BackgroundTransparency = 1
 toggleText.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleText.Text = "ADR:X"
+toggleText.Text = "ADR-X"
 toggleText.Font = Enum.Font.SourceSansBold
-toggleText.TextSize = 17
+toggleText.TextSize = 13
 toggleText.Parent = toggleButton
 
 -- GUI visibility state
 local areGuisVisible = true
-
--- Toggle button click functionality with effect
-toggleButton.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        toggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-        task.spawn(function()
-            task.wait(0.1)
-            toggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        end)
-        areGuisVisible = not areGuisVisible
-        screenGui.Enabled = areGuisVisible
-        airStrafeGui.Enabled = areGuisVisible
-        touchFlingGui.Enabled = areGuisVisible
-        flingGui.Enabled = areGuisVisible
-        toggleText.Text = areGuisVisible and "ADR:X" or "ADR:X"
-    end
-end)
 
 -- Minimize button functionality for first GUI
 local isContentVisible = true
@@ -2525,12 +2882,13 @@ minimizeButton.MouseButton1Click:Connect(function()
     button2.Visible = isContentVisible
     button3.Visible = isContentVisible
     button4.Visible = isContentVisible
+    speedInputBox.Visible = isContentVisible
     button5.Visible = isContentVisible
     if isContentVisible then
-        frame.Size = UDim2.new(0, 220, 0, 280)
+        frame.Size = UDim2.new(0, 160, 0, 210)
         minimizeButton.Text = "—"
     else
-        frame.Size = UDim2.new(0, 220, 0, 30)
+        frame.Size = UDim2.new(0, 160, 0, 22)
         minimizeButton.Text = "+"
     end
 end)
@@ -2545,15 +2903,13 @@ airStrafeMinimizeButton.MouseButton1Click:Connect(function()
     rotate180Button.Visible = isAirStrafeContentVisible
     tweenRotate180Button.Visible = isAirStrafeContentVisible
     if isAirStrafeContentVisible then
-        airStrafeFrame.Size = UDim2.new(0, 220, 0, 280)
+        airStrafeFrame.Size = UDim2.new(0, 160, 0, 210)
         airStrafeMinimizeButton.Text = "—"
     else
-        airStrafeFrame.Size = UDim2.new(0, 220, 0, 30)
+        airStrafeFrame.Size = UDim2.new(0, 160, 0, 22)
         airStrafeMinimizeButton.Text = "+"
     end
 end)
-
--- Minimize button functionality for Noclip and Reach GUI (уже обновлено выше)
 
 -- Minimize button functionality for Multi Fling GUI
 local isFlingContentVisible = true
@@ -2566,11 +2922,25 @@ flingMinimizeButton.MouseButton1Click:Connect(function()
     selectAllButton.Visible = isFlingContentVisible
     deselectAllButton.Visible = isFlingContentVisible
     if isFlingContentVisible then
-        flingFrame.Size = UDim2.new(0, 300, 0, 400)
+        flingFrame.Size = UDim2.new(0, 160, 0, 210)
         flingMinimizeButton.Text = "—"
     else
-        flingFrame.Size = UDim2.new(0, 300, 0, 30)
+        flingFrame.Size = UDim2.new(0, 160, 0, 22)
         flingMinimizeButton.Text = "+"
+    end
+end)
+
+-- Minimize button functionality for 5th GUI (Animations)
+local isAnimContentVisible = true
+animMinimizeButton.MouseButton1Click:Connect(function()
+    isAnimContentVisible = not isAnimContentVisible
+    Frame.Visible = isAnimContentVisible
+    if isAnimContentVisible then
+        animFrame.Size = UDim2.new(0, 170, 0, 245)
+        animMinimizeButton.Text = "—"
+    else
+        animFrame.Size = UDim2.new(0, 170, 0, 22)
+        animMinimizeButton.Text = "+"
     end
 end)
 
@@ -2592,6 +2962,7 @@ frame.InputBegan:Connect(function(input)
             linkedAirStrafeStart = airStrafeFrame.Position
             linkedTouchStart = touchFlingFrame.Position
             linkedFlingStart = flingFrame.Position
+            linkedAnimStart = animFrame.Position
         end
         
         local connection
@@ -2628,6 +2999,7 @@ airStrafeFrame.InputBegan:Connect(function(input)
             linkedAirStrafeStart = airStrafeFrame.Position
             linkedTouchStart = touchFlingFrame.Position
             linkedFlingStart = flingFrame.Position
+            linkedAnimStart = animFrame.Position
         end
         
         local connection
@@ -2664,6 +3036,7 @@ touchFlingFrame.InputBegan:Connect(function(input)
             linkedAirStrafeStart = airStrafeFrame.Position
             linkedTouchStart = touchFlingFrame.Position
             linkedFlingStart = flingFrame.Position
+            linkedAnimStart = animFrame.Position
         end
         
         local connection
@@ -2700,6 +3073,7 @@ flingFrame.InputBegan:Connect(function(input)
             linkedAirStrafeStart = airStrafeFrame.Position
             linkedTouchStart = touchFlingFrame.Position
             linkedFlingStart = flingFrame.Position
+            linkedAnimStart = animFrame.Position
         end
         
         local connection
@@ -2718,6 +3092,44 @@ flingFrame.InputChanged:Connect(function(input)
     end
 end)
 
+-- Dragging functionality for 5th GUI (Animations)
+local animDragging = false
+local animDragInput
+local animDragStart
+local animStartPos
+
+animFrame.InputBegan:Connect(function(input)
+    if isAnimLocked then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        animDragging = true
+        animDragStart = input.Position
+        animStartPos = animFrame.Position
+        
+        if isLinkedDrag then
+            linkedFrameStart = frame.Position
+            linkedAirStrafeStart = airStrafeFrame.Position
+            linkedTouchStart = touchFlingFrame.Position
+            linkedFlingStart = flingFrame.Position
+            linkedAnimStart = animFrame.Position
+        end
+        
+        local connection
+        connection = input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                animDragging = false
+                connection:Disconnect()
+            end
+        end)
+    end
+end)
+
+animFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        animDragInput = input
+    end
+end)
+
+-- Unified InputChanged handler for all 5 GUIs
 UserInputService.InputChanged:Connect(function(input)
     if dragging and input == dragInput then
         local delta = input.Position - dragStart
@@ -2727,6 +3139,7 @@ UserInputService.InputChanged:Connect(function(input)
             airStrafeFrame.Position = UDim2.new(linkedAirStrafeStart.X.Scale, linkedAirStrafeStart.X.Offset + delta.X, linkedAirStrafeStart.Y.Scale, linkedAirStrafeStart.Y.Offset + delta.Y)
             touchFlingFrame.Position = UDim2.new(linkedTouchStart.X.Scale, linkedTouchStart.X.Offset + delta.X, linkedTouchStart.Y.Scale, linkedTouchStart.Y.Offset + delta.Y)
             flingFrame.Position = UDim2.new(linkedFlingStart.X.Scale, linkedFlingStart.X.Offset + delta.X, linkedFlingStart.Y.Scale, linkedFlingStart.Y.Offset + delta.Y)
+            animFrame.Position = UDim2.new(linkedAnimStart.X.Scale, linkedAnimStart.X.Offset + delta.X, linkedAnimStart.Y.Scale, linkedAnimStart.Y.Offset + delta.Y)
         end
     elseif airStrafeDragging and input == airStrafeDragInput then
         local delta = input.Position - airStrafeDragStart
@@ -2736,6 +3149,7 @@ UserInputService.InputChanged:Connect(function(input)
             frame.Position = UDim2.new(linkedFrameStart.X.Scale, linkedFrameStart.X.Offset + delta.X, linkedFrameStart.Y.Scale, linkedFrameStart.Y.Offset + delta.Y)
             touchFlingFrame.Position = UDim2.new(linkedTouchStart.X.Scale, linkedTouchStart.X.Offset + delta.X, linkedTouchStart.Y.Scale, linkedTouchStart.Y.Offset + delta.Y)
             flingFrame.Position = UDim2.new(linkedFlingStart.X.Scale, linkedFlingStart.X.Offset + delta.X, linkedFlingStart.Y.Scale, linkedFlingStart.Y.Offset + delta.Y)
+            animFrame.Position = UDim2.new(linkedAnimStart.X.Scale, linkedAnimStart.X.Offset + delta.X, linkedAnimStart.Y.Scale, linkedAnimStart.Y.Offset + delta.Y)
         end
     elseif touchFlingDragging and input == touchFlingDragInput then
         local delta = input.Position - touchFlingDragStart
@@ -2745,6 +3159,7 @@ UserInputService.InputChanged:Connect(function(input)
             frame.Position = UDim2.new(linkedFrameStart.X.Scale, linkedFrameStart.X.Offset + delta.X, linkedFrameStart.Y.Scale, linkedFrameStart.Y.Offset + delta.Y)
             airStrafeFrame.Position = UDim2.new(linkedAirStrafeStart.X.Scale, linkedAirStrafeStart.X.Offset + delta.X, linkedAirStrafeStart.Y.Scale, linkedAirStrafeStart.Y.Offset + delta.Y)
             flingFrame.Position = UDim2.new(linkedFlingStart.X.Scale, linkedFlingStart.X.Offset + delta.X, linkedFlingStart.Y.Scale, linkedFlingStart.Y.Offset + delta.Y)
+            animFrame.Position = UDim2.new(linkedAnimStart.X.Scale, linkedAnimStart.X.Offset + delta.X, linkedAnimStart.Y.Scale, linkedAnimStart.Y.Offset + delta.Y)
         end
     elseif flingDragging and input == flingDragInput then
         local delta = input.Position - flingDragStart
@@ -2754,6 +3169,17 @@ UserInputService.InputChanged:Connect(function(input)
             frame.Position = UDim2.new(linkedFrameStart.X.Scale, linkedFrameStart.X.Offset + delta.X, linkedFrameStart.Y.Scale, linkedFrameStart.Y.Offset + delta.Y)
             airStrafeFrame.Position = UDim2.new(linkedAirStrafeStart.X.Scale, linkedAirStrafeStart.X.Offset + delta.X, linkedAirStrafeStart.Y.Scale, linkedAirStrafeStart.Y.Offset + delta.Y)
             touchFlingFrame.Position = UDim2.new(linkedTouchStart.X.Scale, linkedTouchStart.X.Offset + delta.X, linkedTouchStart.Y.Scale, linkedTouchStart.Y.Offset + delta.Y)
+            animFrame.Position = UDim2.new(linkedAnimStart.X.Scale, linkedAnimStart.X.Offset + delta.X, linkedAnimStart.Y.Scale, linkedAnimStart.Y.Offset + delta.Y)
+        end
+    elseif animDragging and input == animDragInput then
+        local delta = input.Position - animDragStart
+        local newPos = UDim2.new(animStartPos.X.Scale, animStartPos.X.Offset + delta.X, animStartPos.Y.Scale, animStartPos.Y.Offset + delta.Y)
+        animFrame.Position = newPos
+        if isLinkedDrag then
+            frame.Position = UDim2.new(linkedFrameStart.X.Scale, linkedFrameStart.X.Offset + delta.X, linkedFrameStart.Y.Scale, linkedFrameStart.Y.Offset + delta.Y)
+            airStrafeFrame.Position = UDim2.new(linkedAirStrafeStart.X.Scale, linkedAirStrafeStart.X.Offset + delta.X, linkedAirStrafeStart.Y.Scale, linkedAirStrafeStart.Y.Offset + delta.Y)
+            touchFlingFrame.Position = UDim2.new(linkedTouchStart.X.Scale, linkedTouchStart.X.Offset + delta.X, linkedTouchStart.Y.Scale, linkedTouchStart.Y.Offset + delta.Y)
+            flingFrame.Position = UDim2.new(linkedFlingStart.X.Scale, linkedFlingStart.X.Offset + delta.X, linkedFlingStart.Y.Scale, linkedFlingStart.Y.Offset + delta.Y)
         end
     end
 end)
@@ -2763,18 +3189,36 @@ local toggleDragging = false
 local toggleDragInput
 local toggleDragStart
 local toggleStartPos
+local toggleDidMove = false  -- flag: did we drag or just click?
+local DRAG_THRESHOLD = 5     -- pixels of movement to count as a drag
 
 toggleButton.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         toggleDragging = true
+        toggleDidMove = false
         toggleDragStart = input.Position
         toggleStartPos = toggleButton.Position
-        
+
         local connection
         connection = input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 toggleDragging = false
                 connection:Disconnect()
+
+                -- Only fire the toggle if the user didn't drag
+                if not toggleDidMove then
+                    toggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+                    task.spawn(function()
+                        task.wait(0.1)
+                        toggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                    end)
+                    areGuisVisible = not areGuisVisible
+                    screenGui.Enabled = areGuisVisible
+                    airStrafeGui.Enabled = areGuisVisible
+                    touchFlingGui.Enabled = areGuisVisible
+                    flingGui.Enabled = areGuisVisible
+                    ScreenGui.Enabled = areGuisVisible
+                end
             end
         end)
     end
@@ -2789,6 +3233,16 @@ end)
 UserInputService.InputChanged:Connect(function(input)
     if input == toggleDragInput and toggleDragging then
         local delta = input.Position - toggleDragStart
-        toggleButton.Position = UDim2.new(toggleStartPos.X.Scale, toggleStartPos.X.Offset + delta.X, toggleStartPos.Y.Scale, toggleStartPos.Y.Offset + delta.Y)
+        -- If movement exceeds threshold, mark as a drag
+        if delta.Magnitude >= DRAG_THRESHOLD then
+            toggleDidMove = true
+        end
+        toggleButton.Position = UDim2.new(
+            toggleStartPos.X.Scale,
+            toggleStartPos.X.Offset + delta.X,
+            toggleStartPos.Y.Scale,
+            toggleStartPos.Y.Offset + delta.Y
+        )
     end
 end)
+
