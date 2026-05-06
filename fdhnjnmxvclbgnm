@@ -591,7 +591,7 @@ function espCreateGunBillboard(gunDrop)
 	nameLabel.Name = "NameLabel"
 	nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
 	nameLabel.BackgroundTransparency = 1
-	nameLabel.Text = "🔫 GUN"
+	nameLabel.Text = "GUN DROP"
 	nameLabel.Font = Enum.Font.GothamBold
 	nameLabel.TextSize = 14
 	nameLabel.TextColor3 = ESP_GUN_COLOR
