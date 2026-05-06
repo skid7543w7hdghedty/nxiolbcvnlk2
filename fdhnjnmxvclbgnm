@@ -3532,7 +3532,7 @@ local xyzFrame = Instance.new("Frame")
 xyzFrame.Name = "XYZPredictFrame"
 xyzFrame.Size = UDim2.new(1, 0, 0, 42)
 xyzFrame.BackgroundTransparency = 1
-xyzFrame.LayoutOrder = 206.6 -- Сразу под кнопкой Shoot Murderer
+xyzFrame.LayoutOrder = 207.6 -- Сразу под кнопкой Shoot Murderer
 xyzFrame.Parent = contentFrame
 
 local function createSmallInput(name, placeholder, pos)
