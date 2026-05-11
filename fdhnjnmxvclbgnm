@@ -1706,7 +1706,7 @@ toggleGui.Parent = playerGui
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, 250, 0, 140)
-mainFrame.Position = UDim2.new(0.5, -125, 0.5, -70)
+mainFrame.Position = UDim2.new(0.5, -95, 0.5, -160)
 mainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -4027,7 +4027,7 @@ end)
 local toggleButton = Instance.new("Frame")
 toggleButton.Name = "ToggleButton"
 toggleButton.Size = UDim2.new(0, 50, 0, 50)
-toggleButton.Position = UDim2.new(0.5, -25, 0.5, 200)
+toggleButton.Position = UDim2.new(0.5, -70, 0.5, -70)
 toggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 toggleButton.Active = true
 toggleButton.Parent = toggleGui
