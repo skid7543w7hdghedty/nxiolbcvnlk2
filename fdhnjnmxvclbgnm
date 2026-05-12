@@ -1626,23 +1626,27 @@ player.CharacterRemoving:Connect(function()
 	if antiAimButton then
 		antiAimButton.Text = "Anti-Aim: OFF"
 		antiAimButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+		antiAimButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	end
 	noclipEnabled = false
 	if noclipButton then
 		noclipButton.Text = "Noclip: OFF"
 		noclipButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+		noclipButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	end
 	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
 	reachEnabled = false
 	if reachButton then
 		reachButton.Text = "KillAura: OFF"
 		reachButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+		reachButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	end
 	if reachConnection then reachConnection:Disconnect() reachConnection = nil end
-	fakeSpeedEnabled = false
+	-- ==== НЕ отключаем Speed Glitch - сохраняем его состояние ====
+	-- fakeSpeedEnabled остаётся как было
+	-- При новом персонаже будет переподключен в onCharacterAdded
 	if button4 then
-		button4.Text = "Speed Glitch: OFF"
-		button4.TextColor3 = Color3.fromRGB(255, 255, 255)
+		-- Кнопку НЕ трогаем, оставляем как была
 	end
 	if fakeSpeedRenderConnection then fakeSpeedRenderConnection:Disconnect() fakeSpeedRenderConnection = nil end
 	if fakeSpeedDiedConnection then fakeSpeedDiedConnection:Disconnect() fakeSpeedDiedConnection = nil end
@@ -1650,6 +1654,7 @@ player.CharacterRemoving:Connect(function()
 	if touchFlingButton then
 		touchFlingButton.Text = "Touch Fling: OFF"
 		touchFlingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+		touchFlingButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	end
 
 	-- Anti-Fling: НЕ отключаем состояние, только disconnect connection
@@ -1667,6 +1672,7 @@ player.CharacterRemoving:Connect(function()
 	if clumsyButton then
 		clumsyButton.Text = "Clumsy: OFF"
 		clumsyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+		clumsyButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	end
 
 	stopFling()
@@ -1676,6 +1682,7 @@ player.CharacterRemoving:Connect(function()
 	if desyncButton then
 		desyncButton.Text = "Desync: OFF"
 		desyncButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+		desyncButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	end
 end)
 
@@ -1871,6 +1878,9 @@ padding.PaddingTop = UDim.new(0, 2)
 padding.PaddingBottom = UDim.new(0, 2)
 padding.Parent = contentFrame
 
+-- Scroll lock flag to prevent scrolling during menu initialization
+local canScroll = false
+
 -- Category management system
 local currentCategory = "Movement"
 local categories = {}
@@ -2056,6 +2066,14 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if bindData.callback then
 			bindData.callback()
 		end
+	end
+end)
+
+-- Block scrolling on mouse wheel if canScroll flag is false (during initialization)
+contentFrame.InputBegan:Connect(function(input, gameProcessed)
+	if not canScroll and (input.UserInputType == Enum.UserInputType.MouseWheel or 
+		input.UserInputType == Enum.UserInputType.Touch) then
+		return
 	end
 end)
 
@@ -4066,6 +4084,10 @@ end)
 
 refreshPlayerList()
 updateFlingStatus()
+
+-- Enable scrolling after menu initialization (0.1 second delay)
+task.wait(0.1)
+canScroll = true
 
 local menuVisible = true
 local contentVisible = true
