@@ -1178,26 +1178,26 @@ local function refreshPlayerList()
 		if plr ~= player then
 			local playerEntry = Instance.new("Frame")
 			playerEntry.Name = plr.Name .. "Entry"
-			playerEntry.Size = UDim2.new(1, 0, 0, 24)
+			playerEntry.Size = UDim2.new(1, 0, 0, 28)
 			playerEntry.Position = UDim2.new(0, 0, 0, yPosition)
 			playerEntry.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 			playerEntry.BorderSizePixel = 0
 			playerEntry.Parent = playerScrollFrame
 
 			local entryCorner = Instance.new("UICorner")
-			entryCorner.CornerRadius = UDim.new(0, 4)
+			entryCorner.CornerRadius = UDim.new(0, 5)
 			entryCorner.Parent = playerEntry
 
 			local checkbox = Instance.new("TextButton")
-			checkbox.Size = UDim2.new(0, 18, 0, 18)
-			checkbox.Position = UDim2.new(0, 3, 0.5, -9)
+			checkbox.Size = UDim2.new(0, 20, 0, 20)
+			checkbox.Position = UDim2.new(0, 4, 0.5, -10)
 			checkbox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 			checkbox.BorderSizePixel = 0
 			checkbox.Text = ""
 			checkbox.Parent = playerEntry
 
 			local checkboxCorner = Instance.new("UICorner")
-			checkboxCorner.CornerRadius = UDim.new(0, 4)
+			checkboxCorner.CornerRadius = UDim.new(0, 5)
 			checkboxCorner.Parent = checkbox
 
 			local checkmark = Instance.new("TextLabel")
@@ -1206,17 +1206,17 @@ local function refreshPlayerList()
 			checkmark.Text = "✓"
 			checkmark.TextColor3 = Color3.fromRGB(85, 255, 127)
 			checkmark.Font = Enum.Font.SourceSansBold
-			checkmark.TextSize = 14
+			checkmark.TextSize = 16
 			checkmark.Visible = selectedTargets[plr.Name] ~= nil
 			checkmark.Parent = checkbox
 
 			local nameLabel = Instance.new("TextLabel")
-			nameLabel.Size = UDim2.new(1, -28, 1, 0)
-			nameLabel.Position = UDim2.new(0, 26, 0, 0)
+			nameLabel.Size = UDim2.new(1, -30, 1, 0)
+			nameLabel.Position = UDim2.new(0, 28, 0, 0)
 			nameLabel.BackgroundTransparency = 1
 			nameLabel.Text = plr.Name
 			nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-			nameLabel.TextSize = 12
+			nameLabel.TextSize = 14
 			nameLabel.Font = Enum.Font.SourceSansBold
 			nameLabel.TextXAlignment = Enum.TextXAlignment.Left
 			nameLabel.Parent = playerEntry
@@ -1243,7 +1243,7 @@ local function refreshPlayerList()
 				Checkmark = checkmark,
 			}
 
-			yPosition += 28
+			yPosition += 32
 		end
 	end
 
@@ -1733,8 +1733,8 @@ toggleGui.Parent = playerGui
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 280, 0, 160)
-mainFrame.Position = UDim2.new(0.5, -140, 0.5, -80)
+mainFrame.Size = UDim2.new(0, 350, 0, 200)
+mainFrame.Position = UDim2.new(0.5, -175, 0.5, -100)
 mainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -1752,7 +1752,7 @@ mainStroke.Parent = mainFrame
 -- TOP BAR (spans entire width)
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 22)
+topBar.Size = UDim2.new(1, 0, 0, 28)
 topBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 topBar.BorderSizePixel = 0
 topBar.Parent = mainFrame
@@ -1762,33 +1762,33 @@ topCorner.CornerRadius = UDim.new(0, 6)
 topCorner.Parent = topBar
 
 local topFix = Instance.new("Frame")
-topFix.Size = UDim2.new(1, 0, 0, 6)
-topFix.Position = UDim2.new(0, 0, 1, -6)
+topFix.Size = UDim2.new(1, 0, 0, 8)
+topFix.Position = UDim2.new(0, 0, 1, -8)
 topFix.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 topFix.BorderSizePixel = 0
 topFix.Parent = topBar
 
 local titleBar = Instance.new("TextLabel")
 titleBar.Name = "TitleBar"
-titleBar.Size = UDim2.new(1, -66, 1, 0)
-titleBar.Position = UDim2.new(0, 6, 0, 0)
+titleBar.Size = UDim2.new(1, -80, 1, 0)
+titleBar.Position = UDim2.new(0, 8, 0, 0)
 titleBar.BackgroundTransparency = 1
 titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleBar.TextXAlignment = Enum.TextXAlignment.Left
 titleBar.Text = "Adrenalin.win V4.0"
 titleBar.Font = Enum.Font.SourceSansBold
-titleBar.TextSize = 10
+titleBar.TextSize = 13
 titleBar.Parent = topBar
 
 local lockButton = Instance.new("TextButton")
 lockButton.Name = "LockButton"
-lockButton.Size = UDim2.new(0, 18, 0, 18)
-lockButton.Position = UDim2.new(1, -64, 0, 2)
+lockButton.Size = UDim2.new(0, 22, 0, 22)
+lockButton.Position = UDim2.new(1, -78, 0, 3)
 lockButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 lockButton.Text = "L"
 lockButton.Font = Enum.Font.SourceSansBold
-lockButton.TextSize = 10
+lockButton.TextSize = 12
 lockButton.Parent = topBar
 
 local lockCorner = Instance.new("UICorner")
@@ -1797,13 +1797,13 @@ lockCorner.Parent = lockButton
 
 local minimizeButton = Instance.new("TextButton")
 minimizeButton.Name = "MinimizeButton"
-minimizeButton.Size = UDim2.new(0, 18, 0, 18)
-minimizeButton.Position = UDim2.new(1, -40, 0, 2)
+minimizeButton.Size = UDim2.new(0, 22, 0, 22)
+minimizeButton.Position = UDim2.new(1, -50, 0, 3)
 minimizeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeButton.Text = "—"
 minimizeButton.Font = Enum.Font.SourceSansBold
-minimizeButton.TextSize = 11
+minimizeButton.TextSize = 14
 minimizeButton.Parent = topBar
 
 local minCorner = Instance.new("UICorner")
@@ -1812,13 +1812,13 @@ minCorner.Parent = minimizeButton
 
 local closeButton = Instance.new("TextButton")
 closeButton.Name = "CloseButton"
-closeButton.Size = UDim2.new(0, 18, 0, 18)
-closeButton.Position = UDim2.new(1, -18, 0, 2)
+closeButton.Size = UDim2.new(0, 22, 0, 22)
+closeButton.Position = UDim2.new(1, -22, 0, 3)
 closeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeButton.Text = "X"
 closeButton.Font = Enum.Font.SourceSansBold
-closeButton.TextSize = 10
+closeButton.TextSize = 12
 closeButton.Parent = topBar
 
 local closeCorner = Instance.new("UICorner")
@@ -1828,8 +1828,8 @@ closeCorner.Parent = closeButton
 -- LEFT SIDEBAR
 local leftSidebar = Instance.new("Frame")
 leftSidebar.Name = "LeftSidebar"
-leftSidebar.Size = UDim2.new(0, 46, 1, -22)
-leftSidebar.Position = UDim2.new(0, 0, 0, 22)
+leftSidebar.Size = UDim2.new(0, 56, 1, -28)
+leftSidebar.Position = UDim2.new(0, 0, 0, 28)
 leftSidebar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 leftSidebar.BorderSizePixel = 0
 leftSidebar.Parent = mainFrame
@@ -1849,13 +1849,13 @@ sidebarPadding.Parent = leftSidebar
 -- RIGHT CONTENT AREA
 local contentFrame = Instance.new("ScrollingFrame")
 contentFrame.Name = "ContentFrame"
-contentFrame.Position = UDim2.new(0, 52, 0, 28)
-contentFrame.Size = UDim2.new(1, -60, 1, -36)
+contentFrame.Position = UDim2.new(0, 64, 0, 36)
+contentFrame.Size = UDim2.new(1, -72, 1, -44)
 contentFrame.BackgroundTransparency = 1
 contentFrame.BorderSizePixel = 0
 contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-contentFrame.ScrollBarThickness = 3
+contentFrame.ScrollBarThickness = 4
 contentFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
 contentFrame.Parent = mainFrame
 
@@ -1865,8 +1865,8 @@ listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Parent = contentFrame
 
 local padding = Instance.new("UIPadding")
-padding.PaddingLeft = UDim.new(0, 5)
-padding.PaddingRight = UDim.new(0, 5)
+padding.PaddingLeft = UDim.new(0, 6)
+padding.PaddingRight = UDim.new(0, 6)
 padding.PaddingTop = UDim.new(0, 2)
 padding.PaddingBottom = UDim.new(0, 2)
 padding.Parent = contentFrame
@@ -1888,12 +1888,12 @@ local function createCategoryButton(shortName, layoutOrder)
 	
 	local btn = Instance.new("TextButton")
 	btn.Name = fullName .. "CatBtn"
-	btn.Size = UDim2.new(1, 0, 0, 20)
+	btn.Size = UDim2.new(1, 0, 0, 26)
 	btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	btn.TextColor3 = Color3.fromRGB(170, 170, 170)
 	btn.Text = fullName
 	btn.Font = Enum.Font.SourceSansBold
-	btn.TextSize = 7
+	btn.TextSize = 9
 	btn.AutoButtonColor = false
 	if layoutOrder then btn.LayoutOrder = layoutOrder end
 	btn.Parent = leftSidebar
@@ -1947,13 +1947,13 @@ createCategoryButton("Anim", 5)
 
 local function createSection(text, layoutOrder)
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, 0, 0, 18)
-	label.BackgroundTransparency = 1
-	label.TextColor3 = Color3.fromRGB(255, 255, 255)
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Text = text
-	label.Font = Enum.Font.SourceSansBold
-	label.TextSize = 11
+label.Size = UDim2.new(1, 0, 0, 22)
+label.BackgroundTransparency = 1
+label.TextColor3 = Color3.fromRGB(255, 255, 255)
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Text = text
+label.Font = Enum.Font.SourceSansBold
+label.TextSize = 14
 	if layoutOrder then label.LayoutOrder = layoutOrder end
 	label.Parent = contentFrame
 	label:SetAttribute("Category", currentCategory)
@@ -1963,12 +1963,12 @@ end
 local function createButton(name, text, layoutOrder)
 	local btn = Instance.new("TextButton")
 	btn.Name = name
-	btn.Size = UDim2.new(1, 0, 0, 30)
+	btn.Size = UDim2.new(1, 0, 0, 38)
 	btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	btn.Text = text
 	btn.Font = Enum.Font.SourceSansBold
-	btn.TextSize = 11
+	btn.TextSize = 14
 	btn.AutoButtonColor = true
 	if layoutOrder then btn.LayoutOrder = layoutOrder end
 	btn.Parent = contentFrame
@@ -1984,7 +1984,7 @@ end
 local function createDualRow(buttonName, buttonText, placeholder, startValue, layoutOrder)
 	local row = Instance.new("Frame")
 	row.Name = buttonName .. "Row"
-	row.Size = UDim2.new(1, 0, 0, 30)
+	row.Size = UDim2.new(1, 0, 0, 38)
 	row.BackgroundTransparency = 1
 	if layoutOrder then row.LayoutOrder = layoutOrder end
 	row.Parent = contentFrame
@@ -1992,12 +1992,12 @@ local function createDualRow(buttonName, buttonText, placeholder, startValue, la
 
 	local rowButton = Instance.new("TextButton")
 	rowButton.Name = buttonName
-	rowButton.Size = UDim2.new(1, -56, 1, 0)
+	rowButton.Size = UDim2.new(1, -64, 1, 0)
 	rowButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	rowButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	rowButton.Text = buttonText
 	rowButton.Font = Enum.Font.SourceSansBold
-	rowButton.TextSize = 11
+	rowButton.TextSize = 14
 	rowButton.Parent = row
 
 	local rowButtonCorner = Instance.new("UICorner")
@@ -2006,15 +2006,15 @@ local function createDualRow(buttonName, buttonText, placeholder, startValue, la
 
 	local rowBox = Instance.new("TextBox")
 	rowBox.Name = buttonName .. "Input"
-	rowBox.Size = UDim2.new(0, 50, 1, 0)
-	rowBox.Position = UDim2.new(1, -50, 0, 0)
+	rowBox.Size = UDim2.new(0, 58, 1, 0)
+	rowBox.Position = UDim2.new(1, -58, 0, 0)
 	rowBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	rowBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 	rowBox.PlaceholderText = placeholder
 	rowBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
 	rowBox.Text = tostring(startValue)
 	rowBox.Font = Enum.Font.SourceSansBold
-	rowBox.TextSize = 11
+	rowBox.TextSize = 14
 	rowBox.ClearTextOnFocus = false
 	rowBox.Parent = row
 
@@ -3849,20 +3849,20 @@ createSection("Multi Fling", 300)
 
 multiFlingStatusLabel = Instance.new("TextLabel")
 multiFlingStatusLabel.Name = "MultiFlingStatusLabel"
-multiFlingStatusLabel.Size = UDim2.new(1, 0, 0, 18)
+multiFlingStatusLabel.Size = UDim2.new(1, 0, 0, 22)
 multiFlingStatusLabel.BackgroundTransparency = 1
 multiFlingStatusLabel.Text = "Select targets to fling"
 multiFlingStatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 multiFlingStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 multiFlingStatusLabel.Font = Enum.Font.SourceSansBold
-multiFlingStatusLabel.TextSize = 11
+multiFlingStatusLabel.TextSize = 14
 multiFlingStatusLabel.LayoutOrder = 301
 multiFlingStatusLabel.Parent = contentFrame
 multiFlingStatusLabel:SetAttribute("Category", "Utilities")
 
 local multiFlingFrame = Instance.new("Frame")
 multiFlingFrame.Name = "MultiFlingFrame"
-multiFlingFrame.Size = UDim2.new(1, 0, 0, 170)
+multiFlingFrame.Size = UDim2.new(1, 0, 0, 200)
 multiFlingFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 multiFlingFrame.BorderSizePixel = 0
 multiFlingFrame.LayoutOrder = 302
@@ -3870,88 +3870,88 @@ multiFlingFrame.Parent = contentFrame
 multiFlingFrame:SetAttribute("Category", "Utilities")
 
 local multiFlingCorner = Instance.new("UICorner")
-multiFlingCorner.CornerRadius = UDim.new(0, 4)
+multiFlingCorner.CornerRadius = UDim.new(0, 5)
 multiFlingCorner.Parent = multiFlingFrame
 
 playerScrollFrame = Instance.new("ScrollingFrame")
 playerScrollFrame.Name = "PlayerScrollFrame"
-playerScrollFrame.Position = UDim2.new(0, 6, 0, 6)
-playerScrollFrame.Size = UDim2.new(1, -12, 0, 90)
+playerScrollFrame.Position = UDim2.new(0, 8, 0, 8)
+playerScrollFrame.Size = UDim2.new(1, -16, 0, 110)
 playerScrollFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 playerScrollFrame.BorderSizePixel = 0
-playerScrollFrame.ScrollBarThickness = 3
+playerScrollFrame.ScrollBarThickness = 4
 playerScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 playerScrollFrame.Parent = multiFlingFrame
 
 local playerScrollCorner = Instance.new("UICorner")
-playerScrollCorner.CornerRadius = UDim.new(0, 4)
+playerScrollCorner.CornerRadius = UDim.new(0, 5)
 playerScrollCorner.Parent = playerScrollFrame
 
 local playerScrollPadding = Instance.new("UIPadding")
-playerScrollPadding.PaddingLeft = UDim.new(0, 3)
-playerScrollPadding.PaddingRight = UDim.new(0, 3)
-playerScrollPadding.PaddingTop = UDim.new(0, 3)
-playerScrollPadding.PaddingBottom = UDim.new(0, 3)
+playerScrollPadding.PaddingLeft = UDim.new(0, 4)
+playerScrollPadding.PaddingRight = UDim.new(0, 4)
+playerScrollPadding.PaddingTop = UDim.new(0, 4)
+playerScrollPadding.PaddingBottom = UDim.new(0, 4)
 playerScrollPadding.Parent = playerScrollFrame
 
 local startFlingButton = Instance.new("TextButton")
 startFlingButton.Name = "StartFlingButton"
-startFlingButton.Size = UDim2.new(0.5, -10, 0, 28)
-startFlingButton.Position = UDim2.new(0, 6, 0, 104)
+startFlingButton.Size = UDim2.new(0.5, -10, 0, 32)
+startFlingButton.Position = UDim2.new(0, 8, 0, 126)
 startFlingButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 startFlingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 startFlingButton.Text = "START FLING"
 startFlingButton.Font = Enum.Font.SourceSansBold
-startFlingButton.TextSize = 12
+startFlingButton.TextSize = 14
 startFlingButton.Parent = multiFlingFrame
 
 local startFlingCorner = Instance.new("UICorner")
-startFlingCorner.CornerRadius = UDim.new(0, 4)
+startFlingCorner.CornerRadius = UDim.new(0, 5)
 startFlingCorner.Parent = startFlingButton
 
 local stopFlingButton = Instance.new("TextButton")
 stopFlingButton.Name = "StopFlingButton"
-stopFlingButton.Size = UDim2.new(0.5, -10, 0, 28)
-stopFlingButton.Position = UDim2.new(0.5, 4, 0, 104)
+stopFlingButton.Size = UDim2.new(0.5, -10, 0, 32)
+stopFlingButton.Position = UDim2.new(0.5, 4, 0, 126)
 stopFlingButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 stopFlingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 stopFlingButton.Text = "STOP FLING"
 stopFlingButton.Font = Enum.Font.SourceSansBold
-stopFlingButton.TextSize = 12
+stopFlingButton.TextSize = 14
 stopFlingButton.Parent = multiFlingFrame
 
 local stopFlingCorner = Instance.new("UICorner")
-stopFlingCorner.CornerRadius = UDim.new(0, 4)
+stopFlingCorner.CornerRadius = UDim.new(0, 5)
 stopFlingCorner.Parent = stopFlingButton
 
 local selectAllButton = Instance.new("TextButton")
 selectAllButton.Name = "SelectAllButton"
-selectAllButton.Size = UDim2.new(0.5, -10, 0, 24)
-selectAllButton.Position = UDim2.new(0, 6, 0, 140)
+selectAllButton.Size = UDim2.new(0.5, -10, 0, 28)
+selectAllButton.Position = UDim2.new(0, 8, 0, 166)
 selectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 selectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 selectAllButton.Text = "SELECT ALL"
 selectAllButton.Font = Enum.Font.SourceSansBold
-selectAllButton.TextSize = 10
+selectAllButton.TextSize = 12
 selectAllButton.Parent = multiFlingFrame
 
 local selectAllCorner = Instance.new("UICorner")
-selectAllCorner.CornerRadius = UDim.new(0, 4)
+selectAllCorner.CornerRadius = UDim.new(0, 5)
 selectAllCorner.Parent = selectAllButton
 
 local deselectAllButton = Instance.new("TextButton")
 deselectAllButton.Name = "DeselectAllButton"
-deselectAllButton.Size = UDim2.new(0.5, -10, 0, 24)
-deselectAllButton.Position = UDim2.new(0.5, 4, 0, 140)
+deselectAllButton.Size = UDim2.new(0.5, -10, 0, 28)
+deselectAllButton.Position = UDim2.new(0.5, 4, 0, 166)
 deselectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 deselectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 deselectAllButton.Text = "DESELECT ALL"
 deselectAllButton.Font = Enum.Font.SourceSansBold
-deselectAllButton.TextSize = 10
+deselectAllButton.TextSize = 12
 deselectAllButton.Parent = multiFlingFrame
 
 local deselectAllCorner = Instance.new("UICorner")
-deselectAllCorner.CornerRadius = UDim.new(0, 4)
+deselectAllCorner.CornerRadius = UDim.new(0, 5)
 deselectAllCorner.Parent = deselectAllButton
 
 startFlingButton.MouseButton1Click:Connect(startFling)
@@ -3968,14 +3968,14 @@ createSection("Animations", 400)
 
 local animationSearchBox = Instance.new("TextBox")
 animationSearchBox.Name = "AnimationSearchBox"
-animationSearchBox.Size = UDim2.new(1, 0, 0, 30)
+animationSearchBox.Size = UDim2.new(1, 0, 0, 36)
 animationSearchBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 animationSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 animationSearchBox.PlaceholderText = "Search"
 animationSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
 animationSearchBox.Text = ""
 animationSearchBox.Font = Enum.Font.SourceSansBold
-animationSearchBox.TextSize = 11
+animationSearchBox.TextSize = 14
 animationSearchBox.ClearTextOnFocus = false
 animationSearchBox.LayoutOrder = 401
 animationSearchBox.Parent = contentFrame
@@ -3991,7 +3991,7 @@ for index = 1, #animationButtons, 2 do
 	local animationName = animationButtons[index + 1]
 	local animationRow = Instance.new("Frame")
 	animationRow.Name = "AnimRow_" .. animationName:gsub("%W", "")
-	animationRow.Size = UDim2.new(1, 0, 0, 30)
+	animationRow.Size = UDim2.new(1, 0, 0, 36)
 	animationRow.BackgroundTransparency = 1
 	animationRow.LayoutOrder = animLayoutOrder
 	animationRow.Parent = contentFrame
@@ -4000,12 +4000,12 @@ for index = 1, #animationButtons, 2 do
 
 	local animationButton = Instance.new("TextButton")
 	animationButton.Name = "AnimButton_" .. animationName:gsub("%W", "")
-	animationButton.Size = UDim2.new(1, -74, 1, 0)
+	animationButton.Size = UDim2.new(1, -84, 1, 0)
 	animationButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	animationButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	animationButton.Text = animationName
 	animationButton.Font = Enum.Font.SourceSansBold
-	animationButton.TextSize = 11
+	animationButton.TextSize = 14
 	animationButton.Parent = animationRow
 
 	local animationButtonCorner = Instance.new("UICorner")
@@ -4014,15 +4014,15 @@ for index = 1, #animationButtons, 2 do
 
 	local speedBox = Instance.new("TextBox")
 	speedBox.Name = "AnimSpeed_" .. animationName:gsub("%W", "")
-	speedBox.Size = UDim2.new(0, 68, 1, 0)
-	speedBox.Position = UDim2.new(1, -68, 0, 0)
+	speedBox.Size = UDim2.new(0, 78, 1, 0)
+	speedBox.Position = UDim2.new(1, -78, 0, 0)
 	speedBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	speedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 	speedBox.PlaceholderText = "Speed"
 	speedBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
 	speedBox.Text = "1"
 	speedBox.Font = Enum.Font.SourceSansBold
-	speedBox.TextSize = 11
+	speedBox.TextSize = 14
 	speedBox.ClearTextOnFocus = false
 	speedBox.Parent = animationRow
 
@@ -4075,7 +4075,7 @@ minimizeButton.MouseButton1Click:Connect(function()
 	contentVisible = not contentVisible
 	contentFrame.Visible = contentVisible
 	leftSidebar.Visible = contentVisible
-	mainFrame.Size = contentVisible and UDim2.new(0, 280, 0, 160) or UDim2.new(0, 280, 0, 22)
+	mainFrame.Size = contentVisible and UDim2.new(0, 350, 0, 200) or UDim2.new(0, 350, 0, 28)
 	minimizeButton.Text = contentVisible and "—" or "+"
 end)
 
@@ -4092,8 +4092,8 @@ end)
 
 local toggleButton = Instance.new("Frame")
 toggleButton.Name = "ToggleButton"
-toggleButton.Size = UDim2.new(0, 50, 0, 50)
-toggleButton.Position = UDim2.new(0.5, -25, 0.5, 85)
+toggleButton.Size = UDim2.new(0, 56, 0, 56)
+toggleButton.Position = UDim2.new(0.5, -28, 0.5, 105)
 toggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 toggleButton.Active = true
 toggleButton.Parent = toggleGui
@@ -4116,7 +4116,7 @@ toggleText.BackgroundTransparency = 1
 toggleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleText.Text = "WIN-X"
 toggleText.Font = Enum.Font.SourceSansBold
-toggleText.TextSize = 14
+toggleText.TextSize = 16
 toggleText.Parent = toggleButton
 
 local toggleClickButton = Instance.new("TextButton")
