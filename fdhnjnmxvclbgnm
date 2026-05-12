@@ -513,8 +513,8 @@ function espGetOrMakeBillboard(character)
 	billboard.Name = ESP_BB_TAG
 	billboard.Adornee = head
 	billboard.AlwaysOnTop = true
-	billboard.Size = UDim2.new(0, 150, 0, 30)
-	billboard.StudsOffset = Vector3.new(0, 2.2, 0)
+	billboard.Size = UDim2.new(0, 200, 0, 40)
+	billboard.StudsOffset = Vector3.new(0, 2.6, 0)
 	billboard.ResetOnSpawn = false
 	billboard.Parent = head
 	local nameLabel = Instance.new("TextLabel")
@@ -523,7 +523,7 @@ function espGetOrMakeBillboard(character)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Text = ""
 	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextSize = 10
+	nameLabel.TextSize = 13
 	nameLabel.TextColor3 = ESP_DEFAULT_COLOR
 	nameLabel.TextStrokeTransparency = 1
 	nameLabel.TextScaled = false
@@ -535,7 +535,7 @@ function espGetOrMakeBillboard(character)
 	distLabel.BackgroundTransparency = 1
 	distLabel.Text = ""
 	distLabel.Font = Enum.Font.Gotham
-	distLabel.TextSize = 9
+	distLabel.TextSize = 11
 	distLabel.TextColor3 = ESP_DEFAULT_COLOR
 	distLabel.TextStrokeTransparency = 1
 	distLabel.TextScaled = false
@@ -585,8 +585,8 @@ function espCreateGunBillboard(gunDrop)
 	billboard.Name = ESP_GUN_BB_TAG
 	billboard.Adornee = adornee
 	billboard.AlwaysOnTop = true
-	billboard.Size = UDim2.new(0, 150, 0, 30)
-	billboard.StudsOffset = Vector3.new(0, 1.8, 0)
+	billboard.Size = UDim2.new(0, 200, 0, 40)
+	billboard.StudsOffset = Vector3.new(0, 2, 0)
 	billboard.ResetOnSpawn = false
 	billboard.Parent = adornee
 	local nameLabel = Instance.new("TextLabel")
@@ -595,7 +595,7 @@ function espCreateGunBillboard(gunDrop)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Text = "GUN DROP"
 	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextSize = 11
+	nameLabel.TextSize = 14
 	nameLabel.TextColor3 = ESP_GUN_COLOR
 	nameLabel.TextStrokeTransparency = 0.5
 	nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
@@ -608,7 +608,7 @@ function espCreateGunBillboard(gunDrop)
 	distLabel.BackgroundTransparency = 1
 	distLabel.Text = ""
 	distLabel.Font = Enum.Font.Gotham
-	distLabel.TextSize = 9
+	distLabel.TextSize = 11
 	distLabel.TextColor3 = ESP_GUN_COLOR
 	distLabel.TextStrokeTransparency = 0.5
 	distLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
@@ -1012,6 +1012,7 @@ local linkedAirStrafeStart
 local linkedTouchStart
 
 -- Lock drag variables
+local isFrameLocked = false
 local isAirStrafeLocked = false
 local isTouchFlingLocked = false
 
@@ -1116,12 +1117,12 @@ getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
 -- Animation variables
 local animationButtons = {
-	79480770273758, "Anti-Aim", 77094699387328, "Glitch Spin", 121966805049108, "Hit the Griddy", 79757971761739, "Shattered",
-	83265734904502, "Take the L", 115518346414107, "Gangnam Style", 114400428765989, "180 flip", 92249489340640, "Dahood Stomp",
-	121368513461476, "Six Seven dance", 110146282544198, "Organe Justice", 10714340543, "The Floss",
+	79480770273758, "Anti-Aim", 77094699387328, "Glitch Spin", 83265734904502, "Take the L", 92249489340640, "Dahood Stomp",
+	121368513461476, "Six Seven dance", 120852662885277, "Six Seven emote", 92618727772186, "IShowSpeed Dance", 137430722819744, "Man Squat",
+	98974619620224, "Laugh Ragebait", 127118661424463, "Caramell Dance", 124522818196151, "Head Spin",
 	77984841414450, "Deltarune dance or smthn", 109873544976020, "Biblically Accurate Emote", 90333292347820, "The Worm",
-	88130117312312, "Fake Death", 120852662885277, "Six Seven emote", 98974619620224, "Laugh Ragebait",
-	108747312576405, "And I turn into a convertable. Les goooo", 93014787120483, "Garry's Dance", 92618727772186, "IShowSpeed Dance",
+	121966805049108, "Hit the Griddy", 115518346414107, "Gangnam Style", 110146282544198, "Orange Justice",
+	108747312576405, "Les goooo", 93014787120483, "Garry's Dance",
 	99499783161907, "Aura farm", 80177289449617, "Snow angel", 70432904702322, "Get skinwalked", 123916423751437, "Rat Dance",
 	129537633250603, "It's Peanut Butter Jelly Time"
 }
@@ -1503,50 +1504,95 @@ local function onCharacterAdded(char)
 	-- Ничего дополнительного не нужно, ESP уже подписан на CharacterAdded
 
 	humanoid.Died:Connect(function()
+		-- Отключаем Desync
+		PastedSources = false
+		if desyncButton then
+			desyncButton.Text = "Desync: OFF"
+			desyncButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+			desyncButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		end
+
+		-- Отключаем Wallhop
 		wallhopToggle = false
 		if button2 then
 			button2.Text = "Wallhop: OFF"
 			button2.TextColor3 = Color3.fromRGB(255, 255, 255)
+			button2.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		end
-running = false
-currentMode = 0
-updateAntiAimButtonVisual()
+
+		-- Отключаем Anti-Aim
+		running = false
+		currentMode = 0
+		updateAntiAimButtonVisual()
+
+		-- Отключаем Infinite Jump
+		isEnabled = false
+		if button1 then
+			button1.Text = "Infinite Jump: OFF"
+			button1.TextColor3 = Color3.fromRGB(255, 255, 255)
+			button1.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		end
+
+		-- Отключаем Invisibility
+		invis_on = false
+		if button5 then
+			button5.Text = "Invisibility: OFF"
+			button5.TextColor3 = Color3.fromRGB(255, 255, 255)
+			button5.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		end
+
+		-- Отключаем Clumsy
+		clumsy_on = false
+		if clumsyButton then
+			clumsyButton.Text = "Clumsy: OFF"
+			clumsyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+			clumsyButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		end
+
+		-- ==== НЕ отключаем Speed Glitch - сохраняем его состояние ====
+		-- fakeSpeedEnabled остаётся как было
+		-- При новом персонаже будет переподключен в onCharacterAdded
+
+		-- Отключаем Noclip
 		noclipEnabled = false
 		if noclipButton then
 			noclipButton.Text = "Noclip: OFF"
 			noclipButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+			noclipButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		end
-		if secondLifeEnabled then
-	disableSecondLife()
-	if secondLifeButton then
-		secondLifeButton.Text = "Second Life: OFF"
-		secondLifeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	end
-end
 		if noclipConnection then
 			noclipConnection:Disconnect()
 			noclipConnection = nil
 		end
+
+		-- Отключаем KillAura
 		reachEnabled = false
 		if reachButton then
 			reachButton.Text = "KillAura: OFF"
 			reachButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+			reachButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		end
 		if reachConnection then
 			reachConnection:Disconnect()
 			reachConnection = nil
 		end
-		fakeSpeedEnabled = false
-		if button4 then
-			button4.Text = "Speed Glitch: OFF"
-			button4.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+		-- Отключаем Second Life
+		if secondLifeEnabled then
+			disableSecondLife()
+			if secondLifeButton then
+				secondLifeButton.Text = "Second Life: OFF"
+				secondLifeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+				secondLifeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			end
 		end
-		if fakeSpeedRenderConnection then fakeSpeedRenderConnection:Disconnect() fakeSpeedRenderConnection = nil end
-		if fakeSpeedDiedConnection then fakeSpeedDiedConnection:Disconnect() fakeSpeedDiedConnection = nil end
+
+		-- Отключаем Touch Fling
 		hiddenfling = false
 		if touchFlingButton then
 			touchFlingButton.Text = "Touch Fling: OFF"
 			touchFlingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+			touchFlingButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		end
 
 		-- Anti-Fling: НЕ отключаем, только disconnect старый connection (персонаж умер)
@@ -1565,27 +1611,9 @@ end
 		-- Anti-Void: НЕ отключаем — Anti-Void сам обрабатывает CharacterAdded
 		-- Кнопку НЕ трогаем
 
-		clumsy_on = false
-		if clumsyButton then
-			clumsyButton.Text = "Clumsy: OFF"
-			clumsyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-		end
-
 		stopFling()
 		stopCurrentAnimation()
 		isAlive = false
-		PastedSources = false
-		if desyncButton then
-			desyncButton.Text = "Desync: OFF"
-			desyncButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-		end
-
-		-- Invis off
-		invis_on = false
-		if button5 then
-			button5.Text = "Invisibility: OFF"
-			button5.TextColor3 = Color3.fromRGB(255, 255, 255)
-		end
 	end)
 end
 
@@ -1705,8 +1733,8 @@ toggleGui.Parent = playerGui
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 250, 0, 140)
-mainFrame.Position = UDim2.new(0.5, -95, 0.5, -160)
+mainFrame.Size = UDim2.new(0, 280, 0, 160)
+mainFrame.Position = UDim2.new(0.5, -140, 0.5, -80)
 mainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -1724,7 +1752,7 @@ mainStroke.Parent = mainFrame
 -- TOP BAR (spans entire width)
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 20)
+topBar.Size = UDim2.new(1, 0, 0, 22)
 topBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 topBar.BorderSizePixel = 0
 topBar.Parent = mainFrame
@@ -1734,33 +1762,33 @@ topCorner.CornerRadius = UDim.new(0, 6)
 topCorner.Parent = topBar
 
 local topFix = Instance.new("Frame")
-topFix.Size = UDim2.new(1, 0, 0, 8)
-topFix.Position = UDim2.new(0, 0, 1, -8)
+topFix.Size = UDim2.new(1, 0, 0, 6)
+topFix.Position = UDim2.new(0, 0, 1, -6)
 topFix.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 topFix.BorderSizePixel = 0
 topFix.Parent = topBar
 
 local titleBar = Instance.new("TextLabel")
 titleBar.Name = "TitleBar"
-titleBar.Size = UDim2.new(1, -60, 1, 0)
+titleBar.Size = UDim2.new(1, -66, 1, 0)
 titleBar.Position = UDim2.new(0, 6, 0, 0)
 titleBar.BackgroundTransparency = 1
 titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleBar.TextXAlignment = Enum.TextXAlignment.Left
 titleBar.Text = "Adrenalin.win V4.0"
 titleBar.Font = Enum.Font.SourceSansBold
-titleBar.TextSize = 9
+titleBar.TextSize = 10
 titleBar.Parent = topBar
 
 local lockButton = Instance.new("TextButton")
 lockButton.Name = "LockButton"
-lockButton.Size = UDim2.new(0, 16, 0, 16)
-lockButton.Position = UDim2.new(1, -56, 0, 2)
+lockButton.Size = UDim2.new(0, 18, 0, 18)
+lockButton.Position = UDim2.new(1, -64, 0, 2)
 lockButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 lockButton.Text = "L"
 lockButton.Font = Enum.Font.SourceSansBold
-lockButton.TextSize = 9
+lockButton.TextSize = 10
 lockButton.Parent = topBar
 
 local lockCorner = Instance.new("UICorner")
@@ -1769,13 +1797,13 @@ lockCorner.Parent = lockButton
 
 local minimizeButton = Instance.new("TextButton")
 minimizeButton.Name = "MinimizeButton"
-minimizeButton.Size = UDim2.new(0, 16, 0, 16)
-minimizeButton.Position = UDim2.new(1, -36, 0, 2)
+minimizeButton.Size = UDim2.new(0, 18, 0, 18)
+minimizeButton.Position = UDim2.new(1, -40, 0, 2)
 minimizeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeButton.Text = "—"
 minimizeButton.Font = Enum.Font.SourceSansBold
-minimizeButton.TextSize = 10
+minimizeButton.TextSize = 11
 minimizeButton.Parent = topBar
 
 local minCorner = Instance.new("UICorner")
@@ -1784,13 +1812,13 @@ minCorner.Parent = minimizeButton
 
 local closeButton = Instance.new("TextButton")
 closeButton.Name = "CloseButton"
-closeButton.Size = UDim2.new(0, 16, 0, 16)
-closeButton.Position = UDim2.new(1, -16, 0, 2)
+closeButton.Size = UDim2.new(0, 18, 0, 18)
+closeButton.Position = UDim2.new(1, -18, 0, 2)
 closeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeButton.Text = "X"
 closeButton.Font = Enum.Font.SourceSansBold
-closeButton.TextSize = 9
+closeButton.TextSize = 10
 closeButton.Parent = topBar
 
 local closeCorner = Instance.new("UICorner")
@@ -1800,8 +1828,8 @@ closeCorner.Parent = closeButton
 -- LEFT SIDEBAR
 local leftSidebar = Instance.new("Frame")
 leftSidebar.Name = "LeftSidebar"
-leftSidebar.Size = UDim2.new(0, 42, 1, -20)
-leftSidebar.Position = UDim2.new(0, 0, 0, 20)
+leftSidebar.Size = UDim2.new(0, 46, 1, -22)
+leftSidebar.Position = UDim2.new(0, 0, 0, 22)
 leftSidebar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 leftSidebar.BorderSizePixel = 0
 leftSidebar.Parent = mainFrame
@@ -1821,26 +1849,26 @@ sidebarPadding.Parent = leftSidebar
 -- RIGHT CONTENT AREA
 local contentFrame = Instance.new("ScrollingFrame")
 contentFrame.Name = "ContentFrame"
-contentFrame.Position = UDim2.new(0, 48, 0, 26)
-contentFrame.Size = UDim2.new(1, -56, 1, -34)
+contentFrame.Position = UDim2.new(0, 52, 0, 28)
+contentFrame.Size = UDim2.new(1, -60, 1, -36)
 contentFrame.BackgroundTransparency = 1
 contentFrame.BorderSizePixel = 0
 contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-contentFrame.ScrollBarThickness = 2
+contentFrame.ScrollBarThickness = 3
 contentFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
 contentFrame.Parent = mainFrame
 
 local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0, 5)
+listLayout.Padding = UDim.new(0, 6)
 listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Parent = contentFrame
 
 local padding = Instance.new("UIPadding")
-padding.PaddingLeft = UDim.new(0, 3)
-padding.PaddingRight = UDim.new(0, 3)
-padding.PaddingTop = UDim.new(0, 1)
-padding.PaddingBottom = UDim.new(0, 1)
+padding.PaddingLeft = UDim.new(0, 5)
+padding.PaddingRight = UDim.new(0, 5)
+padding.PaddingTop = UDim.new(0, 2)
+padding.PaddingBottom = UDim.new(0, 2)
 padding.Parent = contentFrame
 
 -- Category management system
@@ -1860,12 +1888,12 @@ local function createCategoryButton(shortName, layoutOrder)
 	
 	local btn = Instance.new("TextButton")
 	btn.Name = fullName .. "CatBtn"
-	btn.Size = UDim2.new(1, 0, 0, 18)
+	btn.Size = UDim2.new(1, 0, 0, 20)
 	btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	btn.TextColor3 = Color3.fromRGB(170, 170, 170)
 	btn.Text = fullName
 	btn.Font = Enum.Font.SourceSansBold
-	btn.TextSize = 6
+	btn.TextSize = 7
 	btn.AutoButtonColor = false
 	if layoutOrder then btn.LayoutOrder = layoutOrder end
 	btn.Parent = leftSidebar
@@ -2009,6 +2037,28 @@ local function setToggleState(btn, state, onText, offText)
 	end
 end
 
+-- Система биндинга клавиш
+local keyBinds = {
+	-- Формат: [KeyCode.KeyName] = {callback, description}
+}
+
+local function registerKeyBind(keyCode, callback, description)
+	if not keyBinds then keyBinds = {} end
+	keyBinds[keyCode] = {callback = callback, description = description}
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if not keyBinds then return end
+	
+	if keyBinds[input.KeyCode] then
+		local bindData = keyBinds[input.KeyCode]
+		if bindData.callback then
+			bindData.callback()
+		end
+	end
+end)
+
 -- ============================================
 -- SECTION 1: Movement (LayoutOrder 100-199)
 -- ============================================
@@ -2049,6 +2099,18 @@ ui.jumpBoostInput.FocusLost:Connect(function()
 		ui.jumpBoostInput.Text = tostring(JUMP_BOOST_POWER)
 	end
 end)
+
+-- Регистрируем бинд для Jump Boost на клавишу ]
+registerKeyBind(Enum.KeyCode.RightBracket, function()
+	local char = player.Character
+	if char and char:FindFirstChild("Humanoid") then
+		char.Humanoid.JumpPower = JUMP_BOOST_POWER
+		task.wait(0.7)
+		if char and char:FindFirstChild("Humanoid") then
+			char.Humanoid.JumpPower = 50
+		end
+	end
+end, "Jump Boost")
 
 button4, speedInputBox = createDualRow("SpeedButton", "Speed Glitch: OFF", "Speed", FAKE_SPEED_CFRAME_SPEED, 104)
 button4.MouseButton1Click:Connect(function()
@@ -3006,7 +3068,7 @@ end)
 
 btn.tradeHelper = createButton("TradeHelperButton", "Trade Helper", 116)
 btn.tradeHelper.MouseButton1Click:Connect(function()
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/zxcgfbhrefgdfsdfg/refs/heads/main/asrdgfdsg"))()
+	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/zxcvbnqwerhjhasdf/refs/heads/main/jgfdjkasjlkdflkj"))()
 end)
 
 -- Auto Delete Corpses
@@ -3242,11 +3304,12 @@ function gameNotifSend(title, text, color, strokeColor)
 		notifGui.Parent = player.PlayerGui
 	end
 
+	-- Считаем сколько уведомлений уже на экране
 	local slotIndex = #gameNotifActiveNotifs
 
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 260, 0, 0)
-	frame.Position = UDim2.new(1, -270, 1, -10 - (slotIndex * 70))
+	frame.Size = UDim2.new(0, 340, 0, 0)
+	frame.Position = UDim2.new(1, -350, 1, -10 - (slotIndex * 90))
 	frame.AnchorPoint = Vector2.new(0, 1)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	frame.BorderSizePixel = 0
@@ -3254,7 +3317,7 @@ function gameNotifSend(title, text, color, strokeColor)
 	frame.Parent = notifGui
 
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
+	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = frame
 
 	local stroke = Instance.new("UIStroke")
@@ -3263,24 +3326,24 @@ function gameNotifSend(title, text, color, strokeColor)
 	stroke.Parent = frame
 
 	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Size = UDim2.new(1, -16, 0, 18)
-	titleLabel.Position = UDim2.new(0, 8, 0, 8)
+	titleLabel.Size = UDim2.new(1, -20, 0, 24)
+	titleLabel.Position = UDim2.new(0, 10, 0, 10)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title or ""
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 12
+	titleLabel.TextSize = 15
 	titleLabel.TextColor3 = color or Color3.fromRGB(255, 255, 255)
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.TextScaled = false
 	titleLabel.Parent = frame
 
 	local textLabel = Instance.new("TextLabel")
-	textLabel.Size = UDim2.new(1, -16, 0, 32)
-	textLabel.Position = UDim2.new(0, 8, 0, 26)
+	textLabel.Size = UDim2.new(1, -20, 0, 40)
+	textLabel.Position = UDim2.new(0, 10, 0, 32)
 	textLabel.BackgroundTransparency = 1
 	textLabel.Text = text or ""
 	textLabel.Font = Enum.Font.Gotham
-	textLabel.TextSize = 11
+	textLabel.TextSize = 14
 	textLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 	textLabel.TextXAlignment = Enum.TextXAlignment.Left
 	textLabel.TextWrapped = true
@@ -3292,12 +3355,13 @@ function gameNotifSend(title, text, color, strokeColor)
 
 	-- Анимация появления
 	TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = UDim2.new(0, 260, 0, 60)
+		Size = UDim2.new(0, 340, 0, 80)
 	}):Play()
 
+	-- Исчезновение через 4 секунды
 	task.delay(4, function()
 		local fadeOut = TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-			Size = UDim2.new(0, 260, 0, 0)
+			Size = UDim2.new(0, 340, 0, 0)
 		})
 		fadeOut:Play()
 		fadeOut.Completed:Wait()
@@ -3318,7 +3382,7 @@ end
 
 function gameNotifRepositionAll()
 	for i, frame in ipairs(gameNotifActiveNotifs) do
-		local targetPos = UDim2.new(1, -270, 1, -10 - ((i - 1) * 70))
+		local targetPos = UDim2.new(1, -350, 1, -10 - ((i - 1) * 90))
 		TweenService:Create(frame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Position = targetPos
 		}):Play()
@@ -3340,8 +3404,8 @@ function gameNotifSendRound(murdererName, sheriffName)
 	local slotIndex = #gameNotifActiveNotifs
 
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 260, 0, 0)
-	frame.Position = UDim2.new(1, -270, 1, -10 - (slotIndex * 70))
+	frame.Size = UDim2.new(0, 340, 0, 0)
+	frame.Position = UDim2.new(1, -350, 1, -10 - (slotIndex * 90))
 	frame.AnchorPoint = Vector2.new(0, 1)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	frame.BorderSizePixel = 0
@@ -3349,7 +3413,7 @@ function gameNotifSendRound(murdererName, sheriffName)
 	frame.Parent = notifGui
 
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
+	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = frame
 
 	local stroke = Instance.new("UIStroke")
@@ -3358,34 +3422,36 @@ function gameNotifSendRound(murdererName, sheriffName)
 	stroke.Parent = frame
 
 	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Size = UDim2.new(1, -16, 0, 18)
-	titleLabel.Position = UDim2.new(0, 8, 0, 6)
+	titleLabel.Size = UDim2.new(1, -20, 0, 24)
+	titleLabel.Position = UDim2.new(0, 10, 0, 8)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = "⚔️ Round Started"
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 12
+	titleLabel.TextSize = 15
 	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = frame
 
+	-- Murderer строка
 	local murdererLabel = Instance.new("TextLabel")
-	murdererLabel.Size = UDim2.new(1, -16, 0, 14)
-	murdererLabel.Position = UDim2.new(0, 8, 0, 26)
+	murdererLabel.Size = UDim2.new(1, -20, 0, 18)
+	murdererLabel.Position = UDim2.new(0, 10, 0, 34)
 	murdererLabel.BackgroundTransparency = 1
 	murdererLabel.Text = "Murderer: " .. murdererName
 	murdererLabel.Font = Enum.Font.GothamBold
-	murdererLabel.TextSize = 10
+	murdererLabel.TextSize = 13
 	murdererLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
 	murdererLabel.TextXAlignment = Enum.TextXAlignment.Left
 	murdererLabel.Parent = frame
 
+	-- Sheriff строка
 	local sheriffLabel = Instance.new("TextLabel")
-	sheriffLabel.Size = UDim2.new(1, -16, 0, 14)
-	sheriffLabel.Position = UDim2.new(0, 8, 0, 42)
+	sheriffLabel.Size = UDim2.new(1, -20, 0, 18)
+	sheriffLabel.Position = UDim2.new(0, 10, 0, 54)
 	sheriffLabel.BackgroundTransparency = 1
 	sheriffLabel.Text = "Sheriff: " .. sheriffName
 	sheriffLabel.Font = Enum.Font.GothamBold
-	sheriffLabel.TextSize = 10
+	sheriffLabel.TextSize = 13
 	sheriffLabel.TextColor3 = Color3.fromRGB(0, 0, 255)
 	sheriffLabel.TextXAlignment = Enum.TextXAlignment.Left
 	sheriffLabel.Parent = frame
@@ -3393,12 +3459,12 @@ function gameNotifSendRound(murdererName, sheriffName)
 	table.insert(gameNotifActiveNotifs, frame)
 
 	TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = UDim2.new(0, 260, 0, 60)
+		Size = UDim2.new(0, 340, 0, 80)
 	}):Play()
 
 	task.delay(4, function()
 		local fadeOut = TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-			Size = UDim2.new(0, 260, 0, 0)
+			Size = UDim2.new(0, 340, 0, 0)
 		})
 		fadeOut:Play()
 		fadeOut.Completed:Wait()
@@ -3585,15 +3651,15 @@ function createClumsyGhost(position)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "GhostLabel"
 	billboard.AlwaysOnTop = true
-	billboard.Size = UDim2.new(0, 120, 0, 24)
-	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.Size = UDim2.new(0, 150, 0, 30)
+	billboard.StudsOffset = Vector3.new(0, 3.5, 0)
 
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(1, 0, 1, 0)
 	label.BackgroundTransparency = 1
 	label.Text = "Server Position"
 	label.Font = Enum.Font.GothamBold
-	label.TextSize = 11
+	label.TextSize = 14
 	label.TextColor3 = Color3.fromRGB(150, 0, 255)
 	label.TextStrokeTransparency = 0.5
 	label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
@@ -4009,7 +4075,7 @@ minimizeButton.MouseButton1Click:Connect(function()
 	contentVisible = not contentVisible
 	contentFrame.Visible = contentVisible
 	leftSidebar.Visible = contentVisible
-	mainFrame.Size = contentVisible and UDim2.new(0, 250, 0, 140) or UDim2.new(0, 250, 0, 24)
+	mainFrame.Size = contentVisible and UDim2.new(0, 280, 0, 160) or UDim2.new(0, 280, 0, 22)
 	minimizeButton.Text = contentVisible and "—" or "+"
 end)
 
@@ -4027,7 +4093,7 @@ end)
 local toggleButton = Instance.new("Frame")
 toggleButton.Name = "ToggleButton"
 toggleButton.Size = UDim2.new(0, 50, 0, 50)
-toggleButton.Position = UDim2.new(0.5, -70, 0.5, -70)
+toggleButton.Position = UDim2.new(0.5, -25, 0.5, 85)
 toggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 toggleButton.Active = true
 toggleButton.Parent = toggleGui
