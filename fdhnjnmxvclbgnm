@@ -1750,11 +1750,15 @@ end))
 mainGui = Instance.new("ScreenGui")
 mainGui.Name = "AdrenalinXGui"
 mainGui.ResetOnSpawn = false
+mainGui.DisplayOrder = 999999
+mainGui.IgnoreGuiInset = true
 mainGui.Parent = playerGui
 
 toggleGui = Instance.new("ScreenGui")
 toggleGui.Name = "AdrenalinXToggleGui"
 toggleGui.ResetOnSpawn = false
+toggleGui.DisplayOrder = 999999
+toggleGui.IgnoreGuiInset = true
 toggleGui.Parent = playerGui
 
 mainFrame = Instance.new("Frame")
@@ -3483,7 +3487,8 @@ function gameNotifSend(title, text, color, strokeColor)
 		notifGui = Instance.new("ScreenGui")
 		notifGui.Name = "GameNotifGui"
 		notifGui.ResetOnSpawn = false
-		notifGui.DisplayOrder = 100
+		notifGui.DisplayOrder = 999999
+		notifGui.IgnoreGuiInset = true
 		notifGui.Parent = player.PlayerGui
 	end
 
@@ -3580,7 +3585,8 @@ function gameNotifSendRound(murdererName, sheriffName)
 		notifGui = Instance.new("ScreenGui")
 		notifGui.Name = "GameNotifGui"
 		notifGui.ResetOnSpawn = false
-		notifGui.DisplayOrder = 100
+		notifGui.DisplayOrder = 999999
+		notifGui.IgnoreGuiInset = true
 		notifGui.Parent = player.PlayerGui
 	end
 
@@ -4571,6 +4577,8 @@ local function createTeamerPlayerButton(plr)
 		local popupGui = Instance.new("ScreenGui")
 		popupGui.Name = "TeamerPopupGui"
 		popupGui.ResetOnSpawn = false
+		popupGui.DisplayOrder = 999999
+		popupGui.IgnoreGuiInset = true
 		popupGui.Parent = playerGui
 
 		local popup = Instance.new("Frame")
@@ -5031,6 +5039,8 @@ local extractedButtons = {}
 local popupBtnGui = Instance.new("ScreenGui")
 popupBtnGui.Name = "AdrenalinPopupBtns"
 popupBtnGui.ResetOnSpawn = false
+popupBtnGui.DisplayOrder = 999999
+popupBtnGui.IgnoreGuiInset = true
 popupBtnGui.Parent = playerGui
 
 local function setExtractedBtnState(name, state)
@@ -5171,7 +5181,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 
 		local popupBtn = Instance.new("TextButton")
 		popupBtn.Size = UDim2.new(0, 200, 0, 38)
-		popupBtn.Position = UDim2.new(0.5, -100, 0.5, 180)
+		popupBtn.Position = UDim2.new(0.5, -100, 0.5, 72)
 		popupBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		popupBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		popupBtn.Text = feature.name
@@ -5189,7 +5199,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			popupBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
 		end
 
-		-- Drag protection: only fire toggle if mouse didn't move
+		-- Drag protection: only fire toggle if touch/mouse didn't move
 		local popupDragging = false
 		local popupDidMove = false
 		local popupDragStart
@@ -5197,7 +5207,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		local POPUP_DRAG_THRESHOLD = 5
 
 		popupBtn.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				popupDragging = true
 				popupDidMove = false
 				popupDragStart = input.Position
@@ -5205,14 +5215,8 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			end
 		end)
 
-		popupBtn.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement then
-				popupDragInput = input
-			end
-		end)
-
-		local popupDragConn = UserInputService.InputChanged:Connect(function(input)
-			if input == popupDragInput and popupDragging then
+		local function updatePopupDrag(input)
+			if popupDragging and input == popupDragInput then
 				local delta = input.Position - popupDragStart
 				if delta.Magnitude >= POPUP_DRAG_THRESHOLD then
 					popupDidMove = true
@@ -5221,10 +5225,20 @@ for bindOrder, feature in ipairs(btnFeatures) do
 					popupBtn.Position = UDim2.new(popupBtnStartPos.X.Scale, popupBtnStartPos.X.Offset + delta.X, popupBtnStartPos.Y.Scale, popupBtnStartPos.Y.Offset + delta.Y)
 				end
 			end
+		end
+
+		popupBtn.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+				popupDragInput = input
+			end
+		end)
+
+		local popupDragConn = UserInputService.InputChanged:Connect(function(input)
+			updatePopupDrag(input)
 		end)
 
 		popupBtn.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				if popupDragging and not popupDidMove then
 					feature.toggle()
 				end
@@ -5354,24 +5368,13 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 local DRAG_THRESHOLD = 5
+local toggleDragging = false
+local toggleDidMove = false
+local toggleDragStart = nil
+local toggleStartPos = nil
 
-toggleClickButton.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		toggleDragging = true
-		toggleDidMove = false
-		toggleDragStart = input.Position
-		toggleStartPos = toggleButton.Position
-	end
-end)
-
-toggleClickButton.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-		toggleDragInput = input
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if input == toggleDragInput and toggleDragging then
+local function getToggleDragPos(input)
+	if toggleDragging and toggleDragStart and toggleStartPos then
 		local delta = input.Position - toggleDragStart
 		if delta.Magnitude >= DRAG_THRESHOLD then
 			toggleDidMove = true
@@ -5385,11 +5388,35 @@ UserInputService.InputChanged:Connect(function(input)
 			)
 		end
 	end
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+	if not toggleButton or not toggleButton.Parent then return end
+	if toggleDragging then return end
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+	local absPos = toggleButton.AbsolutePosition
+	local absSize = toggleButton.AbsoluteSize
+	local inputPos = input.Position
+
+	if inputPos.X >= absPos.X and inputPos.X <= absPos.X + absSize.X
+		and inputPos.Y >= absPos.Y and inputPos.Y <= absPos.Y + absSize.Y then
+		toggleDragging = true
+		toggleDidMove = false
+		toggleDragStart = input.Position
+		toggleStartPos = toggleButton.Position
+	end
 end)
 
-toggleClickButton.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		if toggleDragging and not toggleDidMove then
+UserInputService.InputChanged:Connect(function(input)
+	-- Handle toggle (WIN-X) button drag
+	getToggleDragPos(input)
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+	if toggleDragging then
+		if not toggleDidMove then
 			menuVisible = not menuVisible
 			if mainGui and mainGui.Parent then
 				mainGui.Enabled = menuVisible
@@ -5407,6 +5434,8 @@ toggleClickButton.InputEnded:Connect(function(input)
 		end
 		toggleDragging = false
 		toggleDidMove = false
+		toggleDragStart = nil
+		toggleStartPos = nil
 	end
 end)		clumsy_on = false
 		removeClumsyGhost()
