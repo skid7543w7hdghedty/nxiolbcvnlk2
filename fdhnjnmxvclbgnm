@@ -4755,7 +4755,7 @@ local function createTeamerPlayerButton(plr)
 		addInfoLine("Username: " .. plr.Name)
 		addInfoLine("User ID: " .. plr.UserId)
 
-		local regTimestamp = os.time() - plr.AccountAge * 86400
+		local regTimestamp = os.time() - (plr.AccountAge - 1) * 86400
 		local regDateTable = os.date("!*t", regTimestamp)
 		local regDateStr = string.format("%02d/%02d/%04d", regDateTable.day, regDateTable.month, regDateTable.year)
 		addInfoLine("Registered: " .. regDateStr)
@@ -4909,7 +4909,7 @@ createProfileLabel("Display Name: " .. player.DisplayName, 76)
 createProfileLabel("Username: " .. player.Name, 98)
 createProfileLabel("User ID: " .. player.UserId, 120)
 
-local regTimestamp = os.time() - player.AccountAge * 86400
+local regTimestamp = os.time() - (player.AccountAge - 1) * 86400
 local regDateTable = os.date("!*t", regTimestamp)
 local regDateStr = string.format("%02d/%02d/%04d", regDateTable.day, regDateTable.month, regDateTable.year)
 createProfileLabel("Registered: " .. regDateStr, 142)
