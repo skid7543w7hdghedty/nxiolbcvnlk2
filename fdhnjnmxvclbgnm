@@ -5187,7 +5187,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		popupBtn.Text = feature.name
 		popupBtn.Font = Enum.Font.SourceSansBold
 		popupBtn.TextSize = 14
-		popupBtn.AutoButtonColor = true
+		popupBtn.AutoButtonColor = false
 		popupBtn.Parent = popupBtnGui
 
 		local popupCorner = Instance.new("UICorner")
