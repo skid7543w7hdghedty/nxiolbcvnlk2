@@ -4885,40 +4885,46 @@ local function createTeamerPlayerButton(plr)
 
 		addInfoLine("Gravity: " .. math.floor(workspace.Gravity))
 
-		-- Draggable popup
+		-- Draggable popup (mobile-compatible)
 		local popupDragging = false
-		local popupDragInput
+		local popupDidMove = false
 		local popupDragStart
 		local popupStartPos
+		local popupActiveInput
 
 		popupTitle.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				popupDragging = true
+				popupDidMove = false
+				popupActiveInput = input
 				popupDragStart = input.Position
 				popupStartPos = popup.Position
-				input.Changed:Connect(function()
-					if input.UserInputState == Enum.UserInputState.End then
-						popupDragging = false
-					end
-				end)
-			end
-		end)
-
-		popupTitle.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement then
-				popupDragInput = input
 			end
 		end)
 
 		local popupDragCon = UserInputService.InputChanged:Connect(function(input)
-			if input == popupDragInput and popupDragging then
+			if popupDragging and input == popupActiveInput then
 				local delta = input.Position - popupDragStart
-				popup.Position = UDim2.new(popupStartPos.X.Scale, popupStartPos.X.Offset + delta.X, popupStartPos.Y.Scale, popupStartPos.Y.Offset + delta.Y)
+				if delta.Magnitude >= 5 then
+					popupDidMove = true
+				end
+				if popupDidMove then
+					popup.Position = UDim2.new(popupStartPos.X.Scale, popupStartPos.X.Offset + delta.X, popupStartPos.Y.Scale, popupStartPos.Y.Offset + delta.Y)
+				end
+			end
+		end)
+
+		local popupEndCon = UserInputService.InputEnded:Connect(function(input)
+			if popupDragging and input == popupActiveInput then
+				popupDragging = false
+				popupDidMove = false
+				popupActiveInput = nil
 			end
 		end)
 
 		popup.Destroying:Connect(function()
 			popupDragCon:Disconnect()
+			popupEndCon:Disconnect()
 		end)
 
 		local escConn
