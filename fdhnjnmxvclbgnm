@@ -5036,7 +5036,6 @@ currentCategory = "Buttons"
 createSection("Buttons", 900)
 
 local extractedButtons = {}
-
 local popupBtnGui = Instance.new("ScreenGui")
 popupBtnGui.Name = "AdrenalinPopupBtns"
 popupBtnGui.ResetOnSpawn = false
@@ -5180,96 +5179,94 @@ for bindOrder, feature in ipairs(btnFeatures) do
 	extractButton.MouseButton1Click:Connect(function()
 		if extractedButtons[feature.name] then return end
 
-		local popupContainer = Instance.new("Frame")
-		popupContainer.Size = UDim2.new(0, 200, 0, 38)
-		popupContainer.Position = UDim2.new(0.5, -100, 0.5, 72)
-		popupContainer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		popupContainer.Parent = popupBtnGui
+		local popupBtn = Instance.new("TextButton")
+		popupBtn.Size = UDim2.new(0, 200, 0, 38)
+		popupBtn.Position = UDim2.new(0.5, -100, 0.5, 72)
+		popupBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		popupBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		popupBtn.Text = feature.name
+		popupBtn.Font = Enum.Font.SourceSansBold
+		popupBtn.TextSize = 14
+		popupBtn.AutoButtonColor = true
+		popupBtn.Parent = popupBtnGui
 
-		local containerCorner = Instance.new("UICorner")
-		containerCorner.CornerRadius = UDim.new(0, 4)
-		containerCorner.Parent = popupContainer
+		local popupCorner = Instance.new("UICorner")
+		popupCorner.CornerRadius = UDim.new(0, 4)
+		popupCorner.Parent = popupBtn
 
-		local containerStroke = Instance.new("UIStroke")
-		containerStroke.Color = Color3.fromRGB(255, 255, 255)
-		containerStroke.Thickness = 2
-		containerStroke.Parent = popupContainer
+		local popupStroke = Instance.new("UIStroke")
+		popupStroke.Color = Color3.fromRGB(255, 255, 255)
+		popupStroke.Thickness = 1
+		popupStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		popupStroke.Parent = popupBtn
 
-		local popupLabel = Instance.new("TextLabel")
-		popupLabel.Size = UDim2.new(1, 0, 1, 0)
-		popupLabel.Position = UDim2.new(0, 0, 0, 0)
-		popupLabel.BackgroundTransparency = 1
-		popupLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-		popupLabel.Text = feature.name
-		popupLabel.Font = Enum.Font.SourceSansBold
-		popupLabel.TextSize = 14
-		popupLabel.Parent = popupContainer
+		if feature.getState and feature.getState() then
+			popupBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			popupBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+		end
 
-		local function updatePopupVisual()
-			if feature.getState then
-				local on = feature.getState()
-				if on then
-					popupContainer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-					popupLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
-					containerStroke.Color = Color3.fromRGB(0, 0, 0)
-				else
-					popupContainer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-					popupLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-					containerStroke.Color = Color3.fromRGB(255, 255, 255)
+		-- Drag protection: only fire toggle if touch/mouse didn't move
+		local popupDragging = false
+		local popupDidMove = false
+		local popupDragStart
+		local popupBtnStartPos
+		local POPUP_DRAG_THRESHOLD = 5
+
+		popupBtn.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				popupDragging = true
+				popupDidMove = false
+				popupDragStart = input.Position
+				popupBtnStartPos = popupBtn.Position
+			end
+		end)
+
+		local function updatePopupDrag(input)
+			if popupDragging and input == popupDragInput then
+				local delta = input.Position - popupDragStart
+				if delta.Magnitude >= POPUP_DRAG_THRESHOLD then
+					popupDidMove = true
+				end
+				if popupDidMove then
+					popupBtn.Position = UDim2.new(popupBtnStartPos.X.Scale, popupBtnStartPos.X.Offset + delta.X, popupBtnStartPos.Y.Scale, popupBtnStartPos.Y.Offset + delta.Y)
 				end
 			end
 		end
 
-		updatePopupVisual()
-
-		local function popupToggle()
-			feature.toggle()
-			updatePopupVisual()
-		end
-
-		popupBtn.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				popupDragData = {
-					btn = popupContainer,
-					toggle = popupToggle,
-					didMove = false,
-					dragStart = input.Position,
-					startPos = popupContainer.Position,
-					dragInput = nil,
-				}
+		popupBtn.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+				popupDragInput = input
 			end
 		end)
 
-		popupBtn.InputChanged:Connect(function(input)
-			if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and popupDragData then
-				popupDragData.dragInput = input
-			end
+		local popupDragConn = UserInputService.InputChanged:Connect(function(input)
+			updatePopupDrag(input)
 		end)
 
 		popupBtn.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				if popupDragData and not popupDragData.didMove then
-					popupDragData.toggle()
+				if popupDragging and not popupDidMove then
+					feature.toggle()
 				end
-				popupDragData = nil
+				popupDragging = false
+				popupDidMove = false
 			end
 		end)
 
 		extractedButtons[feature.name] = {
-			btn = popupContainer,
+			btn = popupBtn,
+			dragConn = popupDragConn,
 		}
 	end)
 
 	removeButton.MouseButton1Click:Connect(function()
 		local data = extractedButtons[feature.name]
 		if not data then return end
+		if data.dragConn then data.dragConn:Disconnect() end
 		if data.btn then data.btn:Destroy() end
 		extractedButtons[feature.name] = nil
 	end)
 end
-
-local POPUP_DRAG_THRESHOLD = 5
-local popupDragData = nil
 
 refreshPlayerList()
 updateFlingStatus()
@@ -5373,20 +5370,6 @@ UserInputService.InputChanged:Connect(function(input)
 			startPos.Y.Scale,
 			startPos.Y.Offset + delta.Y
 		)
-	end
-	if popupDragData and popupDragData.dragInput and input == popupDragData.dragInput then
-		local delta = input.Position - popupDragData.dragStart
-		if delta.Magnitude >= POPUP_DRAG_THRESHOLD then
-			popupDragData.didMove = true
-		end
-		if popupDragData.didMove then
-			popupDragData.btn.Position = UDim2.new(
-				popupDragData.startPos.X.Scale,
-				popupDragData.startPos.X.Offset + delta.X,
-				popupDragData.startPos.Y.Scale,
-				popupDragData.startPos.Y.Offset + delta.Y
-			)
-		end
 	end
 end)
 
