@@ -5221,41 +5221,39 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			end
 		end)
 
-		local function updatePopupDrag(input)
-			if popupDragging and input == popupDragInput then
-				local delta = input.Position - popupDragStart
-				if delta.Magnitude >= POPUP_DRAG_THRESHOLD then
-					popupDidMove = true
-				end
-				if popupDidMove then
-					popupBtn.Position = UDim2.new(popupBtnStartPos.X.Scale, popupBtnStartPos.X.Offset + delta.X, popupBtnStartPos.Y.Scale, popupBtnStartPos.Y.Offset + delta.Y)
-				end
-			end
-		end
-
-		popupBtn.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-				popupDragInput = input
-			end
-		end)
-
 		local popupDragConn = UserInputService.InputChanged:Connect(function(input)
-			updatePopupDrag(input)
+			if popupDragging then
+				if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+					local delta = input.Position - popupDragStart
+					if delta.Magnitude >= POPUP_DRAG_THRESHOLD then
+						popupDidMove = true
+					end
+					if popupDidMove then
+						popupBtn.Position = UDim2.new(
+							popupBtnStartPos.X.Scale, popupBtnStartPos.X.Offset + delta.X,
+							popupBtnStartPos.Y.Scale, popupBtnStartPos.Y.Offset + delta.Y
+						)
+					end
+				end
+			end
 		end)
 
-		popupBtn.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				if popupDragging and not popupDidMove then
-					feature.toggle()
+		local popupEndConn = UserInputService.InputEnded:Connect(function(input)
+			if popupDragging then
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					if not popupDidMove then
+						feature.toggle()
+					end
+					popupDragging = false
+					popupDidMove = false
 				end
-				popupDragging = false
-				popupDidMove = false
 			end
 		end)
 
 		extractedButtons[feature.name] = {
 			btn = popupBtn,
 			dragConn = popupDragConn,
+			endConn = popupEndConn,
 		}
 	end)
 
@@ -5263,6 +5261,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		local data = extractedButtons[feature.name]
 		if not data then return end
 		if data.dragConn then data.dragConn:Disconnect() end
+		if data.endConn then data.endConn:Disconnect() end
 		if data.btn then data.btn:Destroy() end
 		extractedButtons[feature.name] = nil
 	end)
