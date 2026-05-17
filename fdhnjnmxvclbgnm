@@ -3248,14 +3248,19 @@ btn.tradeHelper.MouseButton1Click:Connect(function()
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/zxcgfbhrefgdfsdfg/refs/heads/main/asrdgfdsg"))()
 end)
 
+btn.zombieBtn = createButton("ZombieButton", "Zombie Tryhard", 116.5)
+btn.zombieBtn.MouseButton1Click:Connect(function()
+	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/uqwgeajsdvn/refs/heads/main/hrewjkhsdf"))()
+end)
+
 btn.crosshairBtn = createButton("CrosshairButton", "Adrenalin.win Crosshair", 117)
 btn.crosshairBtn.MouseButton1Click:Connect(function()
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/uqwgeajsdvn/refs/heads/main/vbgfsdahukjhsd"))()
+	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/uqwgeajsdvn/refs/heads/main/bnbmbndf"))()
 end)
 
 btn.keystrokeBtn = createButton("KeystrokeButton", "Keystroke", 118)
 btn.keystrokeBtn.MouseButton1Click:Connect(function()
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/uqwgeajsdvn/refs/heads/main/bnbmbndf"))()
+	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/uqwgeajsdvn/refs/heads/main/vbgfsdahukjhsd"))()
 end)
 
 -- Auto Delete Corpses
@@ -5043,9 +5048,20 @@ popupBtnGui.DisplayOrder = 999999
 popupBtnGui.IgnoreGuiInset = true
 popupBtnGui.Parent = playerGui
 
-local function setExtractedBtnState(name, state)
+local function getFeatureStatusText(featureName, state)
+	if featureName == "Anti-Aim" then
+		if currentMode == 0 then return "Anti-Aim: OFF" end
+		return "Anti-Aim: Mode " .. currentMode
+	end
+	return featureName .. ": " .. (state and "ON" or "OFF")
+end
+
+local function setExtractedBtnState(name, state, displayText)
 	local data = extractedButtons[name]
 	if not data or not data.btn then return end
+	if not displayText then
+		displayText = getFeatureStatusText(name, state)
+	end
 	if state then
 		data.btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 		data.btn.TextColor3 = Color3.fromRGB(0, 0, 0)
@@ -5053,6 +5069,7 @@ local function setExtractedBtnState(name, state)
 		data.btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		data.btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
+	data.btn.Text = displayText
 end
 
 local btnFeatures = {
@@ -5184,7 +5201,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		popupBtn.Position = UDim2.new(0.5, -100, 0.5, 72)
 		popupBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		popupBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		popupBtn.Text = feature.name
+		popupBtn.Text = feature.getState and getFeatureStatusText(feature.name, feature.getState()) or feature.name
 		popupBtn.Font = Enum.Font.SourceSansBold
 		popupBtn.TextSize = 14
 		popupBtn.AutoButtonColor = false
@@ -5210,43 +5227,42 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		local popupDidMove = false
 		local popupDragStart
 		local popupBtnStartPos
+		local popupActiveInput
 		local POPUP_DRAG_THRESHOLD = 5
 
 		popupBtn.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				popupDragging = true
 				popupDidMove = false
+				popupActiveInput = input
 				popupDragStart = input.Position
 				popupBtnStartPos = popupBtn.Position
 			end
 		end)
 
 		local popupDragConn = UserInputService.InputChanged:Connect(function(input)
-			if popupDragging then
-				if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-					local delta = input.Position - popupDragStart
-					if delta.Magnitude >= POPUP_DRAG_THRESHOLD then
-						popupDidMove = true
-					end
-					if popupDidMove then
-						popupBtn.Position = UDim2.new(
-							popupBtnStartPos.X.Scale, popupBtnStartPos.X.Offset + delta.X,
-							popupBtnStartPos.Y.Scale, popupBtnStartPos.Y.Offset + delta.Y
-						)
-					end
+			if popupDragging and input == popupActiveInput then
+				local delta = input.Position - popupDragStart
+				if delta.Magnitude >= POPUP_DRAG_THRESHOLD then
+					popupDidMove = true
+				end
+				if popupDidMove then
+					popupBtn.Position = UDim2.new(
+						popupBtnStartPos.X.Scale, popupBtnStartPos.X.Offset + delta.X,
+						popupBtnStartPos.Y.Scale, popupBtnStartPos.Y.Offset + delta.Y
+					)
 				end
 			end
 		end)
 
 		local popupEndConn = UserInputService.InputEnded:Connect(function(input)
-			if popupDragging then
-				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-					if not popupDidMove then
-						feature.toggle()
-					end
-					popupDragging = false
-					popupDidMove = false
+			if popupDragging and input == popupActiveInput then
+				if not popupDidMove then
+					feature.toggle()
 				end
+				popupDragging = false
+				popupDidMove = false
+				popupActiveInput = nil
 			end
 		end)
 
@@ -5377,9 +5393,10 @@ local toggleDragging = false
 local toggleDidMove = false
 local toggleDragStart = nil
 local toggleStartPos = nil
+local toggleActiveInput = nil
 
 local function getToggleDragPos(input)
-	if toggleDragging and toggleDragStart and toggleStartPos then
+	if toggleDragging and toggleDragStart and toggleStartPos and input == toggleActiveInput then
 		local delta = input.Position - toggleDragStart
 		if delta.Magnitude >= DRAG_THRESHOLD then
 			toggleDidMove = true
@@ -5408,6 +5425,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
 		and inputPos.Y >= absPos.Y and inputPos.Y <= absPos.Y + absSize.Y then
 		toggleDragging = true
 		toggleDidMove = false
+		toggleActiveInput = input
 		toggleDragStart = input.Position
 		toggleStartPos = toggleButton.Position
 	end
@@ -5420,7 +5438,7 @@ end)
 
 UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-	if toggleDragging then
+	if toggleDragging and input == toggleActiveInput then
 		if not toggleDidMove then
 			menuVisible = not menuVisible
 			if mainGui and mainGui.Parent then
@@ -5441,6 +5459,7 @@ UserInputService.InputEnded:Connect(function(input)
 		toggleDidMove = false
 		toggleDragStart = nil
 		toggleStartPos = nil
+		toggleActiveInput = nil
 	end
 end)		clumsy_on = false
 		removeClumsyGhost()
