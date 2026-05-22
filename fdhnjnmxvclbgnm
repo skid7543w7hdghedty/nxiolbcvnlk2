@@ -5415,10 +5415,6 @@ local function createTeamerPlayerButton(plr)
 		friendLabel.Text = "Friends: " .. friendCount
 	end)()
 
-	button.MouseButton1Click:Connect(function()
-		openTeamerPopupInternal()
-	end)
-
 	local function openTeamerPopupInternal()
 		if teamerPopupCache[plr.Name] and teamerPopupCache[plr.Name].Parent then
 			teamerPopupCache[plr.Name].Enabled = not teamerPopupCache[plr.Name].Enabled
@@ -5832,6 +5828,10 @@ local function createTeamerPlayerButton(plr)
 
 		teamerPopupCache[plr.Name] = popupGui
 	end
+
+	button.MouseButton1Click:Connect(function()
+		openTeamerPopupInternal()
+	end)
 end
 
 for _, plr in ipairs(Players:GetPlayers()) do
