@@ -5291,9 +5291,8 @@ local function toggleTeamerSearchMode()
 	end
 	filterTeamerList()
 end
-teamerSearchToggle.MouseButton1Click:Connect(toggleTeamerSearchMode)
-teamerSearchToggle.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Touch then toggleTeamerSearchMode() end
+teamerSearchToggle.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then toggleTeamerSearchMode() end
 end)
 
 teamerSearchBox:GetPropertyChangedSignal("Text"):Connect(filterTeamerList)
@@ -5416,11 +5415,8 @@ local function createTeamerPlayerButton(plr)
 		friendLabel.Text = "Friends: " .. friendCount
 	end)()
 
-	button.MouseButton1Click:Connect(function()
-		openTeamerPopupInternal()
-	end)
-	button.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.Touch then
+	button.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			openTeamerPopupInternal()
 		end
 	end)
@@ -5474,11 +5470,8 @@ local function createTeamerPlayerButton(plr)
 		popupCloseCorner.CornerRadius = UDim.new(0, 4)
 		popupCloseCorner.Parent = popupClose
 
-		popupClose.MouseButton1Click:Connect(function()
-			popupGui.Enabled = false
-		end)
-		popupClose.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.Touch then
+		popupClose.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				popupGui.Enabled = false
 			end
 		end)
@@ -6545,9 +6538,8 @@ local function toggleDragLock()
 		lockDragBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
 end
-lockDragBtn.MouseButton1Click:Connect(toggleDragLock)
-lockDragBtn.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Touch then toggleDragLock() end
+lockDragBtn.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then toggleDragLock() end
 end)
 
 toggleDragLocked = false
@@ -6580,9 +6572,8 @@ local function toggleWinXDrag()
 		toggleDragBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
 end
-toggleDragBtn.MouseButton1Click:Connect(toggleWinXDrag)
-toggleDragBtn.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Touch then toggleWinXDrag() end
+toggleDragBtn.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then toggleWinXDrag() end
 end)
 
 local bgTranspRow = Instance.new("Frame")
@@ -6808,7 +6799,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 					end
 				end)
 				dragFrame.InputChanged:Connect(function(ipt)
-					if ipt.UserInputType == Enum.UserInputType.MouseMovement or ipt.UserInputType == Enum.UserInputType.Touch then
+					if ipt.UserInputType == Enum.UserInputType.MouseMovement then
 						dragIpt = ipt
 					end
 				end)
@@ -6943,11 +6934,8 @@ for bindOrder, feature in ipairs(btnFeatures) do
 
 		local popupLocked = false
 
-		popupLockBtn.MouseButton1Click:Connect(function()
-			togglePopupLock()
-		end)
-		popupLockBtn.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.Touch then
+		popupLockBtn.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				togglePopupLock()
 			end
 		end)
@@ -6982,7 +6970,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		end)
 
 		popupBtn.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			if input.UserInputType == Enum.UserInputType.MouseMovement then
 				popupDragInput = input
 			end
 		end)
@@ -7032,18 +7020,14 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		saveConfig()
 	end
 
-	extractButton.MouseButton1Click:Connect(extractHandlers[feature.name])
-	extractButton.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.Touch then
+	extractButton.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			extractHandlers[feature.name]()
 		end
 	end)
 
-	removeButton.MouseButton1Click:Connect(function()
-		removeExtractedBtn()
-	end)
-	removeButton.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.Touch then
+	removeButton.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			removeExtractedBtn()
 		end
 	end)
@@ -7076,9 +7060,8 @@ local function toggleMinimize()
 	mainFrame.Size = contentVisible and UDim2.new(0, 400, 0, 230) or UDim2.new(0, 400, 0, 28)
 	minimizeButton.Text = contentVisible and "—" or "+"
 end
-minimizeButton.MouseButton1Click:Connect(toggleMinimize)
-minimizeButton.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Touch then toggleMinimize() end
+minimizeButton.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then toggleMinimize() end
 end)
 
 local function toggleLock()
@@ -7086,9 +7069,8 @@ local function toggleLock()
 	lockButton.Text = isFrameLocked and "U" or "L"
 	lockButton.BackgroundColor3 = isFrameLocked and Color3.fromRGB(150, 150, 150) or Color3.fromRGB(0, 0, 0)
 end
-lockButton.MouseButton1Click:Connect(toggleLock)
-lockButton.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Touch then toggleLock() end
+lockButton.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then toggleLock() end
 end)
 
 local function closeMenu()
@@ -7100,9 +7082,8 @@ local function closeMenu()
 	if voidReturnConn then voidReturnConn:Disconnect() voidReturnConn = nil end
 	getgenv().AdrenalinWinLoaded = nil
 end
-closeButton.MouseButton1Click:Connect(closeMenu)
-closeButton.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Touch then closeMenu() end
+closeButton.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then closeMenu() end
 end)
 
 toggleButton = Instance.new("Frame")
