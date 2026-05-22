@@ -5291,8 +5291,8 @@ local function toggleTeamerSearchMode()
 	end
 	filterTeamerList()
 end
-teamerSearchToggle.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then toggleTeamerSearchMode() end
+teamerSearchToggle.MouseButton1Click:Connect(function()
+	toggleTeamerSearchMode()
 end)
 
 teamerSearchBox:GetPropertyChangedSignal("Text"):Connect(filterTeamerList)
@@ -5415,10 +5415,8 @@ local function createTeamerPlayerButton(plr)
 		friendLabel.Text = "Friends: " .. friendCount
 	end)()
 
-	button.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			openTeamerPopupInternal()
-		end
+	button.MouseButton1Click:Connect(function()
+		openTeamerPopupInternal()
 	end)
 
 	local function openTeamerPopupInternal()
@@ -5470,10 +5468,8 @@ local function createTeamerPlayerButton(plr)
 		popupCloseCorner.CornerRadius = UDim.new(0, 4)
 		popupCloseCorner.Parent = popupClose
 
-		popupClose.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				popupGui.Enabled = false
-			end
+		popupClose.MouseButton1Click:Connect(function()
+			popupGui.Enabled = false
 		end)
 
 		local friendsScroll = Instance.new("ScrollingFrame")
@@ -6538,8 +6534,8 @@ local function toggleDragLock()
 		lockDragBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
 end
-lockDragBtn.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then toggleDragLock() end
+lockDragBtn.MouseButton1Click:Connect(function()
+	toggleDragLock()
 end)
 
 toggleDragLocked = false
@@ -6572,8 +6568,8 @@ local function toggleWinXDrag()
 		toggleDragBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
 end
-toggleDragBtn.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then toggleWinXDrag() end
+toggleDragBtn.MouseButton1Click:Connect(function()
+	toggleWinXDrag()
 end)
 
 local bgTranspRow = Instance.new("Frame")
@@ -6934,10 +6930,8 @@ for bindOrder, feature in ipairs(btnFeatures) do
 
 		local popupLocked = false
 
-		popupLockBtn.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				togglePopupLock()
-			end
+		popupLockBtn.MouseButton1Click:Connect(function()
+			togglePopupLock()
 		end)
 
 		local function togglePopupLock()
@@ -6970,7 +6964,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		end)
 
 		popupBtn.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement then
+			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 				popupDragInput = input
 			end
 		end)
@@ -6990,18 +6984,16 @@ for bindOrder, feature in ipairs(btnFeatures) do
 
 		popupBtn.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				local shouldToggle = popupDragging and not popupDidMove
-				if not popupDragging then
-					shouldToggle = not popupLocked
-				end
 				local wasDragged = popupDragging and popupDidMove
+				if (popupDragging and not popupDidMove) or not popupDragging then
+					if not popupLocked then
+						feature.toggle()
+					end
+				end
 				popupDragging = false
 				popupDidMove = false
 				if wasDragged then
 					saveConfig()
-				end
-				if shouldToggle then
-					feature.toggle()
 				end
 			end
 		end)
@@ -7020,26 +7012,20 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		saveConfig()
 	end
 
-	extractButton.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			extractHandlers[feature.name]()
-		end
+	local featureName = feature.name
+
+	extractButton.MouseButton1Click:Connect(function()
+		extractHandlers[featureName]()
 	end)
 
-	removeButton.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			removeExtractedBtn()
-		end
-	end)
-
-	local function removeExtractedBtn()
-		local data = extractedButtons[feature.name]
+	removeButton.MouseButton1Click:Connect(function()
+		local data = extractedButtons[featureName]
 		if not data then return end
 		if data.dragConn then data.dragConn:Disconnect() end
 		if data.btn then data.btn:Destroy() end
-		extractedButtons[feature.name] = nil
+		extractedButtons[featureName] = nil
 		saveConfig()
-	end
+	end)
 end
 
 refreshPlayerList()
