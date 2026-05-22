@@ -3951,21 +3951,6 @@ btn.tradeHelper.MouseButton1Click:Connect(function()
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/zxcgfbhrefgdfsdfg/refs/heads/main/asrdgfdsg"))()
 end)
 
-btn.zombieBtn = createButton("ZombieButton", "Zombie Tryhard", 116.5)
-btn.zombieBtn.MouseButton1Click:Connect(function()
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/uqwgeajsdvn/refs/heads/main/hrewjkhsdf"))()
-end)
-
-btn.crosshairBtn = createButton("CrosshairButton", "Adrenalin.win Crosshair", 117)
-btn.crosshairBtn.MouseButton1Click:Connect(function()
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/uqwgeajsdvn/refs/heads/main/bnbmbndf"))()
-end)
-
-btn.keystrokeBtn = createButton("KeystrokeButton", "Keystroke", 118)
-btn.keystrokeBtn.MouseButton1Click:Connect(function()
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/skid7543w7hdghedty/uqwgeajsdvn/refs/heads/main/vbgfsdahukjhsd"))()
-end)
-
 -- Auto Delete Corpses
 autoDeleteCorpsesEnabled = false
 autoDeleteCorpsesConnections = {}
@@ -6814,17 +6799,22 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			local function fpsPingMakeDraggable(dragFrame)
 				local d = false
 				local dm = false
-				local ds, sp
+				local ds, sp, dragIpt
 				local TH = 5
 				dragFrame.InputBegan:Connect(function(ipt)
 					if popupDragLocked then return end
 					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then
-						d = true; dm = false; ds = ipt.Position; sp = popupBorder.Position
+						d = true; dm = false; ds = ipt.Position; sp = popupBorder.Position; dragIpt = ipt
+					end
+				end)
+				dragFrame.InputChanged:Connect(function(ipt)
+					if ipt.UserInputType == Enum.UserInputType.MouseMovement or ipt.UserInputType == Enum.UserInputType.Touch then
+						dragIpt = ipt
 					end
 				end)
 				local conn = UserInputService.InputChanged:Connect(function(ipt)
 					if popupDragLocked then return end
-					if (ipt.UserInputType == Enum.UserInputType.MouseMovement or ipt.UserInputType == Enum.UserInputType.Touch) and d then
+					if ipt == dragIpt and d then
 						local delta = ipt.Position - ds
 						if delta.Magnitude >= TH then dm = true end
 						if dm then
@@ -6835,7 +6825,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 				dragFrame.InputEnded:Connect(function(ipt)
 					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then
 						local wasDragged = dm
-						d = false; dm = false
+						d = false; dm = false; dragIpt = nil
 						if wasDragged then saveConfig() end
 					end
 				end)
@@ -6977,6 +6967,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		local popupDidMove = false
 		local popupDragStart
 		local popupBtnStartPos
+		local popupDragInput
 		local POPUP_DRAG_THRESHOLD = 5
 
 		popupBtn.InputBegan:Connect(function(input)
@@ -6986,12 +6977,19 @@ for bindOrder, feature in ipairs(btnFeatures) do
 				popupDidMove = false
 				popupDragStart = input.Position
 				popupBtnStartPos = popupBorder.Position
+				popupDragInput = input
+			end
+		end)
+
+		popupBtn.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+				popupDragInput = input
 			end
 		end)
 
 		local popupDragConn = UserInputService.InputChanged:Connect(function(input)
 			if popupDragLocked or popupLocked then return end
-			if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and popupDragging then
+			if input == popupDragInput and popupDragging then
 				local delta = input.Position - popupDragStart
 				if delta.Magnitude >= POPUP_DRAG_THRESHOLD then
 					popupDidMove = true
