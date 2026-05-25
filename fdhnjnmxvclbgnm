@@ -1411,7 +1411,7 @@ animationButtons = {
 	81147896850705, "Asian Squat", 72007752012770, "Poop sniff", 90333292347820, "The Worm",
 	133566007754001, "Drop Kick", 115518346414107, "Gangnam Style", 110146282544198, "Orange Justice",
 	108747312576405, "Les goooo", 93014787120483, "Garry's Dance",
-	99499783161907, "Aura farm", 80177289449617, "Snow angel", 70432904702322, "Get skinwalked", 123916423751437, "Rat Dance",
+	99499783161907, "Aura farm", 114400428765989, "180° Flip", 70432904702322, "Get skinwalked", 109873544976020, "Weird Spin",
 	129537633250603, "It's Peanut Butter Jelly Time"
 }
 animationObject = Instance.new("Animation")
@@ -6091,8 +6091,8 @@ local function createTeamerPlayerButton(plr)
 
 		local popup = Instance.new("Frame")
 		popup.Name = "TeamerPopup"
-		popup.Size = UDim2.new(0, 290, 0, 460)
-		popup.Position = UDim2.new(0.5, -145, 0.5, -230)
+		popup.Size = UDim2.new(0, 270, 0, 360)
+		popup.Position = UDim2.new(0.5, -135, 0.5, -180)
 		popup.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 		popup.BorderSizePixel = 0
 		popup.Parent = popupGui
@@ -6103,23 +6103,23 @@ local function createTeamerPlayerButton(plr)
 
 		local popupTitle = Instance.new("TextLabel")
 		popupTitle.Name = "Title"
-		popupTitle.Size = UDim2.new(1, 0, 0, 40)
+		popupTitle.Size = UDim2.new(1, 0, 0, 30)
 		popupTitle.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		popupTitle.BorderSizePixel = 0
 		popupTitle.Text = plr.Name .. "'s Info"
 		popupTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 		popupTitle.Font = Enum.Font.GothamBold
-		popupTitle.TextSize = 16
+		popupTitle.TextSize = 14
 		popupTitle.Parent = popup
 
 		local popupClose = Instance.new("TextButton")
-		popupClose.Size = UDim2.new(0, 24, 0, 24)
-		popupClose.Position = UDim2.new(1, -30, 0.5, -12)
+		popupClose.Size = UDim2.new(0, 20, 0, 20)
+		popupClose.Position = UDim2.new(1, -26, 0.5, -10)
 		popupClose.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		popupClose.TextColor3 = Color3.fromRGB(255, 255, 255)
 		popupClose.Text = "X"
 		popupClose.Font = Enum.Font.SourceSansBold
-		popupClose.TextSize = 16
+		popupClose.TextSize = 14
 		popupClose.Parent = popupTitle
 
 		local popupCloseCorner = Instance.new("UICorner")
@@ -6131,10 +6131,10 @@ local function createTeamerPlayerButton(plr)
 		end)
 
 		local friendsScroll = Instance.new("ScrollingFrame")
-		friendsScroll.Size = UDim2.new(1, -10, 0, 400)
-		friendsScroll.Position = UDim2.new(0, 5, 0, 45)
+		friendsScroll.Size = UDim2.new(1, -10, 0, 315)
+		friendsScroll.Position = UDim2.new(0, 5, 0, 35)
 		friendsScroll.BackgroundTransparency = 1
-		friendsScroll.ScrollBarThickness = 4
+		friendsScroll.ScrollBarThickness = 2
 		friendsScroll.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
 		friendsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 		friendsScroll.Parent = popup
@@ -6147,12 +6147,12 @@ local function createTeamerPlayerButton(plr)
 		end)
 
 		local infoTitle = Instance.new("TextLabel")
-		infoTitle.Size = UDim2.new(1, 0, 0, 25)
+		infoTitle.Size = UDim2.new(1, 0, 0, 20)
 		infoTitle.BackgroundTransparency = 1
 		infoTitle.Text = "SERVER FRIENDS"
 		infoTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 		infoTitle.Font = Enum.Font.GothamBold
-		infoTitle.TextSize = 14
+		infoTitle.TextSize = 12
 		infoTitle.TextXAlignment = Enum.TextXAlignment.Left
 		infoTitle.Parent = friendsScroll
 
@@ -6164,7 +6164,7 @@ local function createTeamerPlayerButton(plr)
 		friendContainer.Parent = friendsScroll
 
 		local friendContainerLayout = Instance.new("UIListLayout")
-		friendContainerLayout.Padding = UDim.new(0, 5)
+		friendContainerLayout.Padding = UDim.new(0, 3)
 		friendContainerLayout.Parent = friendContainer
 
 		local function buildFriendList()
@@ -6196,7 +6196,7 @@ local function createTeamerPlayerButton(plr)
 						foundFriend = true
 						local friendEntry = Instance.new("TextButton")
 						friendEntry.Name = otherPlayer.Name
-						friendEntry.Size = UDim2.new(1, 0, 0, 40)
+						friendEntry.Size = UDim2.new(1, 0, 0, 30)
 						friendEntry.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 						friendEntry.BorderSizePixel = 0
 						friendEntry.Text = ""
@@ -6204,18 +6204,18 @@ local function createTeamerPlayerButton(plr)
 						friendEntry.Parent = friendContainer
 
 						local friendEntryCorner = Instance.new("UICorner")
-						friendEntryCorner.CornerRadius = UDim.new(0, 6)
+						friendEntryCorner.CornerRadius = UDim.new(0, 4)
 						friendEntryCorner.Parent = friendEntry
 
 						local friendAvatar = Instance.new("ImageLabel")
-						friendAvatar.Size = UDim2.new(0, 30, 0, 30)
-						friendAvatar.Position = UDim2.new(0, 5, 0.5, -15)
+						friendAvatar.Size = UDim2.new(0, 22, 0, 22)
+						friendAvatar.Position = UDim2.new(0, 4, 0.5, -11)
 						friendAvatar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 						friendAvatar.BorderSizePixel = 0
 						friendAvatar.Parent = friendEntry
 
 						local friendAvatarCorner = Instance.new("UICorner")
-						friendAvatarCorner.CornerRadius = UDim.new(0, 6)
+						friendAvatarCorner.CornerRadius = UDim.new(0, 4)
 						friendAvatarCorner.Parent = friendAvatar
 
 						coroutine.wrap(function()
@@ -6224,13 +6224,13 @@ local function createTeamerPlayerButton(plr)
 						end)()
 
 						local friendName = Instance.new("TextLabel")
-						friendName.Size = UDim2.new(1, -45, 1, 0)
-						friendName.Position = UDim2.new(0, 40, 0, 0)
+						friendName.Size = UDim2.new(1, -35, 1, 0)
+						friendName.Position = UDim2.new(0, 31, 0, 0)
 						friendName.BackgroundTransparency = 1
 						friendName.Text = otherPlayer.Name
 						friendName.TextColor3 = Color3.fromRGB(255, 255, 255)
 						friendName.Font = Enum.Font.Gotham
-						friendName.TextSize = 14
+						friendName.TextSize = 12
 						friendName.TextXAlignment = Enum.TextXAlignment.Left
 						friendName.Parent = friendEntry
 
@@ -6245,12 +6245,12 @@ local function createTeamerPlayerButton(plr)
 			end
 			if not foundFriend then
 				local noFriends = Instance.new("TextLabel")
-				noFriends.Size = UDim2.new(1, 0, 0, 40)
+				noFriends.Size = UDim2.new(1, 0, 0, 30)
 				noFriends.BackgroundTransparency = 1
 				noFriends.Text = "No friends in this server"
 				noFriends.TextColor3 = Color3.fromRGB(150, 150, 150)
 				noFriends.Font = Enum.Font.Gotham
-				noFriends.TextSize = 14
+				noFriends.TextSize = 12
 				noFriends.Parent = friendContainer
 			end
 		end
@@ -6273,23 +6273,23 @@ local function createTeamerPlayerButton(plr)
 		separator.Parent = friendsScroll
 
 		local infoSection = Instance.new("TextLabel")
-		infoSection.Size = UDim2.new(1, 0, 0, 25)
+		infoSection.Size = UDim2.new(1, 0, 0, 20)
 		infoSection.BackgroundTransparency = 1
 		infoSection.Text = "PLAYER INFO"
 		infoSection.TextColor3 = Color3.fromRGB(255, 255, 255)
 		infoSection.Font = Enum.Font.GothamBold
-		infoSection.TextSize = 14
+		infoSection.TextSize = 12
 		infoSection.TextXAlignment = Enum.TextXAlignment.Left
 		infoSection.Parent = friendsScroll
 
 		local function addInfoLine(text)
 			local line = Instance.new("TextLabel")
-			line.Size = UDim2.new(1, 0, 0, 20)
+			line.Size = UDim2.new(1, 0, 0, 16)
 			line.BackgroundTransparency = 1
 			line.Text = text
 			line.TextColor3 = Color3.fromRGB(255, 255, 255)
 			line.Font = Enum.Font.Gotham
-			line.TextSize = 12
+			line.TextSize = 11
 			line.TextXAlignment = Enum.TextXAlignment.Left
 			line.Parent = friendsScroll
 			return line
@@ -7730,7 +7730,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		borderCorner.Parent = popupBorder
 
 		local popupBtn = Instance.new("TextButton")
-		popupBtn.Size = UDim2.new(1, -30, 1, -4)
+		popupBtn.Size = UDim2.new(1, -36, 1, -4)
 		popupBtn.Position = UDim2.new(0, 2, 0, 2)
 		popupBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		popupBtn.BackgroundTransparency = popupBgTransparency
@@ -7747,13 +7747,13 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		popupCorner.Parent = popupBtn
 
 		local popupLockBtn = Instance.new("TextButton")
-		popupLockBtn.Size = UDim2.new(0, 22, 0, 22)
-		popupLockBtn.Position = UDim2.new(1, -27, 0.5, -11)
+		popupLockBtn.Size = UDim2.new(0, 30, 0, 30)
+		popupLockBtn.Position = UDim2.new(1, -35, 0.5, -15)
 		popupLockBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		popupLockBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		popupLockBtn.Text = "U"
 		popupLockBtn.Font = Enum.Font.SourceSansBold
-		popupLockBtn.TextSize = 12
+		popupLockBtn.TextSize = 14
 		popupLockBtn.AutoButtonColor = false
 		popupLockBtn.BorderSizePixel = 0
 		popupLockBtn.Parent = popupBorder
@@ -7820,9 +7820,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				local wasDragged = popupDragging and popupDidMove
 				if (popupDragging and not popupDidMove) or not popupDragging then
-					if not popupLocked then
-						feature.toggle()
-					end
+					feature.toggle()
 				end
 				popupDragging = false
 				popupDidMove = false
