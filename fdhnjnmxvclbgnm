@@ -6387,9 +6387,9 @@ local function createProfileLabel(text, yPos)
 	return lbl
 end
 
-createProfileLabel("Subscription: WIN-X Premium", 10)
-createProfileLabel("Discord: Verified", 32)
-createProfileLabel("Role: Owner & Developer", 54)
+createProfileLabel("Subscription: WIN-X Premium & Star+", 54)
+createProfileLabel("Discord: Verified", 10)
+createProfileLabel("Roles: Beta Tester & The Legend", 32)
 
 createProfileLabel("Display Name: " .. player.DisplayName, 76)
 createProfileLabel("Username: " .. player.Name, 98)
@@ -7492,10 +7492,6 @@ for bindOrder, feature in ipairs(btnFeatures) do
 
 		local popupLocked = false
 
-		popupLockBtn.MouseButton1Click:Connect(function()
-			togglePopupLock()
-		end)
-
 		local function togglePopupLock()
 			popupLocked = not popupLocked
 			if popupLocked then
@@ -7506,6 +7502,10 @@ for bindOrder, feature in ipairs(btnFeatures) do
 				popupLockBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 			end
 		end
+
+		popupLockBtn.MouseButton1Click:Connect(function()
+			togglePopupLock()
+		end)
 
 		local popupDragging = false
 		local popupDidMove = false
