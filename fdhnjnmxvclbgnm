@@ -6346,7 +6346,7 @@ createSection("Main", 700)
 
 local mainProfileFrame = Instance.new("Frame")
 mainProfileFrame.Name = "MainProfileFrame"
-mainProfileFrame.Size = UDim2.new(1, 0, 0, 300)
+mainProfileFrame.Size = UDim2.new(1, 0, 0, 320)
 mainProfileFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 mainProfileFrame.BorderSizePixel = 0
 mainProfileFrame.LayoutOrder = 701
@@ -6387,15 +6387,24 @@ local function createProfileLabel(text, yPos)
 	return lbl
 end
 
-createProfileLabel("Subscription: WIN-X Premium & Star+", 54)
-createProfileLabel("Discord: Verified", 10)
-createProfileLabel("Roles: Beta Tester & The Legend", 32)
+local currentPlaceLabel = createProfileLabel("Current Place: Loading...", 10)
+coroutine.wrap(function()
+	local suc, info = pcall(function()
+		return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+	end)
+	if suc and info and info.Name then
+		currentPlaceLabel.Text = "Current Place: " .. info.Name
+	end
+end)()
+createProfileLabel("Discord: Verified", 32)
+createProfileLabel("Roles: Beta Tester & The Legend", 54)
+createProfileLabel("Subscription: WIN-X Premium & Star+", 76)
 
-createProfileLabel("Display Name: " .. player.DisplayName, 76)
-createProfileLabel("Username: " .. player.Name, 98)
-createProfileLabel("User ID: " .. player.UserId, 120)
+createProfileLabel("Display Name: " .. player.DisplayName, 98)
+createProfileLabel("Username: " .. player.Name, 120)
+createProfileLabel("User ID: " .. player.UserId, 142)
 
-local regDateLabel = createProfileLabel("Registered: Loading...", 142)
+local regDateLabel = createProfileLabel("Registered: Loading...", 164)
 local mainCreationTime = os.time() - player.AccountAge * 86400
 coroutine.wrap(function()
 	local function calcRegDate(accountAge)
@@ -6462,14 +6471,14 @@ local ageText = player.AccountAge .. " days"
 if years > 0 or months > 0 or days > 0 then
 	ageText = ageText .. " (" .. years .. "y, " .. months .. "m, " .. days .. "d)"
 end
-createProfileLabel("Account Age: " .. ageText, 164)
+createProfileLabel("Account Age: " .. ageText, 186)
 
-local exactAgeLabel = createProfileLabel("Exact Age: N/A", 186)
+local exactAgeLabel = createProfileLabel("Exact Age: N/A", 208)
 
-local speedLabel = createProfileLabel("Walk Speed: N/A", 208)
-local jumpPowerLabel = createProfileLabel("Jump Power: N/A", 230)
-local healthLabel = createProfileLabel("Health: N/A", 252)
-local gravityLabel = createProfileLabel("Gravity: N/A", 274)
+local speedLabel = createProfileLabel("Walk Speed: N/A", 230)
+local jumpPowerLabel = createProfileLabel("Jump Power: N/A", 252)
+local healthLabel = createProfileLabel("Health: N/A", 274)
+local gravityLabel = createProfileLabel("Gravity: N/A", 296)
 
 local function updatePlayerStats()
 	local char = player.Character
