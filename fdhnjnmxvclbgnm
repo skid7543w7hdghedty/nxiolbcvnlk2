@@ -102,6 +102,10 @@ local function saveConfig()
 
 	config.toggles.antiAimMode = currentMode
 	config.toggles.gameNotifEnabled = gameNotifEnabled
+	config.toggles.hideButtonsEnabled = hideButtonsEnabled
+	config.toggles.notifyOnTeamers = notifyOnTeamers
+	config.toggles.notifyOnExploiters = notifyOnExploiters
+	config.toggles.notifyOnScammers = notifyOnScammers
 
 	config.values.JUMP_BOOST_POWER = JUMP_BOOST_POWER
 	config.values.FAKE_SPEED_CFRAME_SPEED = FAKE_SPEED_CFRAME_SPEED
@@ -181,13 +185,96 @@ local function stringToKey(str)
 	return nil
 end
 
--- applyLoadedConfig is not used here — variables get overwritten by original declarations later
+-- applyLoadedConfig is not used here вЂ” variables get overwritten by original declarations later
 
 task.spawn(function()
 	while task.wait(30) do
 		saveConfig()
 	end
 end)
+antiFlingEnabled = false
+antiFlingConnection = nil
+
+-- ============================================
+-- Exploiters system
+-- ============================================
+markedExploiters = {}       -- { [name] = true }
+notifyOnExploiters = false
+notifyExploitersButton = nil
+EXPLOITERS_PATH = "Adrenalin.win/exploiters.json"
+
+markedTeamers = {}
+notifyOnTeamers = false
+notifyTeamersButton = nil
+TEAMERS_PATH = "Adrenalin.win/teamers.json"
+
+markedScammers = {}
+notifyOnScammers = false
+notifyScammersButton = nil
+scammerPopupCache = nil
+SCAMMERS_PATH = "Adrenalin.win/scammers.json"
+
+selectedTeamerTargets = {}
+teamerCheckboxes = {}
+
+function saveExploiters()
+	pcall(function() makefolder("Adrenalin.win") end)
+	local list = {}
+	for name, _ in pairs(markedExploiters) do
+		table.insert(list, name)
+	end
+	local encoded = game:GetService("HttpService"):JSONEncode(list)
+	task.defer(function()
+		pcall(function() writefile(EXPLOITERS_PATH, encoded) end)
+	end)
+end
+
+function loadExploiters()
+	pcall(function() makefolder("Adrenalin.win") end)
+	local ok, data = pcall(function() return readfile(EXPLOITERS_PATH) end)
+	if ok and data and data ~= "" then
+		local ok2, decoded = pcall(function()
+			return game:GetService("HttpService"):JSONDecode(data)
+		end)
+		if ok2 and type(decoded) == "table" then
+			for _, name in ipairs(decoded) do
+				markedExploiters[name] = true
+			end
+		end
+	end
+end
+
+loadExploiters()
+
+function saveTeamers()
+	pcall(function() makefolder("Adrenalin.win") end)
+	local list = {}
+	for name, _ in pairs(markedTeamers) do
+		table.insert(list, name)
+	end
+	local encoded = game:GetService("HttpService"):JSONEncode(list)
+	task.defer(function()
+		pcall(function() writefile(TEAMERS_PATH, encoded) end)
+	end)
+end
+
+function loadTeamers()
+	pcall(function() makefolder("Adrenalin.win") end)
+	local ok, data = pcall(function() return readfile(TEAMERS_PATH) end)
+	if ok and data and data ~= "" then
+		local ok2, decoded = pcall(function()
+			return game:GetService("HttpService"):JSONDecode(data)
+		end)
+		if ok2 and type(decoded) == "table" then
+			for _, name in ipairs(decoded) do
+				markedTeamers[name] = true
+			end
+		end
+	end
+end
+
+loadTeamers()
+
 
 -- Infinite jump variables
 isEnabled = false
@@ -1406,11 +1493,11 @@ getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
 animationButtons = {
 	79480770273758, "Anti-Aim", 77094699387328, "Glitch Spin", 83265734904502, "Take the L", 92249489340640, "Dahood Stomp",
-	121368513461476, "Six Seven dance", 120852662885277, "Six Seven emote", 92618727772186, "IShowSpeed Dance", 137430722819744, "Man Squat",
+	121368513461476, "Six Seven dance", 120852662885277, "Six Seven emote", 92618727772186, "IShowSpeed Dance", 122840737847239, "Man Squat",
 	98974619620224, "Laugh Ragebait", 127118661424463, "Caramell Dance", 124522818196151, "Head Spin",
 	81147896850705, "Asian Squat", 72007752012770, "Poop sniff", 90333292347820, "The Worm",
 	133566007754001, "Drop Kick", 115518346414107, "Gangnam Style", 110146282544198, "Orange Justice",
-	108747312576405, "Les goooo", 93014787120483, "Garry's Dance",
+	108747312576405, "Les goooo", 93616720070707, "Omni Man",
 	99499783161907, "Aura farm", 114400428765989, "180° Flip", 70432904702322, "Get skinwalked", 109873544976020, "Weird Spin",
 	129537633250603, "It's Peanut Butter Jelly Time"
 }
@@ -1779,7 +1866,7 @@ function onCharacterAdded(char)
 	updateCamera()
 	setupFakeSpeed()
 
-	-- Переподключить Anti-Fling если он был включен
+	-- РџРµСЂРµРїРѕРґРєР»СЋС‡РёС‚СЊ Anti-Fling РµСЃР»Рё РѕРЅ Р±С‹Р» РІРєР»СЋС‡РµРЅ
 	if antiFlingEnabled then
 		if antiFlingConnection then
 			antiFlingConnection:Disconnect()
@@ -1788,11 +1875,11 @@ function onCharacterAdded(char)
 		antiFlingConnection = RunService.RenderStepped:Connect(antiFlingEnable)
 	end
 
-	-- Переподключить ESP если он был включен (ESP сам обрабатывает CharacterAdded через espHookPlayer)
-	-- Ничего дополнительного не нужно, ESP уже подписан на CharacterAdded
+	-- РџРµСЂРµРїРѕРґРєР»СЋС‡РёС‚СЊ ESP РµСЃР»Рё РѕРЅ Р±С‹Р» РІРєР»СЋС‡РµРЅ (ESP СЃР°Рј РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ CharacterAdded С‡РµСЂРµР· espHookPlayer)
+	-- РќРёС‡РµРіРѕ РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕРіРѕ РЅРµ РЅСѓР¶РЅРѕ, ESP СѓР¶Рµ РїРѕРґРїРёСЃР°РЅ РЅР° CharacterAdded
 
 	humanoid.Died:Connect(function()
-		-- Отключаем Desync
+		-- РћС‚РєР»СЋС‡Р°РµРј Desync
 		PastedSources = false
 		if desyncConnection then desyncConnection:Disconnect() desyncConnection = nil end
 		if desyncButton then
@@ -1802,7 +1889,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Desync", false)
 
-		-- Отключаем Wallhop
+		-- РћС‚РєР»СЋС‡Р°РµРј Wallhop
 		wallhopToggle = false
 		if button2 then
 			button2.Text = "Wallhop: OFF"
@@ -1811,13 +1898,13 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Wallhop", false)
 
-		-- Отключаем Anti-Aim
+		-- РћС‚РєР»СЋС‡Р°РµРј Anti-Aim
 		running = false
 		currentMode = 0
 		updateAntiAimButtonVisual()
 		setExtractedBtnState("Anti-Aim", false, "Anti-Aim: OFF")
 
-		-- Отключаем Infinite Jump
+		-- РћС‚РєР»СЋС‡Р°РµРј Infinite Jump
 		isEnabled = false
 		if button1 then
 			button1.Text = "Infinite Jump: OFF"
@@ -1826,7 +1913,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Infinite Jump", false)
 
-		-- Отключаем Invisibility
+		-- РћС‚РєР»СЋС‡Р°РµРј Invisibility
 		invis_on = false
 		if button5 then
 			button5.Text = "Invisibility: OFF"
@@ -1863,7 +1950,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Auto TP", false)
 
-		-- Отключаем Clumsy
+		-- РћС‚РєР»СЋС‡Р°РµРј Clumsy
 		clumsy_on = false
 		removeClumsyGhost()
 		if clumsyButton then
@@ -1873,11 +1960,11 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Clumsy", false)
 
-		-- ==== НЕ отключаем Speed Glitch - сохраняем его состояние ====
-		-- fakeSpeedEnabled остаётся как было
-		-- При новом персонаже будет переподключен в onCharacterAdded
+		-- ==== РќР• РѕС‚РєР»СЋС‡Р°РµРј Speed Glitch - СЃРѕС…СЂР°РЅСЏРµРј РµРіРѕ СЃРѕСЃС‚РѕСЏРЅРёРµ ====
+		-- fakeSpeedEnabled РѕСЃС‚Р°С‘С‚СЃСЏ РєР°Рє Р±С‹Р»Рѕ
+		-- РџСЂРё РЅРѕРІРѕРј РїРµСЂСЃРѕРЅР°Р¶Рµ Р±СѓРґРµС‚ РїРµСЂРµРїРѕРґРєР»СЋС‡РµРЅ РІ onCharacterAdded
 
-		-- Отключаем Noclip
+		-- РћС‚РєР»СЋС‡Р°РµРј Noclip
 		noclipEnabled = false
 		if noclipButton then
 			noclipButton.Text = "Noclip: OFF"
@@ -1890,7 +1977,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Noclip", false)
 
-		-- Отключаем KillAura
+		-- РћС‚РєР»СЋС‡Р°РµРј KillAura
 		reachEnabled = false
 		if reachButton then
 			reachButton.Text = "KillAura: OFF"
@@ -1903,7 +1990,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("KillAura", false)
 
-		-- Отключаем Air Strafe
+		-- РћС‚РєР»СЋС‡Р°РµРј Air Strafe
 		airStrafeEnabled = false
 		isStrafing = false
 		if airStrafeButton then
@@ -1921,7 +2008,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Air Strafe", false)
 
-		-- Отключаем Second Life
+		-- РћС‚РєР»СЋС‡Р°РµРј Second Life
 		if secondLifeEnabled then
 			disableSecondLife()
 			if secondLifeButton then
@@ -1932,7 +2019,7 @@ function onCharacterAdded(char)
 			setExtractedBtnState("Second Life", false)
 		end
 
-		-- Отключаем Touch Fling
+		-- РћС‚РєР»СЋС‡Р°РµРј Touch Fling
 		hiddenfling = false
 		if touchFlingButton then
 			touchFlingButton.Text = "Touch Fling: OFF"
@@ -1941,21 +2028,21 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Touch Fling", false)
 
-		-- Anti-Fling: НЕ отключаем, только disconnect старый connection (персонаж умер)
-		-- При респавне переподключится в onCharacterAdded
+		-- Anti-Fling: РќР• РѕС‚РєР»СЋС‡Р°РµРј, С‚РѕР»СЊРєРѕ disconnect СЃС‚Р°СЂС‹Р№ connection (РїРµСЂСЃРѕРЅР°Р¶ СѓРјРµСЂ)
+		-- РџСЂРё СЂРµСЃРїР°РІРЅРµ РїРµСЂРµРїРѕРґРєР»СЋС‡РёС‚СЃСЏ РІ onCharacterAdded
 		if antiFlingEnabled then
 			if antiFlingConnection then
 				antiFlingConnection:Disconnect()
 				antiFlingConnection = nil
 			end
-			-- Кнопку НЕ трогаем — оставляем зелёной
+			-- РљРЅРѕРїРєСѓ РќР• С‚СЂРѕРіР°РµРј вЂ” РѕСЃС‚Р°РІР»СЏРµРј Р·РµР»С‘РЅРѕР№
 		end
 
-		-- ESP: НЕ отключаем — ESP сам обрабатывает смену персонажа
-		-- Кнопку НЕ трогаем
+		-- ESP: РќР• РѕС‚РєР»СЋС‡Р°РµРј вЂ” ESP СЃР°Рј РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ СЃРјРµРЅСѓ РїРµСЂСЃРѕРЅР°Р¶Р°
+		-- РљРЅРѕРїРєСѓ РќР• С‚СЂРѕРіР°РµРј
 
-		-- Anti-Void: НЕ отключаем — Anti-Void сам обрабатывает CharacterAdded
-		-- Кнопку НЕ трогаем
+		-- Anti-Void: РќР• РѕС‚РєР»СЋС‡Р°РµРј вЂ” Anti-Void СЃР°Рј РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ CharacterAdded
+		-- РљРЅРѕРїРєСѓ РќР• С‚СЂРѕРіР°РµРј
 
 		stopFling()
 		stopCurrentAnimation()
@@ -2006,9 +2093,9 @@ player.CharacterRemoving:Connect(function()
 		airStrafeInputConnection = nil
 	end
 	setExtractedBtnState("Air Strafe", false)
-	-- ==== НЕ отключаем Speed Glitch при смерти ====
-	-- Он должен остаться включённым если был включён
-	-- Но нужно переподключить connection
+	-- ==== РќР• РѕС‚РєР»СЋС‡Р°РµРј Speed Glitch РїСЂРё СЃРјРµСЂС‚Рё ====
+	-- РћРЅ РґРѕР»Р¶РµРЅ РѕСЃС‚Р°С‚СЊСЃСЏ РІРєР»СЋС‡С‘РЅРЅС‹Рј РµСЃР»Рё Р±С‹Р» РІРєР»СЋС‡С‘РЅ
+	-- РќРѕ РЅСѓР¶РЅРѕ РїРµСЂРµРїРѕРґРєР»СЋС‡РёС‚СЊ connection
 	if fakeSpeedEnabled then
 		setupFakeSpeed()
 	end
@@ -2021,7 +2108,7 @@ player.CharacterRemoving:Connect(function()
 	end
 	setExtractedBtnState("Touch Fling", false)
 
-	-- Anti-Fling: НЕ отключаем состояние, только disconnect connection
+	-- Anti-Fling: РќР• РѕС‚РєР»СЋС‡Р°РµРј СЃРѕСЃС‚РѕСЏРЅРёРµ, С‚РѕР»СЊРєРѕ disconnect connection
 	if antiFlingEnabled then
 		if antiFlingConnection then
 			antiFlingConnection:Disconnect()
@@ -2029,8 +2116,8 @@ player.CharacterRemoving:Connect(function()
 		end
 	end
 
-	-- ESP: НЕ отключаем
-	-- Anti-Void: НЕ отключаем
+	-- ESP: РќР• РѕС‚РєР»СЋС‡Р°РµРј
+	-- Anti-Void: РќР• РѕС‚РєР»СЋС‡Р°РµРј
 
 	clumsy_on = false
 	if clumsyButton then
@@ -2168,8 +2255,8 @@ titleBar.Parent = topBar
 
 lockButton = Instance.new("TextButton")
 lockButton.Name = "LockButton"
-lockButton.Size = UDim2.new(0, 28, 0, 28)
-lockButton.Position = UDim2.new(1, -92, 0, 3)
+lockButton.Size = UDim2.new(0, 24, 0, 24)
+lockButton.Position = UDim2.new(1, -80, 0, 3)
 lockButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 lockButton.Text = "L"
@@ -2183,8 +2270,8 @@ lockCorner.Parent = lockButton
 
 minimizeButton = Instance.new("TextButton")
 minimizeButton.Name = "MinimizeButton"
-minimizeButton.Size = UDim2.new(0, 28, 0, 28)
-minimizeButton.Position = UDim2.new(1, -60, 0, 3)
+minimizeButton.Size = UDim2.new(0, 24, 0, 24)
+minimizeButton.Position = UDim2.new(1, -52, 0, 3)
 minimizeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeButton.Text = "—"
@@ -2198,8 +2285,8 @@ minCorner.Parent = minimizeButton
 
 closeButton = Instance.new("TextButton")
 closeButton.Name = "CloseButton"
-closeButton.Size = UDim2.new(0, 28, 0, 28)
-closeButton.Position = UDim2.new(1, -28, 0, 3)
+closeButton.Size = UDim2.new(0, 24, 0, 24)
+closeButton.Position = UDim2.new(1, -24, 0, 3)
 closeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeButton.Text = "X"
@@ -2282,7 +2369,7 @@ function createCategoryScrollFrame(categoryName)
 	categoryFrames[categoryName] = scroll
 end
 
-	canScroll = false  -- Флаг для блокировки скролла при инициализации
+	canScroll = false  -- Р¤Р»Р°Рі РґР»СЏ Р±Р»РѕРєРёСЂРѕРІРєРё СЃРєСЂРѕР»Р»Р° РїСЂРё РёРЅРёС†РёР°Р»РёР·Р°С†РёРё
 
 createCategoryScrollFrame("Main")
 createCategoryScrollFrame("Movement")
@@ -2291,6 +2378,8 @@ createCategoryScrollFrame("Trolling")
 createCategoryScrollFrame("Teleports")
 createCategoryScrollFrame("Utilities")
 createCategoryScrollFrame("Teamers")
+createCategoryScrollFrame("Exploiters")
+createCategoryScrollFrame("Scammers")
 createCategoryScrollFrame("Animations")
 createCategoryScrollFrame("Binds")
 createCategoryScrollFrame("Buttons")
@@ -2311,9 +2400,11 @@ function createCategoryButton(shortName, layoutOrder)
 		["Anim"] = "Animations",
 		["Bind"] = "Binds",
 		["Team"] = "Teamers",
+		["Expl"] = "Exploiters",
+		["Scam"] = "Scammers",
 		["Main"] = "Main",
 		["Btn"] = "Buttons",
-		["Set"] = "Settings"
+		["Set"] = "Settings",
 	}
 	local fullName = fullNames[shortName] or shortName
 	
@@ -2371,6 +2462,8 @@ createCategoryButton("Trl", 3.5)
 createCategoryButton("Tele", 4)
 createCategoryButton("Util", 5)
 createCategoryButton("Team", 6)
+createCategoryButton("Expl", 6.5)
+createCategoryButton("Scam", 6.7)
 createCategoryButton("Anim", 7)
 createCategoryButton("Bind", 8)
 createCategoryButton("Btn", 9)
@@ -2466,7 +2559,7 @@ function setToggleState(btn, state, onText, offText)
 	saveConfig()
 end
 
--- Система биндинга клавиш
+-- РЎРёСЃС‚РµРјР° Р±РёРЅРґРёРЅРіР° РєР»Р°РІРёС€
 keyBinds = {}
 featureBinds = {}
 
@@ -3017,7 +3110,7 @@ function autoGrabClaimDrop(drop)
 	local char = player.Character
 	local cf = root.CFrame
 
-	-- Сверхбыстрая многократная телепортация для максимальной скорости
+	-- РЎРІРµСЂС…Р±С‹СЃС‚СЂР°СЏ РјРЅРѕРіРѕРєСЂР°С‚РЅР°СЏ С‚РµР»РµРїРѕСЂС‚Р°С†РёСЏ РґР»СЏ РјР°РєСЃРёРјР°Р»СЊРЅРѕР№ СЃРєРѕСЂРѕСЃС‚Рё
 	for i = 1, 50 do
 		if not drop or not drop.Parent then break end
 		if drop:IsA("BasePart") then
@@ -3049,7 +3142,7 @@ function autoGrabClaimDrop(drop)
 		end
 	end
 
-	-- Мгновенное касание всех частей для подбора
+	-- РњРіРЅРѕРІРµРЅРЅРѕРµ РєР°СЃР°РЅРёРµ РІСЃРµС… С‡Р°СЃС‚РµР№ РґР»СЏ РїРѕРґР±РѕСЂР°
 	if char then
 		local hrp = char:FindFirstChild("HumanoidRootPart")
 		if hrp and drop then
@@ -3074,7 +3167,7 @@ function autoGrabClaimDrop(drop)
 		end
 	end
 
-	-- Запускаем магнит
+	-- Р—Р°РїСѓСЃРєР°РµРј РјР°РіРЅРёС‚
 	autoGrabStartMagnet(drop)
 
 	drop.AncestryChanged:Connect(function()
@@ -3089,30 +3182,30 @@ function autoGrabConnectModel(model)
 	if autoGrabGunConnectedModels[model] then return end
 	autoGrabGunConnectedModels[model] = true
 
-	-- Мгновенная проверка существующих
+	-- РњРіРЅРѕРІРµРЅРЅР°СЏ РїСЂРѕРІРµСЂРєР° СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёС…
 	for _, child in ipairs(model:GetDescendants()) do
 		if child.Name == "GunDrop" then
 			autoGrabClaimDrop(child)
 		end
 	end
 
-	-- DescendantAdded для моментального перехвата
+	-- DescendantAdded РґР»СЏ РјРѕРјРµРЅС‚Р°Р»СЊРЅРѕРіРѕ РїРµСЂРµС…РІР°С‚Р°
 	local conn = model.DescendantAdded:Connect(function(descendant)
 		if not autoGrabGunEnabled then return end
 		if descendant.Name == "GunDrop" then
-			-- Без задержки — мгновенный захват
+			-- Р‘РµР· Р·Р°РґРµСЂР¶РєРё вЂ” РјРіРЅРѕРІРµРЅРЅС‹Р№ Р·Р°С…РІР°С‚
 			autoGrabClaimDrop(descendant)
 		end
 	end)
 	autoGrabGunConnections[model] = conn
 
-	-- ChildAdded тоже для скорости
+	-- ChildAdded С‚РѕР¶Рµ РґР»СЏ СЃРєРѕСЂРѕСЃС‚Рё
 	local conn2 = model.ChildAdded:Connect(function(child)
 		if not autoGrabGunEnabled then return end
 		if child.Name == "GunDrop" then
 			autoGrabClaimDrop(child)
 		end
-		-- Проверяем потомков нового ребёнка
+		-- РџСЂРѕРІРµСЂСЏРµРј РїРѕС‚РѕРјРєРѕРІ РЅРѕРІРѕРіРѕ СЂРµР±С‘РЅРєР°
 		if child:IsA("Model") or child:IsA("Folder") then
 			for _, desc in ipairs(child:GetDescendants()) do
 				if desc.Name == "GunDrop" then
@@ -3139,7 +3232,7 @@ function autoGrabScanWorkspace()
 		if obj:IsA("Model") and autoGrabGunTargets[obj.Name] then
 			autoGrabConnectModel(obj)
 		end
-		-- Также ловим GunDrop напрямую
+		-- РўР°РєР¶Рµ Р»РѕРІРёРј GunDrop РЅР°РїСЂСЏРјСѓСЋ
 		if obj.Name == "GunDrop" then
 			autoGrabClaimDrop(obj)
 		end
@@ -3161,7 +3254,7 @@ function enableAutoGrabGun()
 
 	autoGrabScanWorkspace()
 
-	-- Workspace.DescendantAdded — мгновенный перехват
+	-- Workspace.DescendantAdded вЂ” РјРіРЅРѕРІРµРЅРЅС‹Р№ РїРµСЂРµС…РІР°С‚
 	table.insert(autoGrabGunConnections, Workspace.DescendantAdded:Connect(function(obj)
 		if not autoGrabGunEnabled then return end
 		if obj:IsA("Model") and autoGrabGunTargets[obj.Name] then
@@ -3172,7 +3265,7 @@ function enableAutoGrabGun()
 		end
 	end))
 
-	-- Workspace.ChildAdded — дополнительный перехват верхнего уровня
+	-- Workspace.ChildAdded вЂ” РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Р№ РїРµСЂРµС…РІР°С‚ РІРµСЂС…РЅРµРіРѕ СѓСЂРѕРІРЅСЏ
 	table.insert(autoGrabGunConnections, Workspace.ChildAdded:Connect(function(obj)
 		if not autoGrabGunEnabled then return end
 		if obj.Name == "GunDrop" then
@@ -3195,7 +3288,7 @@ function enableAutoGrabGun()
 		autoGrabScanWorkspace()
 	end))
 
-	-- Быстрый цикл сканирования — каждые 3 секунды
+	-- Р‘С‹СЃС‚СЂС‹Р№ С†РёРєР» СЃРєР°РЅРёСЂРѕРІР°РЅРёСЏ вЂ” РєР°Р¶РґС‹Рµ 3 СЃРµРєСѓРЅРґС‹
 	task.spawn(function()
 		while autoGrabGunEnabled do
 			task.wait(3)
@@ -3412,7 +3505,7 @@ function enableGunAura()
 		gunAuraScanWorkspace()
 	end))
 
-	-- Главный цикл проверки расстояния
+	-- Р“Р»Р°РІРЅС‹Р№ С†РёРєР» РїСЂРѕРІРµСЂРєРё СЂР°СЃСЃС‚РѕСЏРЅРёСЏ
 	table.insert(gunAuraConnections, RunService.Heartbeat:Connect(function()
 		if not gunAuraEnabled then return end
 		if isPlayerMurderer() then return end
@@ -3606,7 +3699,7 @@ local trollingInputRow = Instance.new("Frame")
 trollingInputRow.Name = "TrollingInputRow"
 trollingInputRow.Size = UDim2.new(1, 0, 0, 38)
 trollingInputRow.BackgroundTransparency = 1
-trollingInputRow.LayoutOrder = 290.1
+trollingInputRow.LayoutOrder = 290
 trollingInputRow.Parent = categoryFrames["Trolling"]
 
 local trollingInputBtn = Instance.new("TextButton")
@@ -4041,13 +4134,13 @@ function tpGetRoles()
 	end
 end
 
--- Мгновенная телепортация к CFrame
+-- РњРіРЅРѕРІРµРЅРЅР°СЏ С‚РµР»РµРїРѕСЂС‚Р°С†РёСЏ Рє CFrame
 local function doInstantTp(myHrp, myChar, targetCF)
 	myHrp.CFrame = targetCF
 	myChar:SetPrimaryPartCFrame(targetCF)
 	myHrp.AssemblyLinearVelocity = Vector3.zero
 	myHrp.AssemblyAngularVelocity = Vector3.zero
-	-- Фиксируем на 2 кадра чтоб физика не откинула
+	-- Р¤РёРєСЃРёСЂСѓРµРј РЅР° 2 РєР°РґСЂР° С‡С‚РѕР± С„РёР·РёРєР° РЅРµ РѕС‚РєРёРЅСѓР»Р°
 	local n = 0
 	local fixConn
 	fixConn = RunService.Heartbeat:Connect(function()
@@ -4830,7 +4923,7 @@ function gameNotifSend(title, text, color, strokeColor)
 		notifGui.Parent = player.PlayerGui
 	end
 
-	-- Считаем сколько уведомлений уже на экране
+	-- РЎС‡РёС‚Р°РµРј СЃРєРѕР»СЊРєРѕ СѓРІРµРґРѕРјР»РµРЅРёР№ СѓР¶Рµ РЅР° СЌРєСЂР°РЅРµ
 	local slotIndex = #gameNotifActiveNotifs
 
 	local frame = Instance.new("Frame")
@@ -4876,15 +4969,15 @@ function gameNotifSend(title, text, color, strokeColor)
 	textLabel.TextScaled = false
 	textLabel.Parent = frame
 
-	-- Добавляем в список активных
+	-- Р”РѕР±Р°РІР»СЏРµРј РІ СЃРїРёСЃРѕРє Р°РєС‚РёРІРЅС‹С…
 	table.insert(gameNotifActiveNotifs, frame)
 
-	-- Анимация появления
+	-- РђРЅРёРјР°С†РёСЏ РїРѕСЏРІР»РµРЅРёСЏ
 	TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Size = UDim2.new(0, 340, 0, 80)
 	}):Play()
 
-	-- Исчезновение через 4 секунды
+	-- РСЃС‡РµР·РЅРѕРІРµРЅРёРµ С‡РµСЂРµР· 4 СЃРµРєСѓРЅРґС‹
 	task.delay(4, function()
 		local fadeOut = TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 			Size = UDim2.new(0, 340, 0, 0)
@@ -4892,7 +4985,7 @@ function gameNotifSend(title, text, color, strokeColor)
 		fadeOut:Play()
 		fadeOut.Completed:Wait()
 
-		-- Удаляем из списка
+		-- РЈРґР°Р»СЏРµРј РёР· СЃРїРёСЃРєР°
 		for i, f in ipairs(gameNotifActiveNotifs) do
 			if f == frame then
 				table.remove(gameNotifActiveNotifs, i)
@@ -4901,7 +4994,7 @@ function gameNotifSend(title, text, color, strokeColor)
 		end
 		frame:Destroy()
 
-		-- Сдвигаем оставшиеся уведомления вниз
+		-- РЎРґРІРёРіР°РµРј РѕСЃС‚Р°РІС€РёРµСЃСЏ СѓРІРµРґРѕРјР»РµРЅРёСЏ РІРЅРёР·
 		gameNotifRepositionAll()
 	end)
 end
@@ -4952,14 +5045,14 @@ function gameNotifSendRound(murdererName, sheriffName)
 	titleLabel.Size = UDim2.new(1, -20, 0, 24)
 	titleLabel.Position = UDim2.new(0, 10, 0, 8)
 	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = "⚔️ Round Started"
+	titleLabel.Text = "вљ”пёЏ Round Started"
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 15
 	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = frame
 
-	-- Murderer строка
+	-- Murderer СЃС‚СЂРѕРєР°
 	local murdererLabel = Instance.new("TextLabel")
 	murdererLabel.Size = UDim2.new(1, -20, 0, 18)
 	murdererLabel.Position = UDim2.new(0, 10, 0, 34)
@@ -4971,7 +5064,7 @@ function gameNotifSendRound(murdererName, sheriffName)
 	murdererLabel.TextXAlignment = Enum.TextXAlignment.Left
 	murdererLabel.Parent = frame
 
-	-- Sheriff строка
+	-- Sheriff СЃС‚СЂРѕРєР°
 	local sheriffLabel = Instance.new("TextLabel")
 	sheriffLabel.Size = UDim2.new(1, -20, 0, 18)
 	sheriffLabel.Position = UDim2.new(0, 10, 0, 54)
@@ -5007,7 +5100,7 @@ function gameNotifSendRound(murdererName, sheriffName)
 	end)
 end
 
--- Отслеживание ролей
+-- РћС‚СЃР»РµР¶РёРІР°РЅРёРµ СЂРѕР»РµР№
 task.spawn(function()
 	while true do
 		task.wait(0.5)
@@ -5040,7 +5133,7 @@ task.spawn(function()
 	end
 end)
 
--- Отслеживание подбора GunDrop
+-- РћС‚СЃР»РµР¶РёРІР°РЅРёРµ РїРѕРґР±РѕСЂР° GunDrop
 task.spawn(function()
 	while true do
 		task.wait(0.3)
@@ -5084,7 +5177,7 @@ task.spawn(function()
 	end
 end)
 
--- Отслеживание появления GunDrop
+-- РћС‚СЃР»РµР¶РёРІР°РЅРёРµ РїРѕСЏРІР»РµРЅРёСЏ GunDrop
 task.spawn(function()
 	Workspace.DescendantAdded:Connect(function(obj)
 		if not gameNotifEnabled then return end
@@ -5107,7 +5200,7 @@ desyncButton.MouseButton1Click:Connect(function()
 end)
 
 clumsyButton = createButton("ClumsyButton", "Clumsy: OFF", 204)
--- Добавь вверху рядом с clumsyGhost
+-- Р”РѕР±Р°РІСЊ РІРІРµСЂС…Сѓ СЂСЏРґРѕРј СЃ clumsyGhost
 clumsyGhostAdornments = {}
 
 function clearClumsyAdornments()
@@ -5143,7 +5236,7 @@ function createClumsyGhost(position)
 			clone.Transparency = 0.6
 			clone.Material = Enum.Material.ForceField
 			clone.Color = Color3.fromRGB(150, 0, 255)
-			-- Убираем всё лишнее из клона
+			-- РЈР±РёСЂР°РµРј РІСЃС‘ Р»РёС€РЅРµРµ РёР· РєР»РѕРЅР°
 			for _, child in pairs(clone:GetChildren()) do
 				if not child:IsA("SpecialMesh") and not child:IsA("DataModelMesh") then
 					child:Destroy()
@@ -5153,7 +5246,7 @@ function createClumsyGhost(position)
 		end
 	end
 
-	-- Копируем аксессуары
+	-- РљРѕРїРёСЂСѓРµРј Р°РєСЃРµСЃСЃСѓР°СЂС‹
 	for _, acc in pairs(char:GetChildren()) do
 		if acc:IsA("Accessory") then
 			local handle = acc:FindFirstChild("Handle")
@@ -5175,7 +5268,7 @@ function createClumsyGhost(position)
 		end
 	end
 
-	-- Добавляем билборд с текстом
+	-- Р”РѕР±Р°РІР»СЏРµРј Р±РёР»Р±РѕСЂРґ СЃ С‚РµРєСЃС‚РѕРј
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "GhostLabel"
 	billboard.AlwaysOnTop = true
@@ -5193,7 +5286,7 @@ function createClumsyGhost(position)
 	label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	label.Parent = billboard
 
-	-- Позиционируем части призрака
+	-- РџРѕР·РёС†РёРѕРЅРёСЂСѓРµРј С‡Р°СЃС‚Рё РїСЂРёР·СЂР°РєР°
 	local charCF = CFrame.new(position)
 	for _, part in pairs(ghost:GetChildren()) do
 		if part:IsA("BasePart") then
@@ -5205,14 +5298,14 @@ function createClumsyGhost(position)
 		end
 	end
 
-	-- Билборд на голову призрака
+	-- Р‘РёР»Р±РѕСЂРґ РЅР° РіРѕР»РѕРІСѓ РїСЂРёР·СЂР°РєР°
 	local ghostHead = ghost:FindFirstChild("Head")
 	if ghostHead then
 		billboard.Adornee = ghostHead
 		billboard.Parent = ghostHead
 	end
 
-	-- Highlight чтобы было видно через стены
+	-- Highlight С‡С‚РѕР±С‹ Р±С‹Р»Рѕ РІРёРґРЅРѕ С‡РµСЂРµР· СЃС‚РµРЅС‹
 	local ghostHighlight = Instance.new("Highlight")
 ghostHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 ghostHighlight.FillTransparency = 0
@@ -5271,7 +5364,7 @@ clumsyButton.MouseButton1Click:Connect(function()
 		task.wait()
 		Seat.CFrame = savedpos
 
-		-- Создаём призрак на серверной позиции
+		-- РЎРѕР·РґР°С‘Рј РїСЂРёР·СЂР°Рє РЅР° СЃРµСЂРІРµСЂРЅРѕР№ РїРѕР·РёС†РёРё
 		createClumsyGhost(savedpos.Position)
 
 		game.StarterGui:SetCore("SendNotification", {Title = "Clumsy On"; Duration = 1; Text = "";})
@@ -5372,7 +5465,7 @@ antiAimButton.MouseButton1Click:Connect(cycleMode)
 updateAntiAimButtonVisual()
 
 -- ============================================
--- SECTION 5: Multi Fling (LayoutOrder 500-599) - ПРЕДПОСЛЕДНИЙ
+-- SECTION 5: Multi Fling (LayoutOrder 500-599) - РџР Р•Р”РџРћРЎР›Р•Р”РќРР™
 -- ============================================
 currentCategory = "Utilities"
 createSection("Utilities", 114.5)
@@ -5389,6 +5482,35 @@ multiFlingStatusLabel.Font = Enum.Font.SourceSansBold
 multiFlingStatusLabel.TextSize = 14
 multiFlingStatusLabel.LayoutOrder = 301
 multiFlingStatusLabel.Parent = categoryFrames["Utilities"]
+-- Search box for fling player list
+flingSearchBox = Instance.new("TextBox")
+flingSearchBox.Name = "FlingSearchBox"
+flingSearchBox.Size = UDim2.new(1, 0, 0, 32)
+flingSearchBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+flingSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+flingSearchBox.PlaceholderText = "Search players..."
+flingSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+flingSearchBox.Text = ""
+flingSearchBox.Font = Enum.Font.SourceSansBold
+flingSearchBox.TextSize = 15
+flingSearchBox.ClearTextOnFocus = false
+flingSearchBox.LayoutOrder = 301.5
+flingSearchBox.Parent = categoryFrames["Utilities"]
+
+flingSearchCorner = Instance.new("UICorner")
+flingSearchCorner.CornerRadius = UDim.new(0, 6)
+flingSearchCorner.Parent = flingSearchBox
+
+flingSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local searchText = string.lower(flingSearchBox.Text)
+	for _, data in pairs(playerCheckboxes) do
+		if data.Entry and data.NameLabel then
+			local playerName = data.NameLabel.Text
+			data.Entry.Visible = searchText == "" or string.find(string.lower(playerName), searchText, 1, true) ~= nil
+		end
+	end
+end)
+
 
 local multiFlingFrame = Instance.new("Frame")
 multiFlingFrame.Name = "MultiFlingFrame"
@@ -5860,15 +5982,13 @@ local function isoToUnix(iso)
 end
 
 -- ============================================
--- SECTION 7: Teamers
--- ============================================
 currentCategory = "Teamers"
 createSection("Teamers", 600)
 
-local teamerPlayerList = Instance.new("ScrollingFrame")
+teamerPlayerList = Instance.new("ScrollingFrame")
 teamerPlayerList.Name = "TeamerPlayerList"
-teamerPlayerList.Size = UDim2.new(1, 0, 1, -38)
-teamerPlayerList.Position = UDim2.new(0, 0, 0, 38)
+teamerPlayerList.Size = UDim2.new(1, 0, 1, -62)
+teamerPlayerList.Position = UDim2.new(0, 0, 0, 62)
 teamerPlayerList.BackgroundTransparency = 1
 teamerPlayerList.BorderSizePixel = 0
 teamerPlayerList.ScrollBarThickness = 4
@@ -5877,7 +5997,7 @@ teamerPlayerList.CanvasSize = UDim2.new(0, 0, 0, 0)
 teamerPlayerList.LayoutOrder = 601
 teamerPlayerList.Parent = categoryFrames["Teamers"]
 
-local teamerLayout = Instance.new("UIListLayout")
+teamerLayout = Instance.new("UIListLayout")
 teamerLayout.Padding = UDim.new(0, 5)
 teamerLayout.SortOrder = Enum.SortOrder.LayoutOrder
 teamerLayout.Parent = teamerPlayerList
@@ -5885,9 +6005,45 @@ teamerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	teamerPlayerList.CanvasSize = UDim2.new(0, 0, 0, teamerLayout.AbsoluteContentSize.Y)
 end)
 
-local teamerSearchMode = "Name"
+teamerSearchMode = "Name"
 
-local teamerSearchRow = Instance.new("Frame")
+teamerPlayerHeader = Instance.new("Frame")
+teamerPlayerHeader.Name = "TeamerPlayerHeader"
+teamerPlayerHeader.Size = UDim2.new(1, 0, 0, 24)
+teamerPlayerHeader.BackgroundTransparency = 1
+teamerPlayerHeader.LayoutOrder = 599
+teamerPlayerHeader.Parent = categoryFrames["Teamers"]
+
+teamerPlayerHeaderLabel = Instance.new("TextLabel")
+teamerPlayerHeaderLabel.Size = UDim2.new(1, -28, 0, 24)
+teamerPlayerHeaderLabel.BackgroundTransparency = 1
+teamerPlayerHeaderLabel.Text = "Player List"
+teamerPlayerHeaderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamerPlayerHeaderLabel.TextXAlignment = Enum.TextXAlignment.Left
+teamerPlayerHeaderLabel.Font = Enum.Font.SourceSansBold
+teamerPlayerHeaderLabel.TextSize = 15
+teamerPlayerHeaderLabel.Parent = teamerPlayerHeader
+
+teamerPlayerCollapseBtn = Instance.new("TextButton")
+teamerPlayerCollapseBtn.Name = "TeamerPlayerCollapseBtn"
+teamerPlayerCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+teamerPlayerCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+teamerPlayerCollapseBtn.BackgroundTransparency = 1
+teamerPlayerCollapseBtn.Text = "-"
+teamerPlayerCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamerPlayerCollapseBtn.Font = Enum.Font.SourceSansBold
+teamerPlayerCollapseBtn.TextSize = 18
+teamerPlayerCollapseBtn.Parent = teamerPlayerHeader
+
+teamerPlayerCollapsed = false
+teamerPlayerCollapseBtn.MouseButton1Click:Connect(function()
+	teamerPlayerCollapsed = not teamerPlayerCollapsed
+	teamerSearchRow.Visible = not teamerPlayerCollapsed
+	teamerPlayerList.Visible = not teamerPlayerCollapsed
+	teamerPlayerCollapseBtn.Text = teamerPlayerCollapsed and "+" or "-"
+end)
+
+teamerSearchRow = Instance.new("Frame")
 teamerSearchRow.Name = "TeamerSearchRow"
 teamerSearchRow.Size = UDim2.new(1, 0, 0, 28)
 teamerSearchRow.Position = UDim2.new(0, 5, 0, 5)
@@ -5895,25 +6051,25 @@ teamerSearchRow.BackgroundTransparency = 1
 teamerSearchRow.LayoutOrder = 600
 teamerSearchRow.Parent = categoryFrames["Teamers"]
 
-local teamerSearchBox = Instance.new("TextBox")
-teamerSearchBox.Name = "TeamerSearchBox"
-teamerSearchBox.Size = UDim2.new(1, -94, 0, 28)
-teamerSearchBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-teamerSearchBox.BorderSizePixel = 0
-teamerSearchBox.PlaceholderText = "Search..."
-teamerSearchBox.PlaceholderColor3 = Color3.fromRGB(140, 140, 140)
-teamerSearchBox.Text = ""
-teamerSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-teamerSearchBox.Font = Enum.Font.Gotham
-teamerSearchBox.TextSize = 14
-teamerSearchBox.ClearTextOnFocus = false
-teamerSearchBox.Parent = teamerSearchRow
+teamerPlayerSearchBox = Instance.new("TextBox")
+teamerPlayerSearchBox.Name = "TeamerPlayerSearchBox"
+teamerPlayerSearchBox.Size = UDim2.new(1, -94, 0, 28)
+teamerPlayerSearchBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+teamerPlayerSearchBox.BorderSizePixel = 0
+teamerPlayerSearchBox.PlaceholderText = "Search..."
+teamerPlayerSearchBox.PlaceholderColor3 = Color3.fromRGB(140, 140, 140)
+teamerPlayerSearchBox.Text = ""
+teamerPlayerSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamerPlayerSearchBox.Font = Enum.Font.Gotham
+teamerPlayerSearchBox.TextSize = 14
+teamerPlayerSearchBox.ClearTextOnFocus = false
+teamerPlayerSearchBox.Parent = teamerSearchRow
 
-local searchBoxCorner = Instance.new("UICorner")
+searchBoxCorner = Instance.new("UICorner")
 searchBoxCorner.CornerRadius = UDim.new(0, 6)
-searchBoxCorner.Parent = teamerSearchBox
+searchBoxCorner.Parent = teamerPlayerSearchBox
 
-local teamerSearchToggle = Instance.new("TextButton")
+teamerSearchToggle = Instance.new("TextButton")
 teamerSearchToggle.Name = "TeamerSearchToggle"
 teamerSearchToggle.Size = UDim2.new(0, 84, 0, 28)
 teamerSearchToggle.Position = UDim2.new(1, -94, 0, 0)
@@ -5925,12 +6081,12 @@ teamerSearchToggle.Font = Enum.Font.GothamBold
 teamerSearchToggle.TextSize = 12
 teamerSearchToggle.Parent = teamerSearchRow
 
-local searchToggleCorner = Instance.new("UICorner")
+searchToggleCorner = Instance.new("UICorner")
 searchToggleCorner.CornerRadius = UDim.new(0, 6)
 searchToggleCorner.Parent = teamerSearchToggle
 
-local function filterTeamerList()
-	local query = teamerSearchBox.Text:lower()
+function filterTeamerList()
+	local query = teamerPlayerSearchBox.Text:lower()
 	for _, child in ipairs(teamerPlayerList:GetChildren()) do
 		if child:IsA("TextButton") then
 			local searchText = child.Name:lower()
@@ -5957,16 +6113,16 @@ teamerSearchToggle.MouseButton1Click:Connect(function()
 	filterTeamerList()
 end)
 
-teamerSearchBox:GetPropertyChangedSignal("Text"):Connect(filterTeamerList)
-teamerSearchBox.FocusLost:Connect(function()
+teamerPlayerSearchBox:GetPropertyChangedSignal("Text"):Connect(filterTeamerList)
+teamerPlayerSearchBox.FocusLost:Connect(function()
 	task.wait()
 	filterTeamerList()
 end)
 
-local teamerFriendships = {}
-local teamerPopupCache = {}
+teamerFriendships = {}
+teamerPopupCache = {}
 
-local function formatRegDate(accountAge)
+function formatRegDate(accountAge)
 	local now = os.time()
 	local utcDate = os.date("!*t", now)
 	local isPDT = utcDate.month > 3 and utcDate.month < 11
@@ -5990,7 +6146,7 @@ local function formatRegDate(accountAge)
 	return string.format("%02d/%02d/%04d", d, m, y)
 end
 
-local function createTeamerPlayerButton(plr)
+function createTeamerPlayerButton(plr)
 	if plr == player then return end
 	local button = Instance.new("TextButton")
 	button.Name = plr.Name
@@ -6218,11 +6374,6 @@ local function createTeamerPlayerButton(plr)
 						friendAvatarCorner.CornerRadius = UDim.new(0, 4)
 						friendAvatarCorner.Parent = friendAvatar
 
-						coroutine.wrap(function()
-							local thumb = Players:GetUserThumbnailAsync(otherPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-							friendAvatar.Image = thumb
-						end)()
-
 						local friendName = Instance.new("TextLabel")
 						friendName.Size = UDim2.new(1, -35, 1, 0)
 						friendName.Position = UDim2.new(0, 31, 0, 0)
@@ -6371,7 +6522,7 @@ local function createTeamerPlayerButton(plr)
 		local avatarPriceLine = addInfoLine("Avatar Price: N/A")
 		local positionLine = addInfoLine("Player Position: N/A")
 
-		-- Живые лейблы скорости/прыжка
+		-- Р вЂ“Р С‘Р Р†РЎвЂ№Р Вµ Р В»Р ВµР в„–Р В±Р В»РЎвЂ№ РЎРѓР С”Р С•РЎР‚Р С•РЎРѓРЎвЂљР С‘/Р С—РЎР‚РЎвЂ№Р В¶Р С”Р В°
 		local speedLine  = addInfoLine("Walk Speed: N/A")
 		local jumpLine   = addInfoLine("Jump Power: N/A")
 		local healthLine = addInfoLine("Health: N/A")
@@ -6526,6 +6677,722 @@ Players.PlayerRemoving:Connect(function(plr)
 		end
 	end
 end)
+
+-- ============================================
+-- Online Teamers section (marked teamers online)
+-- ============================================
+currentCategory = "Teamers"
+
+onlineTeamersHeader = Instance.new("Frame")
+onlineTeamersHeader.Name = "OnlineTeamersHeader"
+onlineTeamersHeader.Size = UDim2.new(1, 0, 0, 24)
+onlineTeamersHeader.BackgroundTransparency = 1
+onlineTeamersHeader.LayoutOrder = 605
+onlineTeamersHeader.Parent = categoryFrames["Teamers"]
+
+onlineTeamersLabel = Instance.new("TextLabel")
+onlineTeamersLabel.Size = UDim2.new(1, -28, 0, 24)
+onlineTeamersLabel.BackgroundTransparency = 1
+onlineTeamersLabel.Text = "Online Teamers"
+onlineTeamersLabel.TextColor3 = Color3.fromRGB(255, 180, 50)
+onlineTeamersLabel.TextXAlignment = Enum.TextXAlignment.Left
+onlineTeamersLabel.Font = Enum.Font.SourceSansBold
+onlineTeamersLabel.TextSize = 15
+onlineTeamersLabel.Parent = onlineTeamersHeader
+
+onlineTeamersCollapseBtn = Instance.new("TextButton")
+onlineTeamersCollapseBtn.Name = "OnlineTeamersCollapseBtn"
+onlineTeamersCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+onlineTeamersCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+onlineTeamersCollapseBtn.BackgroundTransparency = 1
+onlineTeamersCollapseBtn.Text = "-"
+onlineTeamersCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+onlineTeamersCollapseBtn.Font = Enum.Font.SourceSansBold
+onlineTeamersCollapseBtn.TextSize = 18
+onlineTeamersCollapseBtn.Parent = onlineTeamersHeader
+
+onlineTeamersContainer = Instance.new("Frame")
+onlineTeamersContainer.Name = "OnlineTeamersContainer"
+onlineTeamersContainer.Size = UDim2.new(1, 0, 0, 0)
+onlineTeamersContainer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+onlineTeamersContainer.BorderSizePixel = 0
+onlineTeamersContainer.ClipsDescendants = true
+onlineTeamersContainer.LayoutOrder = 606
+onlineTeamersContainer.Parent = categoryFrames["Teamers"]
+
+onlineTeamersContainerCorner = Instance.new("UICorner")
+onlineTeamersContainerCorner.CornerRadius = UDim.new(0, 6)
+onlineTeamersContainerCorner.Parent = onlineTeamersContainer
+
+onlineTeamersList = Instance.new("ScrollingFrame")
+onlineTeamersList.Name = "OnlineTeamersList"
+onlineTeamersList.Size = UDim2.new(1, -8, 1, -8)
+onlineTeamersList.Position = UDim2.new(0, 4, 0, 4)
+onlineTeamersList.BackgroundTransparency = 1
+onlineTeamersList.BorderSizePixel = 0
+onlineTeamersList.ScrollBarThickness = 4
+onlineTeamersList.CanvasSize = UDim2.new(0, 0, 0, 0)
+onlineTeamersList.Parent = onlineTeamersContainer
+
+onlineTeamersListLayout = Instance.new("UIListLayout")
+onlineTeamersListLayout.Padding = UDim.new(0, 5)
+onlineTeamersListLayout.Parent = onlineTeamersList
+onlineTeamersListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	onlineTeamersList.CanvasSize = UDim2.new(0, 0, 0, onlineTeamersListLayout.AbsoluteContentSize.Y)
+end)
+
+onlineTeamersCollapsed = false
+onlineTeamersCollapseBtn.MouseButton1Click:Connect(function()
+	onlineTeamersCollapsed = not onlineTeamersCollapsed
+	onlineTeamersContainer.Visible = not onlineTeamersCollapsed
+	onlineTeamersCollapseBtn.Text = onlineTeamersCollapsed and "+" or "-"
+end)
+
+function refreshOnlineTeamers()
+	if not onlineTeamersList then return end
+	for _, child in ipairs(onlineTeamersList:GetChildren()) do
+		if not child:IsA("UIListLayout") then
+			child:Destroy()
+		end
+	end
+
+	local markedOnline = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and markedTeamers[plr.Name] == true then
+			table.insert(markedOnline, plr)
+		end
+	end
+	table.sort(markedOnline, function(a, b) return a.Name:lower() < b.Name:lower() end)
+
+	local count = #markedOnline
+	local entryHeight = 60
+	local maxContainerHeight = 190
+	local containerH = count > 0 and math.min(count * (entryHeight + 5) + 10, maxContainerHeight) or 0
+	onlineTeamersContainer.Size = UDim2.new(1, 0, 0, containerH)
+
+	if count == 0 then
+		local emptyLabel = Instance.new("TextLabel")
+		emptyLabel.Size = UDim2.new(1, 0, 0, 30)
+		emptyLabel.BackgroundTransparency = 1
+		emptyLabel.Text = "No marked teamers online"
+		emptyLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+		emptyLabel.Font = Enum.Font.SourceSansBold
+		emptyLabel.TextSize = 13
+		emptyLabel.Parent = onlineTeamersList
+		return
+	end
+
+	for _, plr in ipairs(markedOnline) do
+		local button = Instance.new("TextButton")
+		button.Name = plr.Name
+		button.Size = UDim2.new(1, 0, 0, entryHeight)
+		button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		button.BorderSizePixel = 0
+		button.Text = ""
+		button.AutoButtonColor = false
+		button.Parent = onlineTeamersList
+
+		local btnCorner = Instance.new("UICorner")
+		btnCorner.CornerRadius = UDim.new(0, 6)
+		btnCorner.Parent = button
+
+		local avatar = Instance.new("ImageLabel")
+		avatar.Name = "Avatar"
+		avatar.Size = UDim2.new(0, 40, 0, 40)
+		avatar.Position = UDim2.new(0, 5, 0, 10)
+		avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		avatar.BorderSizePixel = 0
+		avatar.Parent = button
+
+		local avatarCorner = Instance.new("UICorner")
+		avatarCorner.CornerRadius = UDim.new(0, 6)
+		avatarCorner.Parent = avatar
+
+		coroutine.wrap(function()
+			local thumb = Players:GetUserThumbnailAsync(plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+			avatar.Image = thumb
+		end)()
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(1, -60, 0, 20)
+		nameLabel.Position = UDim2.new(0, 55, 0, 20)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = plr.DisplayName .. " (" .. plr.Name .. ")"
+		nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		nameLabel.Font = Enum.Font.GothamBold
+		nameLabel.TextSize = 14
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Parent = button
+
+		button.MouseEnter:Connect(function()
+			button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+		end)
+		button.MouseLeave:Connect(function()
+			button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		end)
+
+		button.MouseButton1Click:Connect(function()
+			showPlayerInfoPopup(plr)
+		end)
+	end
+end
+
+-- ============================================
+-- Teamers Marking System (Exploiters style, orange)
+-- ============================================
+currentCategory = "Teamers"
+
+-- Title bar with collapse button
+teamerTitleBar = Instance.new("Frame")
+teamerTitleBar.Name = "TeamerTitleBar"
+teamerTitleBar.Size = UDim2.new(1, 0, 0, 24)
+teamerTitleBar.BackgroundTransparency = 1
+teamerTitleBar.LayoutOrder = 611
+teamerTitleBar.Parent = categoryFrames["Teamers"]
+
+teamerStatusLabel = Instance.new("TextLabel")
+teamerStatusLabel.Name = "TeamerStatusLabel"
+teamerStatusLabel.Size = UDim2.new(1, -28, 0, 24)
+teamerStatusLabel.BackgroundTransparency = 1
+teamerStatusLabel.Text = "Select players to mark as teamers"
+teamerStatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamerStatusLabel.Font = Enum.Font.SourceSansBold
+teamerStatusLabel.TextSize = 15
+teamerStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+teamerStatusLabel.Parent = teamerTitleBar
+
+teamerCollapseBtn = Instance.new("TextButton")
+teamerCollapseBtn.Name = "TeamerCollapseBtn"
+teamerCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+teamerCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+teamerCollapseBtn.BackgroundTransparency = 1
+teamerCollapseBtn.Text = "-"
+teamerCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamerCollapseBtn.Font = Enum.Font.SourceSansBold
+teamerCollapseBtn.TextSize = 18
+teamerCollapseBtn.Parent = teamerTitleBar
+
+teamerListCollapsed = false
+teamerCollapseBtn.MouseButton1Click:Connect(function()
+	teamerListCollapsed = not teamerListCollapsed
+	teamerMarkingFrame.Visible = not teamerListCollapsed
+	teamerSearchBox.Visible = not teamerListCollapsed
+	teamerCollapseBtn.Text = teamerListCollapsed and "+" or "-"
+end)
+
+-- Search box
+teamerSearchBox = Instance.new("TextBox")
+teamerSearchBox.Name = "TeamerSearchBox"
+teamerSearchBox.Size = UDim2.new(1, 0, 0, 32)
+teamerSearchBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+teamerSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamerSearchBox.PlaceholderText = "Search players..."
+teamerSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+teamerSearchBox.Text = ""
+teamerSearchBox.Font = Enum.Font.SourceSansBold
+teamerSearchBox.TextSize = 15
+teamerSearchBox.ClearTextOnFocus = false
+teamerSearchBox.LayoutOrder = 611.5
+teamerSearchBox.Parent = categoryFrames["Teamers"]
+
+teamerSearchCorner = Instance.new("UICorner")
+teamerSearchCorner.CornerRadius = UDim.new(0, 6)
+teamerSearchCorner.Parent = teamerSearchBox
+
+teamerSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local searchText = string.lower(teamerSearchBox.Text)
+	for _, data in pairs(teamerCheckboxes) do
+		if data.Entry and data.NameLabel then
+			local playerName = data.NameLabel.Text:gsub("^%[!%] ", "")
+			data.Entry.Visible = searchText == "" or string.find(string.lower(playerName), searchText, 1, true) ~= nil
+		end
+	end
+end)
+
+teamerMarkingFrame = Instance.new("Frame")
+teamerMarkingFrame.Name = "TeamerMarkingFrame"
+teamerMarkingFrame.Size = UDim2.new(1, 0, 0, 220)
+teamerMarkingFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+teamerMarkingFrame.BorderSizePixel = 0
+teamerMarkingFrame.LayoutOrder = 612
+teamerMarkingFrame.Parent = categoryFrames["Teamers"]
+
+teamerMarkingFrameCorner = Instance.new("UICorner")
+teamerMarkingFrameCorner.CornerRadius = UDim.new(0, 6)
+teamerMarkingFrameCorner.Parent = teamerMarkingFrame
+
+teamerScrollFrame = Instance.new("ScrollingFrame")
+teamerScrollFrame.Name = "TeamerScrollFrame"
+teamerScrollFrame.Position = UDim2.new(0, 8, 0, 8)
+teamerScrollFrame.Size = UDim2.new(1, -16, 0, 124)
+teamerScrollFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+teamerScrollFrame.BorderSizePixel = 0
+teamerScrollFrame.ScrollBarThickness = 4
+teamerScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+teamerScrollFrame.Parent = teamerMarkingFrame
+
+teamerScrollFrameCorner = Instance.new("UICorner")
+teamerScrollFrameCorner.CornerRadius = UDim.new(0, 6)
+teamerScrollFrameCorner.Parent = teamerScrollFrame
+
+teamerScrollPadding = Instance.new("UIPadding")
+teamerScrollPadding.PaddingLeft = UDim.new(0, 4)
+teamerScrollPadding.PaddingRight = UDim.new(0, 4)
+teamerScrollPadding.PaddingTop = UDim.new(0, 4)
+teamerScrollPadding.PaddingBottom = UDim.new(0, 4)
+teamerScrollPadding.Parent = teamerScrollFrame
+
+teamerMarkButton = Instance.new("TextButton")
+teamerMarkButton.Name = "TeamerMarkButton"
+teamerMarkButton.Size = UDim2.new(0.5, -12, 0, 34)
+teamerMarkButton.Position = UDim2.new(0, 8, 0, 140)
+teamerMarkButton.BackgroundColor3 = Color3.fromRGB(40, 25, 0)
+teamerMarkButton.TextColor3 = Color3.fromRGB(255, 200, 100)
+teamerMarkButton.Text = "MARK"
+teamerMarkButton.Font = Enum.Font.SourceSansBold
+teamerMarkButton.TextSize = 16
+teamerMarkButton.Parent = teamerMarkingFrame
+
+teamerMarkButtonCorner = Instance.new("UICorner")
+teamerMarkButtonCorner.CornerRadius = UDim.new(0, 6)
+teamerMarkButtonCorner.Parent = teamerMarkButton
+
+teamerUnmarkButton = Instance.new("TextButton")
+teamerUnmarkButton.Name = "TeamerUnmarkButton"
+teamerUnmarkButton.Size = UDim2.new(0.5, -12, 0, 34)
+teamerUnmarkButton.Position = UDim2.new(0.5, 4, 0, 140)
+teamerUnmarkButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+teamerUnmarkButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamerUnmarkButton.Text = "UNMARK"
+teamerUnmarkButton.Font = Enum.Font.SourceSansBold
+teamerUnmarkButton.TextSize = 16
+teamerUnmarkButton.Parent = teamerMarkingFrame
+
+teamerUnmarkButtonCorner = Instance.new("UICorner")
+teamerUnmarkButtonCorner.CornerRadius = UDim.new(0, 6)
+teamerUnmarkButtonCorner.Parent = teamerUnmarkButton
+
+teamerSelectAllButton = Instance.new("TextButton")
+teamerSelectAllButton.Name = "TeamerSelectAllButton"
+teamerSelectAllButton.Size = UDim2.new(0.5, -12, 0, 30)
+teamerSelectAllButton.Position = UDim2.new(0, 8, 0, 182)
+teamerSelectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+teamerSelectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamerSelectAllButton.Text = "SELECT ALL"
+teamerSelectAllButton.Font = Enum.Font.SourceSansBold
+teamerSelectAllButton.TextSize = 14
+teamerSelectAllButton.Parent = teamerMarkingFrame
+
+teamerSelectAllCorner = Instance.new("UICorner")
+teamerSelectAllCorner.CornerRadius = UDim.new(0, 6)
+teamerSelectAllCorner.Parent = teamerSelectAllButton
+
+teamerDeselectAllButton = Instance.new("TextButton")
+teamerDeselectAllButton.Name = "TeamerDeselectAllButton"
+teamerDeselectAllButton.Size = UDim2.new(0.5, -12, 0, 30)
+teamerDeselectAllButton.Position = UDim2.new(0.5, 4, 0, 182)
+teamerDeselectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+teamerDeselectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamerDeselectAllButton.Text = "DESELECT ALL"
+teamerDeselectAllButton.Font = Enum.Font.SourceSansBold
+teamerDeselectAllButton.TextSize = 14
+teamerDeselectAllButton.Parent = teamerMarkingFrame
+
+teamerDeselectAllCorner = Instance.new("UICorner")
+teamerDeselectAllCorner.CornerRadius = UDim.new(0, 6)
+teamerDeselectAllCorner.Parent = teamerDeselectAllButton
+
+-- Notify button
+notifyTeamersButton = Instance.new("TextButton")
+notifyTeamersButton.Name = "NotifyTeamersButton"
+notifyTeamersButton.Size = UDim2.new(1, 0, 0, 42)
+notifyTeamersButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+notifyTeamersButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+notifyTeamersButton.Text = "Notify on Teamers: OFF"
+notifyTeamersButton.Font = Enum.Font.SourceSansBold
+notifyTeamersButton.TextSize = 16
+notifyTeamersButton.LayoutOrder = 617
+notifyTeamersButton.Parent = categoryFrames["Teamers"]
+
+notifyTeamersCorner = Instance.new("UICorner")
+notifyTeamersCorner.CornerRadius = UDim.new(0, 6)
+notifyTeamersCorner.Parent = notifyTeamersButton
+
+-- Teamer list functions
+function refreshTeamerList()
+	if not teamerScrollFrame then return end
+	if refreshOnlineTeamers then refreshOnlineTeamers() end
+	if refreshSavedTeamers then refreshSavedTeamers() end
+	for _, child in ipairs(teamerScrollFrame:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+	teamerCheckboxes = {}
+
+	local playerList = Players:GetPlayers()
+	table.sort(playerList, function(a, b)
+		return a.Name:lower() < b.Name:lower()
+	end)
+
+	local yPosition = 0
+	for _, plr in ipairs(playerList) do
+		if plr ~= player then
+			local isMarked = markedTeamers[plr.Name] == true
+
+			local playerEntry = Instance.new("Frame")
+			playerEntry.Name = plr.Name .. "Entry"
+			playerEntry.Size = UDim2.new(1, 0, 0, 30)
+			playerEntry.Position = UDim2.new(0, 0, 0, yPosition)
+			playerEntry.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			playerEntry.BorderSizePixel = 0
+			playerEntry.Parent = teamerScrollFrame
+
+			local entryCorner = Instance.new("UICorner")
+			entryCorner.CornerRadius = UDim.new(0, 6)
+			entryCorner.Parent = playerEntry
+
+			local checkbox = Instance.new("TextButton")
+			checkbox.Size = UDim2.new(0, 24, 0, 24)
+			checkbox.Position = UDim2.new(0, 3, 0.5, -12)
+			checkbox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			checkbox.BorderSizePixel = 0
+			checkbox.Text = ""
+			checkbox.Parent = playerEntry
+
+			local checkboxCorner = Instance.new("UICorner")
+			checkboxCorner.CornerRadius = UDim.new(0, 6)
+			checkboxCorner.Parent = checkbox
+
+			local checkmark = Instance.new("TextLabel")
+			checkmark.Size = UDim2.new(1, 0, 1, 0)
+			checkmark.BackgroundTransparency = 1
+			checkmark.Text = "✓"
+			checkmark.TextColor3 = Color3.fromRGB(255, 170, 0)
+			checkmark.Font = Enum.Font.GothamBold
+			checkmark.TextSize = 20
+			checkmark.Visible = selectedTeamerTargets[plr.Name] ~= nil
+			checkmark.Parent = checkbox
+
+			local nameLabel = Instance.new("TextLabel")
+			nameLabel.Size = UDim2.new(1, -35, 1, 0)
+			nameLabel.Position = UDim2.new(0, 32, 0, 0)
+			nameLabel.BackgroundTransparency = 1
+			nameLabel.Text = (isMarked and "[!] " or "") .. plr.Name
+			nameLabel.TextColor3 = isMarked and Color3.fromRGB(255, 170, 0) or Color3.fromRGB(255, 255, 255)
+			nameLabel.TextSize = 16
+			nameLabel.Font = Enum.Font.SourceSansBold
+			nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+			nameLabel.Parent = playerEntry
+
+			local clickArea = Instance.new("TextButton")
+			clickArea.Size = UDim2.new(1, -30, 1, 0)
+			clickArea.BackgroundTransparency = 1
+			clickArea.Text = ""
+			clickArea.Parent = playerEntry
+
+			clickArea.MouseButton1Click:Connect(function()
+				if selectedTeamerTargets[plr.Name] then
+					selectedTeamerTargets[plr.Name] = nil
+					checkmark.Visible = false
+				else
+					selectedTeamerTargets[plr.Name] = plr
+					checkmark.Visible = true
+				end
+			end)
+
+			local infoBtn = Instance.new("TextButton")
+			infoBtn.Name = plr.Name .. "InfoBtn"
+			infoBtn.Size = UDim2.new(0, 24, 0, 24)
+			infoBtn.Position = UDim2.new(1, -27, 0.5, -12)
+			infoBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			infoBtn.BorderSizePixel = 0
+			infoBtn.Text = ">"
+			infoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+			infoBtn.Font = Enum.Font.SourceSansBold
+			infoBtn.TextSize = 16
+			infoBtn.Parent = playerEntry
+
+			local infoBtnCorner = Instance.new("UICorner")
+			infoBtnCorner.CornerRadius = UDim.new(0, 4)
+			infoBtnCorner.Parent = infoBtn
+
+			infoBtn.MouseButton1Click:Connect(function()
+				showPlayerInfoPopup(plr)
+			end)
+
+			infoBtn.MouseEnter:Connect(function()
+				infoBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+			end)
+			infoBtn.MouseLeave:Connect(function()
+				infoBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			end)
+
+			teamerCheckboxes[plr.Name] = {
+				Entry = playerEntry,
+				Checkmark = checkmark,
+				NameLabel = nameLabel,
+				InfoBtn = infoBtn,
+			}
+
+			yPosition += 36
+		end
+	end
+
+	teamerScrollFrame.CanvasSize = UDim2.new(0, 0, 0, yPosition)
+	updateTeamerStatus()
+	if teamerSearchBox then
+		local searchText = string.lower(teamerSearchBox.Text)
+		for _, data in pairs(teamerCheckboxes) do
+			if data.Entry and data.NameLabel then
+				local playerName = data.NameLabel.Text:gsub("^%[!%] ", "")
+				data.Entry.Visible = searchText == "" or string.find(string.lower(playerName), searchText, 1, true) ~= nil
+			end
+		end
+	end
+end
+
+function updateTeamerStatus()
+	if not teamerStatusLabel then return end
+	local count = 0
+	for _ in pairs(selectedTeamerTargets) do
+		count += 1
+	end
+	teamerStatusLabel.Text = count == 0 and "Select players to mark as teamers" or (count .. " player(s) selected")
+	teamerStatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+end
+
+function toggleAllTeamerPlayers(selectAll)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local checkboxData = teamerCheckboxes[plr.Name]
+			if checkboxData then
+				if selectAll then
+					selectedTeamerTargets[plr.Name] = plr
+					checkboxData.Checkmark.Visible = true
+				else
+					selectedTeamerTargets[plr.Name] = nil
+					checkboxData.Checkmark.Visible = false
+				end
+			end
+		end
+	end
+	updateTeamerStatus()
+end
+
+-- Mark/Unmark handlers
+teamerMarkButton.MouseButton1Click:Connect(function()
+	local count = 0
+	for name, plr in pairs(selectedTeamerTargets) do
+		markedTeamers[name] = true
+		count += 1
+	end
+	saveTeamers()
+	refreshTeamerList()
+	gameNotifSend("Teamers", count .. " player(s) marked", Color3.fromRGB(255, 170, 0), Color3.fromRGB(255, 255, 255))
+end)
+
+teamerUnmarkButton.MouseButton1Click:Connect(function()
+	local count = 0
+	for name, plr in pairs(selectedTeamerTargets) do
+		markedTeamers[name] = nil
+		count += 1
+	end
+	saveTeamers()
+	refreshTeamerList()
+	gameNotifSend("Teamers", count .. " player(s) unmarked", Color3.fromRGB(255, 170, 0), Color3.fromRGB(255, 255, 255))
+end)
+
+teamerSelectAllButton.MouseButton1Click:Connect(function()
+	toggleAllTeamerPlayers(true)
+end)
+teamerDeselectAllButton.MouseButton1Click:Connect(function()
+	toggleAllTeamerPlayers(false)
+end)
+
+notifyTeamersButton.MouseButton1Click:Connect(function()
+	notifyOnTeamers = not notifyOnTeamers
+	setToggleState(notifyTeamersButton, notifyOnTeamers, "Notify on Teamers: ON", "Notify on Teamers: OFF")
+end)
+
+-- Saved Teamers (offline management)
+savedTeamersHeader = Instance.new("Frame")
+savedTeamersHeader.Name = "SavedTeamersHeader"
+savedTeamersHeader.Size = UDim2.new(1, 0, 0, 24)
+savedTeamersHeader.BackgroundTransparency = 1
+savedTeamersHeader.LayoutOrder = 615
+savedTeamersHeader.Parent = categoryFrames["Teamers"]
+
+savedTeamersHeaderLabel = Instance.new("TextLabel")
+savedTeamersHeaderLabel.Size = UDim2.new(1, -28, 0, 24)
+savedTeamersHeaderLabel.BackgroundTransparency = 1
+savedTeamersHeaderLabel.Text = "Saved Teamers"
+savedTeamersHeaderLabel.TextColor3 = Color3.fromRGB(255, 140, 0)
+savedTeamersHeaderLabel.TextXAlignment = Enum.TextXAlignment.Left
+savedTeamersHeaderLabel.Font = Enum.Font.SourceSansBold
+savedTeamersHeaderLabel.TextSize = 15
+savedTeamersHeaderLabel.Parent = savedTeamersHeader
+
+savedTeamersCollapseBtn = Instance.new("TextButton")
+savedTeamersCollapseBtn.Name = "SavedTeamersCollapseBtn"
+savedTeamersCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+savedTeamersCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+savedTeamersCollapseBtn.BackgroundTransparency = 1
+savedTeamersCollapseBtn.Text = "-"
+savedTeamersCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+savedTeamersCollapseBtn.Font = Enum.Font.SourceSansBold
+savedTeamersCollapseBtn.TextSize = 18
+savedTeamersCollapseBtn.Parent = savedTeamersHeader
+
+savedTeamersCollapsed = false
+savedTeamersCollapseBtn.MouseButton1Click:Connect(function()
+	savedTeamersCollapsed = not savedTeamersCollapsed
+	savedTeamersFrame.Visible = not savedTeamersCollapsed
+	savedTeamersCollapseBtn.Text = savedTeamersCollapsed and "+" or "-"
+end)
+
+savedTeamersFrame = Instance.new("Frame")
+savedTeamersFrame.Name = "SavedTeamersFrame"
+savedTeamersFrame.Size = UDim2.new(1, 0, 0, 160)
+savedTeamersFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+savedTeamersFrame.BorderSizePixel = 0
+savedTeamersFrame.LayoutOrder = 616
+savedTeamersFrame.Parent = categoryFrames["Teamers"]
+
+savedTeamersCorner = Instance.new("UICorner")
+savedTeamersCorner.CornerRadius = UDim.new(0, 6)
+savedTeamersCorner.Parent = savedTeamersFrame
+
+savedTeamersScroll = Instance.new("ScrollingFrame")
+savedTeamersScroll.Name = "SavedTeamersScroll"
+savedTeamersScroll.Position = UDim2.new(0, 8, 0, 8)
+savedTeamersScroll.Size = UDim2.new(1, -16, 0, 144)
+savedTeamersScroll.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+savedTeamersScroll.BorderSizePixel = 0
+savedTeamersScroll.ScrollBarThickness = 4
+savedTeamersScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+savedTeamersScroll.Parent = savedTeamersFrame
+
+savedTeamersScrollCorner = Instance.new("UICorner")
+savedTeamersScrollCorner.CornerRadius = UDim.new(0, 6)
+savedTeamersScrollCorner.Parent = savedTeamersScroll
+
+savedTeamersPadding = Instance.new("UIPadding")
+savedTeamersPadding.PaddingLeft = UDim.new(0, 4)
+savedTeamersPadding.PaddingRight = UDim.new(0, 4)
+savedTeamersPadding.PaddingTop = UDim.new(0, 4)
+savedTeamersPadding.PaddingBottom = UDim.new(0, 4)
+savedTeamersPadding.Parent = savedTeamersScroll
+
+function refreshSavedTeamers()
+	if not savedTeamersScroll then return end
+	for _, child in ipairs(savedTeamersScroll:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+
+	local names = {}
+	for name, _ in pairs(markedTeamers) do
+		table.insert(names, name)
+	end
+	table.sort(names, function(a, b) return a:lower() < b:lower() end)
+
+	if #names == 0 then
+		local emptyLabel = Instance.new("TextLabel")
+		emptyLabel.Size = UDim2.new(1, 0, 0, 30)
+		emptyLabel.BackgroundTransparency = 1
+		emptyLabel.Text = "No saved teamers"
+		emptyLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+		emptyLabel.Font = Enum.Font.SourceSansBold
+		emptyLabel.TextSize = 14
+		emptyLabel.Parent = savedTeamersScroll
+	end
+
+	local yPos = 0
+	for _, name in ipairs(names) do
+		local entry = Instance.new("Frame")
+		entry.Name = name .. "SavedEntry"
+		entry.Size = UDim2.new(1, 0, 0, 30)
+		entry.Position = UDim2.new(0, 0, 0, yPos)
+		entry.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		entry.BorderSizePixel = 0
+		entry.Parent = savedTeamersScroll
+
+		local entryCorner = Instance.new("UICorner")
+		entryCorner.CornerRadius = UDim.new(0, 6)
+		entryCorner.Parent = entry
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(1, -40, 1, 0)
+		nameLabel.Position = UDim2.new(0, 8, 0, 0)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = name
+		nameLabel.TextColor3 = Color3.fromRGB(255, 140, 0)
+		nameLabel.TextSize = 15
+		nameLabel.Font = Enum.Font.SourceSansBold
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Parent = entry
+
+		local deleteBtn = Instance.new("TextButton")
+		deleteBtn.Name = name .. "DelBtn"
+		deleteBtn.Size = UDim2.new(0, 24, 0, 24)
+		deleteBtn.Position = UDim2.new(1, -28, 0.5, -12)
+		deleteBtn.BackgroundColor3 = Color3.fromRGB(40, 25, 0)
+		deleteBtn.BorderSizePixel = 0
+		deleteBtn.Text = "X"
+		deleteBtn.TextColor3 = Color3.fromRGB(255, 180, 50)
+		deleteBtn.Font = Enum.Font.SourceSansBold
+		deleteBtn.TextSize = 14
+		deleteBtn.Parent = entry
+
+		local deleteBtnCorner = Instance.new("UICorner")
+		deleteBtnCorner.CornerRadius = UDim.new(0, 4)
+		deleteBtnCorner.Parent = deleteBtn
+
+		deleteBtn.MouseButton1Click:Connect(function()
+			markedTeamers[name] = nil
+			saveTeamers()
+			refreshSavedTeamers()
+			gameNotifSend("Teamers", name .. " removed", Color3.fromRGB(255, 170, 0), Color3.fromRGB(255, 255, 255))
+		end)
+
+		deleteBtn.MouseEnter:Connect(function()
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 10)
+		end)
+		deleteBtn.MouseLeave:Connect(function()
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(40, 25, 0)
+		end)
+
+		yPos += 36
+	end
+
+	savedTeamersScroll.CanvasSize = UDim2.new(0, 0, 0, math.max(yPos, 0))
+end
+
+refreshSavedTeamers()
+
+task.spawn(function()
+	while task.wait(5) do
+		refreshSavedTeamers()
+	end
+end)
+
+-- Initial refresh
+refreshTeamerList()
+
+-- PlayerAdded/Removing for teamer marking list
+Players.PlayerAdded:Connect(function()
+	refreshTeamerList()
+end)
+Players.PlayerRemoving:Connect(function()
+	refreshTeamerList()
+end)
+
+-- ============================================
+-- SECTION 8: Main (Your Profile)
+-- ============================================
+
 
 function fetchAvatarPriceAsync(userId, label)
 	task.spawn(function()
@@ -6769,7 +7636,7 @@ player.CharacterAdded:Connect(function()
 	updatePlayerStats()
 end)
 
--- JumpPower: GetPropertyChangedSignal -- реальные изменения без измерений скорости
+-- JumpPower: GetPropertyChangedSignal -- СЂРµР°Р»СЊРЅС‹Рµ РёР·РјРµРЅРµРЅРёСЏ Р±РµР· РёР·РјРµСЂРµРЅРёР№ СЃРєРѕСЂРѕСЃС‚Рё
 local mainJumpConn = nil
 
 local function attachMainStats(char)
@@ -7187,6 +8054,34 @@ RunService.Heartbeat:Connect(function()
 		cam.FieldOfView = customFov
 	end
 end)
+-- Hide Buttons
+hideButtonsEnabled = false
+
+hideButtonsBtn = createButton("HideButtonsButton", "Hide Buttons: OFF", 710)
+hideButtonsBtn.MouseButton1Click:Connect(function()
+	hideButtonsEnabled = not hideButtonsEnabled
+	if hideButtonsEnabled then
+		hideButtonsBtn.Text = "Hide Buttons: ON"
+		hideButtonsBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		hideButtonsBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+		for name, data in pairs(extractedButtons) do
+			if data.btn then
+				data.btn.Visible = false
+			end
+		end
+	else
+		hideButtonsBtn.Text = "Hide Buttons: OFF"
+		hideButtonsBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		hideButtonsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		for name, data in pairs(extractedButtons) do
+			if data.btn then
+				data.btn.Visible = true
+			end
+		end
+	end
+	saveConfig()
+end)
+
 
 -- ============================================
 -- SECTION 9: Buttons (standalone popup buttons)
@@ -7747,8 +8642,8 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		popupCorner.Parent = popupBtn
 
 		local popupLockBtn = Instance.new("TextButton")
-		popupLockBtn.Size = UDim2.new(0, 30, 0, 30)
-		popupLockBtn.Position = UDim2.new(1, -35, 0.5, -15)
+		popupLockBtn.Size = UDim2.new(0, 22, 0, 22)
+		popupLockBtn.Position = UDim2.new(1, -27, 0.5, -11)
 		popupLockBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		popupLockBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		popupLockBtn.Text = "U"
@@ -7863,7 +8758,7 @@ end
 refreshPlayerList()
 updateFlingStatus()
 
--- Разрешаем скролл после инициализации
+-- Р Р°Р·СЂРµС€Р°РµРј СЃРєСЂРѕР»Р» РїРѕСЃР»Рµ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё
 task.wait(0.1)
 canScroll = true
 
@@ -8065,15 +8960,15 @@ function removeGlitchProof()
 	end
 end
 
--- Удаляем при запуске
+-- РЈРґР°Р»СЏРµРј РїСЂРё Р·Р°РїСѓСЃРєРµ
 removeGlitchProof()
 
--- Отслеживаем появление Mansion2
+-- РћС‚СЃР»РµР¶РёРІР°РµРј РїРѕСЏРІР»РµРЅРёРµ Mansion2
 Workspace.ChildAdded:Connect(function(child)
 	if child.Name == "Mansion2" then
 		task.wait(1)
 		removeGlitchProof()
-		-- Также следим за появлением Base внутри
+		-- РўР°РєР¶Рµ СЃР»РµРґРёРј Р·Р° РїРѕСЏРІР»РµРЅРёРµРј Base РІРЅСѓС‚СЂРё
 		child.DescendantAdded:Connect(function(desc)
 			if desc.Name == "GlitchProof" then
 				task.defer(function()
@@ -8086,7 +8981,7 @@ Workspace.ChildAdded:Connect(function(child)
 	end
 end)
 
--- Если Mansion2 уже есть — следим за новыми GlitchProof
+-- Р•СЃР»Рё Mansion2 СѓР¶Рµ РµСЃС‚СЊ вЂ” СЃР»РµРґРёРј Р·Р° РЅРѕРІС‹РјРё GlitchProof
 local existingMansion = Workspace:FindFirstChild("Mansion2")
 if existingMansion then
 	existingMansion.DescendantAdded:Connect(function(desc)
@@ -8100,7 +8995,7 @@ if existingMansion then
 	end)
 end
 
--- Периодическая проверка на всякий случай
+-- РџРµСЂРёРѕРґРёС‡РµСЃРєР°СЏ РїСЂРѕРІРµСЂРєР° РЅР° РІСЃСЏРєРёР№ СЃР»СѓС‡Р°Р№
 task.spawn(function()
 	while true do
 		task.wait(5)
@@ -8143,6 +9038,10 @@ local function restoreFullConfig()
 	hiddenfling = T.hiddenfling or false
 	currentMode = T.antiAimMode or 0
 	gameNotifEnabled = T.gameNotifEnabled or false
+	notifyOnTeamers = T.notifyOnTeamers or false
+	notifyOnExploiters = T.notifyOnExploiters or false
+	notifyOnScammers = T.notifyOnScammers or false
+	hideButtonsEnabled = T.hideButtonsEnabled or false
 
 	-- Restore values
 	if c.values then
@@ -8407,6 +9306,19 @@ local function restoreFullConfig()
 		setExtractedBtnState("Auto Delete Corpses", true)
 	end
 	if T.hiddenfling then
+	if T.notifyOnExploiters then
+		if notifyExploitersButton then setToggleState(notifyExploitersButton, true, "Notify on Exploiters: ON", "Notify on Exploiters: OFF") end
+	end
+	if T.notifyOnTeamers then
+		if notifyTeamersButton then setToggleState(notifyTeamersButton, true, "Notify on Teamers: ON", "Notify on Teamers: OFF") end
+	end
+	if T.notifyOnScammers then
+		if notifyScammersButton then setToggleState(notifyScammersButton, true, "Notify on Scammers: ON", "Notify on Scammers: OFF") end
+	end
+	if T.hideButtonsEnabled then
+		hideButtonsEnabled = false
+		if hideButtonsBtn then hideButtonsBtn.MouseButton1Click:Fire() end
+	end
 		if touchFlingButton then setToggleState(touchFlingButton, true, "Touch Fling: ON", "Touch Fling: OFF") end
 		setExtractedBtnState("Touch Fling", true)
 	end
@@ -8446,3 +9358,1784 @@ local function restoreFullConfig()
 end
 
 task.defer(restoreFullConfig)
+currentCategory = "Exploiters"
+createSection("Exploiters", 100)
+
+-- Online Exploiters section (marked players on server, Teamers style)
+onlineExploitersHeader = Instance.new("Frame")
+onlineExploitersHeader.Name = "OnlineExploitersHeader"
+onlineExploitersHeader.Size = UDim2.new(1, 0, 0, 24)
+onlineExploitersHeader.BackgroundTransparency = 1
+onlineExploitersHeader.LayoutOrder = 100.5
+onlineExploitersHeader.Parent = categoryFrames["Exploiters"]
+
+onlineExploitersLabel = Instance.new("TextLabel")
+onlineExploitersLabel.Size = UDim2.new(1, -28, 0, 24)
+onlineExploitersLabel.BackgroundTransparency = 1
+onlineExploitersLabel.Text = "Online Exploiters"
+onlineExploitersLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+onlineExploitersLabel.TextXAlignment = Enum.TextXAlignment.Left
+onlineExploitersLabel.Font = Enum.Font.SourceSansBold
+onlineExploitersLabel.TextSize = 15
+onlineExploitersLabel.Parent = onlineExploitersHeader
+
+onlineExploitersCollapseBtn = Instance.new("TextButton")
+onlineExploitersCollapseBtn.Name = "OnlineExploitersCollapseBtn"
+onlineExploitersCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+onlineExploitersCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+onlineExploitersCollapseBtn.BackgroundTransparency = 1
+onlineExploitersCollapseBtn.Text = "-"
+onlineExploitersCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+onlineExploitersCollapseBtn.Font = Enum.Font.SourceSansBold
+onlineExploitersCollapseBtn.TextSize = 18
+onlineExploitersCollapseBtn.Parent = onlineExploitersHeader
+
+onlineExploitersContainer = Instance.new("Frame")
+onlineExploitersContainer.Name = "OnlineExploitersContainer"
+onlineExploitersContainer.Size = UDim2.new(1, 0, 0, 0)
+onlineExploitersContainer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+onlineExploitersContainer.BorderSizePixel = 0
+onlineExploitersContainer.ClipsDescendants = true
+onlineExploitersContainer.LayoutOrder = 100.6
+onlineExploitersContainer.Parent = categoryFrames["Exploiters"]
+
+onlineExploitersContainerCorner = Instance.new("UICorner")
+onlineExploitersContainerCorner.CornerRadius = UDim.new(0, 6)
+onlineExploitersContainerCorner.Parent = onlineExploitersContainer
+
+onlineExploitersList = Instance.new("ScrollingFrame")
+onlineExploitersList.Name = "OnlineExploitersList"
+onlineExploitersList.Size = UDim2.new(1, -8, 1, -8)
+onlineExploitersList.Position = UDim2.new(0, 4, 0, 4)
+onlineExploitersList.BackgroundTransparency = 1
+onlineExploitersList.BorderSizePixel = 0
+onlineExploitersList.ScrollBarThickness = 4
+onlineExploitersList.CanvasSize = UDim2.new(0, 0, 0, 0)
+onlineExploitersList.Parent = onlineExploitersContainer
+
+onlineExploitersListLayout = Instance.new("UIListLayout")
+onlineExploitersListLayout.Padding = UDim.new(0, 5)
+onlineExploitersListLayout.Parent = onlineExploitersList
+onlineExploitersListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	onlineExploitersList.CanvasSize = UDim2.new(0, 0, 0, onlineExploitersListLayout.AbsoluteContentSize.Y)
+end)
+
+onlineExploitersCollapsed = false
+onlineExploitersCollapseBtn.MouseButton1Click:Connect(function()
+	onlineExploitersCollapsed = not onlineExploitersCollapsed
+	onlineExploitersContainer.Visible = not onlineExploitersCollapsed
+	onlineExploitersCollapseBtn.Text = onlineExploitersCollapsed and "+" or "-"
+end)
+
+function refreshOnlineExploiters()
+	if not onlineExploitersList then return end
+	for _, child in ipairs(onlineExploitersList:GetChildren()) do
+		if not child:IsA("UIListLayout") then
+			child:Destroy()
+		end
+	end
+
+	local markedOnline = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and markedExploiters[plr.Name] == true then
+			table.insert(markedOnline, plr)
+		end
+	end
+	table.sort(markedOnline, function(a, b) return a.Name:lower() < b.Name:lower() end)
+
+	local count = #markedOnline
+	local entryHeight = 60
+	local maxContainerHeight = 190
+	local containerH = count > 0 and math.min(count * (entryHeight + 5) + 10, maxContainerHeight) or 0
+	onlineExploitersContainer.Size = UDim2.new(1, 0, 0, containerH)
+
+	if count == 0 then
+		local emptyLabel = Instance.new("TextLabel")
+		emptyLabel.Size = UDim2.new(1, 0, 0, 30)
+		emptyLabel.BackgroundTransparency = 1
+		emptyLabel.Text = "No marked exploiters online"
+		emptyLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+		emptyLabel.Font = Enum.Font.SourceSansBold
+		emptyLabel.TextSize = 13
+		emptyLabel.Parent = onlineExploitersList
+		return
+	end
+
+	for _, plr in ipairs(markedOnline) do
+		local button = Instance.new("TextButton")
+		button.Name = plr.Name
+		button.Size = UDim2.new(1, 0, 0, entryHeight)
+		button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		button.BorderSizePixel = 0
+		button.Text = ""
+		button.AutoButtonColor = false
+		button.Parent = onlineExploitersList
+
+		local btnCorner = Instance.new("UICorner")
+		btnCorner.CornerRadius = UDim.new(0, 6)
+		btnCorner.Parent = button
+
+		local avatar = Instance.new("ImageLabel")
+		avatar.Name = "Avatar"
+		avatar.Size = UDim2.new(0, 40, 0, 40)
+		avatar.Position = UDim2.new(0, 5, 0, 10)
+		avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		avatar.BorderSizePixel = 0
+		avatar.Parent = button
+
+		local avatarCorner = Instance.new("UICorner")
+		avatarCorner.CornerRadius = UDim.new(0, 6)
+		avatarCorner.Parent = avatar
+
+		coroutine.wrap(function()
+			local thumb = Players:GetUserThumbnailAsync(plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+			avatar.Image = thumb
+		end)()
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(1, -60, 0, 20)
+		nameLabel.Position = UDim2.new(0, 55, 0, 20)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = plr.DisplayName .. " (" .. plr.Name .. ")"
+		nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		nameLabel.Font = Enum.Font.GothamBold
+		nameLabel.TextSize = 14
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Parent = button
+
+		button.MouseEnter:Connect(function()
+			button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+		end)
+		button.MouseLeave:Connect(function()
+			button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		end)
+
+		button.MouseButton1Click:Connect(function()
+			showPlayerInfoPopup(plr)
+		end)
+	end
+end
+
+-- Title bar with collapse button
+exploiterTitleBar = Instance.new("Frame")
+exploiterTitleBar.Name = "ExploiterTitleBar"
+exploiterTitleBar.Size = UDim2.new(1, 0, 0, 24)
+exploiterTitleBar.BackgroundTransparency = 1
+exploiterTitleBar.LayoutOrder = 101
+exploiterTitleBar.Parent = categoryFrames["Exploiters"]
+
+exploiterStatusLabel = Instance.new("TextLabel")
+exploiterStatusLabel.Name = "ExploiterStatusLabel"
+exploiterStatusLabel.Size = UDim2.new(1, -28, 0, 24)
+exploiterStatusLabel.BackgroundTransparency = 1
+exploiterStatusLabel.Text = "Select players to mark as exploiters"
+exploiterStatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+exploiterStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+exploiterStatusLabel.Font = Enum.Font.SourceSansBold
+exploiterStatusLabel.TextSize = 15
+exploiterStatusLabel.Parent = exploiterTitleBar
+
+exploiterCollapseBtn = Instance.new("TextButton")
+exploiterCollapseBtn.Name = "ExploiterCollapseBtn"
+exploiterCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+exploiterCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+exploiterCollapseBtn.BackgroundTransparency = 1
+exploiterCollapseBtn.Text = "-"
+exploiterCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+exploiterCollapseBtn.Font = Enum.Font.SourceSansBold
+exploiterCollapseBtn.TextSize = 18
+exploiterCollapseBtn.Parent = exploiterTitleBar
+
+exploiterListCollapsed = false
+exploiterCollapseBtn.MouseButton1Click:Connect(function()
+	exploiterListCollapsed = not exploiterListCollapsed
+	exploiterFrame.Visible = not exploiterListCollapsed
+	exploiterSearchBox.Visible = not exploiterListCollapsed
+	exploiterCollapseBtn.Text = exploiterListCollapsed and "+" or "-"
+end)
+
+-- Search box
+exploiterSearchBox = Instance.new("TextBox")
+exploiterSearchBox.Name = "ExploiterSearchBox"
+exploiterSearchBox.Size = UDim2.new(1, 0, 0, 32)
+exploiterSearchBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+exploiterSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+exploiterSearchBox.PlaceholderText = "Search players..."
+exploiterSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+exploiterSearchBox.Text = ""
+exploiterSearchBox.Font = Enum.Font.SourceSansBold
+exploiterSearchBox.TextSize = 15
+exploiterSearchBox.ClearTextOnFocus = false
+exploiterSearchBox.LayoutOrder = 101.5
+exploiterSearchBox.Parent = categoryFrames["Exploiters"]
+
+exploiterSearchCorner = Instance.new("UICorner")
+exploiterSearchCorner.CornerRadius = UDim.new(0, 6)
+exploiterSearchCorner.Parent = exploiterSearchBox
+
+exploiterSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local searchText = string.lower(exploiterSearchBox.Text)
+	for _, data in pairs(exploiterCheckboxes) do
+		if data.Entry and data.NameLabel then
+			local playerName = data.NameLabel.Text:gsub("^%[!%] ", "")
+			data.Entry.Visible = searchText == "" or string.find(string.lower(playerName), searchText, 1, true) ~= nil
+		end
+	end
+end)
+
+exploiterFrame = Instance.new("Frame")
+exploiterFrame.Name = "ExploiterFrame"
+exploiterFrame.Size = UDim2.new(1, 0, 0, 220)
+exploiterFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+exploiterFrame.BorderSizePixel = 0
+exploiterFrame.LayoutOrder = 102
+exploiterFrame.Parent = categoryFrames["Exploiters"]
+
+exploiterFrameCorner = Instance.new("UICorner")
+exploiterFrameCorner.CornerRadius = UDim.new(0, 6)
+exploiterFrameCorner.Parent = exploiterFrame
+
+exploiterScrollFrame = Instance.new("ScrollingFrame")
+exploiterScrollFrame.Name = "ExploiterScrollFrame"
+exploiterScrollFrame.Position = UDim2.new(0, 8, 0, 8)
+exploiterScrollFrame.Size = UDim2.new(1, -16, 0, 124)
+exploiterScrollFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+exploiterScrollFrame.BorderSizePixel = 0
+exploiterScrollFrame.ScrollBarThickness = 4
+exploiterScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+exploiterScrollFrame.Parent = exploiterFrame
+
+exploiterScrollCorner = Instance.new("UICorner")
+exploiterScrollCorner.CornerRadius = UDim.new(0, 6)
+exploiterScrollCorner.Parent = exploiterScrollFrame
+
+exploiterScrollPadding = Instance.new("UIPadding")
+exploiterScrollPadding.PaddingLeft = UDim.new(0, 4)
+exploiterScrollPadding.PaddingRight = UDim.new(0, 4)
+exploiterScrollPadding.PaddingTop = UDim.new(0, 4)
+exploiterScrollPadding.PaddingBottom = UDim.new(0, 4)
+exploiterScrollPadding.Parent = exploiterScrollFrame
+
+-- Mark button
+markButton = Instance.new("TextButton")
+markButton.Name = "MarkButton"
+markButton.Size = UDim2.new(0.5, -12, 0, 34)
+markButton.Position = UDim2.new(0, 8, 0, 140)
+markButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+markButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+markButton.Text = "MARK"
+markButton.Font = Enum.Font.SourceSansBold
+markButton.TextSize = 16
+markButton.Parent = exploiterFrame
+
+markCorner = Instance.new("UICorner")
+markCorner.CornerRadius = UDim.new(0, 6)
+markCorner.Parent = markButton
+
+-- Unmark button
+unmarkButton = Instance.new("TextButton")
+unmarkButton.Name = "UnmarkButton"
+unmarkButton.Size = UDim2.new(0.5, -12, 0, 34)
+unmarkButton.Position = UDim2.new(0.5, 4, 0, 140)
+unmarkButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+unmarkButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+unmarkButton.Text = "UNMARK"
+unmarkButton.Font = Enum.Font.SourceSansBold
+unmarkButton.TextSize = 16
+unmarkButton.Parent = exploiterFrame
+
+unmarkCorner = Instance.new("UICorner")
+unmarkCorner.CornerRadius = UDim.new(0, 6)
+unmarkCorner.Parent = unmarkButton
+
+-- Select All (exploiter list)
+exploiterSelectAllButton = Instance.new("TextButton")
+exploiterSelectAllButton.Name = "ExploiterSelectAllButton"
+exploiterSelectAllButton.Size = UDim2.new(0.5, -12, 0, 30)
+exploiterSelectAllButton.Position = UDim2.new(0, 8, 0, 182)
+exploiterSelectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+exploiterSelectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+exploiterSelectAllButton.Text = "SELECT ALL"
+exploiterSelectAllButton.Font = Enum.Font.SourceSansBold
+exploiterSelectAllButton.TextSize = 14
+exploiterSelectAllButton.Parent = exploiterFrame
+
+exploiterSelectAllCorner = Instance.new("UICorner")
+exploiterSelectAllCorner.CornerRadius = UDim.new(0, 6)
+exploiterSelectAllCorner.Parent = exploiterSelectAllButton
+
+-- Deselect All (exploiter list)
+exploiterDeselectAllButton = Instance.new("TextButton")
+exploiterDeselectAllButton.Name = "ExploiterDeselectAllButton"
+exploiterDeselectAllButton.Size = UDim2.new(0.5, -12, 0, 30)
+exploiterDeselectAllButton.Position = UDim2.new(0.5, 4, 0, 182)
+exploiterDeselectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+exploiterDeselectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+exploiterDeselectAllButton.Text = "DESELECT ALL"
+exploiterDeselectAllButton.Font = Enum.Font.SourceSansBold
+exploiterDeselectAllButton.TextSize = 14
+exploiterDeselectAllButton.Parent = exploiterFrame
+
+exploiterDeselectAllCorner = Instance.new("UICorner")
+exploiterDeselectAllCorner.CornerRadius = UDim.new(0, 6)
+exploiterDeselectAllCorner.Parent = exploiterDeselectAllButton
+
+-- Anti-Bang button
+antiBangButton = createButton("AntiBangButton", "Anti-Bang", 105)
+antiBangButton.MouseButton1Click:Connect(function()
+	executeAntiBang()
+end)
+
+-- Notify on Exploiters button
+notifyExploitersButton = Instance.new("TextButton")
+notifyExploitersButton.Name = "NotifyExploitersButton"
+notifyExploitersButton.Size = UDim2.new(1, 0, 0, 42)
+notifyExploitersButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+notifyExploitersButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+notifyExploitersButton.Text = "Notify on Exploiters: OFF"
+notifyExploitersButton.Font = Enum.Font.SourceSansBold
+notifyExploitersButton.TextSize = 16
+notifyExploitersButton.LayoutOrder = 106
+notifyExploitersButton.Parent = categoryFrames["Exploiters"]
+
+notifyExploitersCorner = Instance.new("UICorner")
+notifyExploitersCorner.CornerRadius = UDim.new(0, 6)
+notifyExploitersCorner.Parent = notifyExploitersButton
+
+-- Exploiter player list logic
+exploiterCheckboxes = {}
+selectedExploiterTargets = {}
+
+function updateExploiterStatus()
+	if not exploiterStatusLabel then return end
+	local count = 0
+	for _ in pairs(selectedExploiterTargets) do count += 1 end
+	exploiterStatusLabel.Text = count == 0 and "Select players to mark as exploiters" or (count .. " player(s) selected")
+	exploiterStatusLabel.TextColor3 = count == 0 and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(255, 80, 80)
+end
+
+function refreshExploiterList()
+	if not exploiterScrollFrame then return end
+	if refreshSavedExploiters then refreshSavedExploiters() end
+	if refreshOnlineExploiters then refreshOnlineExploiters() end
+	for _, child in ipairs(exploiterScrollFrame:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+	exploiterCheckboxes = {}
+
+	local playerList = Players:GetPlayers()
+	table.sort(playerList, function(a, b)
+		local aMarked = markedExploiters[a.Name] == true
+		local bMarked = markedExploiters[b.Name] == true
+		if aMarked ~= bMarked then return aMarked end
+		return a.Name:lower() < b.Name:lower()
+	end)
+
+	local yPosition = 0
+	for _, plr in ipairs(playerList) do
+		if plr ~= player then
+			local isMarked = markedExploiters[plr.Name] == true
+
+			local playerEntry = Instance.new("Frame")
+			playerEntry.Name = plr.Name .. "ExploiterEntry"
+			playerEntry.Size = UDim2.new(1, 0, 0, 30)
+			playerEntry.Position = UDim2.new(0, 0, 0, yPosition)
+			playerEntry.BackgroundColor3 = isMarked and Color3.fromRGB(40, 10, 10) or Color3.fromRGB(0, 0, 0)
+			playerEntry.BorderSizePixel = 0
+			playerEntry.Parent = exploiterScrollFrame
+
+			local entryCorner = Instance.new("UICorner")
+			entryCorner.CornerRadius = UDim.new(0, 6)
+			entryCorner.Parent = playerEntry
+
+			local checkbox = Instance.new("TextButton")
+			checkbox.Size = UDim2.new(0, 24, 0, 24)
+			checkbox.Position = UDim2.new(0, 3, 0.5, -12)
+			checkbox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			checkbox.BorderSizePixel = 0
+			checkbox.Text = ""
+			checkbox.Parent = playerEntry
+
+			local checkboxCorner = Instance.new("UICorner")
+			checkboxCorner.CornerRadius = UDim.new(0, 6)
+			checkboxCorner.Parent = checkbox
+
+			local checkmark = Instance.new("TextLabel")
+			checkmark.Size = UDim2.new(1, 0, 1, 0)
+			checkmark.BackgroundTransparency = 1
+			checkmark.Text = "✓"
+			checkmark.TextColor3 = Color3.fromRGB(255, 80, 80)
+			checkmark.Font = Enum.Font.GothamBold
+			checkmark.TextSize = 20
+			checkmark.Visible = selectedExploiterTargets[plr.Name] ~= nil
+			checkmark.Parent = checkbox
+
+			local nameLabel = Instance.new("TextLabel")
+			nameLabel.Size = UDim2.new(1, -35, 1, 0)
+			nameLabel.Position = UDim2.new(0, 32, 0, 0)
+			nameLabel.BackgroundTransparency = 1
+			nameLabel.Text = (isMarked and "[!] " or "") .. plr.Name
+			nameLabel.TextColor3 = isMarked and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(255, 255, 255)
+			nameLabel.TextSize = 16
+			nameLabel.Font = Enum.Font.SourceSansBold
+			nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+			nameLabel.Parent = playerEntry
+
+			local clickArea = Instance.new("TextButton")
+			clickArea.Size = UDim2.new(1, -30, 1, 0)
+			clickArea.BackgroundTransparency = 1
+			clickArea.Text = ""
+			clickArea.Parent = playerEntry
+
+			clickArea.MouseButton1Click:Connect(function()
+				if selectedExploiterTargets[plr.Name] then
+					selectedExploiterTargets[plr.Name] = nil
+					checkmark.Visible = false
+				else
+					selectedExploiterTargets[plr.Name] = plr
+					checkmark.Visible = true
+				end
+				updateExploiterStatus()
+			end)
+
+			local infoBtn = Instance.new("TextButton")
+			infoBtn.Name = plr.Name .. "InfoBtn"
+			infoBtn.Size = UDim2.new(0, 24, 0, 24)
+			infoBtn.Position = UDim2.new(1, -27, 0.5, -12)
+			infoBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			infoBtn.BorderSizePixel = 0
+			infoBtn.Text = ">"
+			infoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+			infoBtn.Font = Enum.Font.SourceSansBold
+			infoBtn.TextSize = 16
+			infoBtn.Parent = playerEntry
+
+			local infoBtnCorner = Instance.new("UICorner")
+			infoBtnCorner.CornerRadius = UDim.new(0, 4)
+			infoBtnCorner.Parent = infoBtn
+
+			infoBtn.MouseButton1Click:Connect(function()
+				showPlayerInfoPopup(plr)
+			end)
+
+			infoBtn.MouseEnter:Connect(function()
+				infoBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+			end)
+			infoBtn.MouseLeave:Connect(function()
+				infoBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			end)
+
+			exploiterCheckboxes[plr.Name] = {
+				Entry = playerEntry,
+				Checkmark = checkmark,
+				NameLabel = nameLabel,
+				InfoBtn = infoBtn,
+			}
+
+			yPosition += 36
+		end
+	end
+
+	exploiterScrollFrame.CanvasSize = UDim2.new(0, 0, 0, yPosition)
+	updateExploiterStatus()
+	if exploiterSearchBox then
+		local searchText = string.lower(exploiterSearchBox.Text)
+		for _, data in pairs(exploiterCheckboxes) do
+			if data.Entry and data.NameLabel then
+				local playerName = data.NameLabel.Text:gsub("^%[!%] ", "")
+				data.Entry.Visible = searchText == "" or string.find(string.lower(playerName), searchText, 1, true) ~= nil
+			end
+		end
+	end
+end
+
+function toggleAllExploiterPlayers(selectAll)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local checkboxData = exploiterCheckboxes[plr.Name]
+			if checkboxData then
+				if selectAll then
+					selectedExploiterTargets[plr.Name] = plr
+					checkboxData.Checkmark.Visible = true
+				else
+					selectedExploiterTargets[plr.Name] = nil
+					checkboxData.Checkmark.Visible = false
+				end
+			end
+		end
+	end
+	updateExploiterStatus()
+end
+
+function showPlayerInfoPopup(plr)
+	if not plr then return end
+	if exploiterPopupCache and exploiterPopupCache[plr.Name] and exploiterPopupCache[plr.Name].Parent then
+		exploiterPopupCache[plr.Name].Enabled = not exploiterPopupCache[plr.Name].Enabled
+		return
+	end
+	if not exploiterPopupCache then exploiterPopupCache = {} end
+
+	local popupGui = Instance.new("ScreenGui")
+	popupGui.Name = "ExploiterPopupGui"
+	popupGui.ResetOnSpawn = false
+	popupGui.DisplayOrder = 999999
+	popupGui.IgnoreGuiInset = true
+	popupGui.Parent = playerGui
+
+	local popup = Instance.new("Frame")
+	popup.Name = "ExploiterPopup"
+	popup.Size = UDim2.new(0, 260, 0, 280)
+	popup.Position = UDim2.new(0.5, -130, 0.5, -140)
+	popup.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+	popup.BorderSizePixel = 0
+	popup.Parent = popupGui
+
+	local popupCorner = Instance.new("UICorner")
+	popupCorner.CornerRadius = UDim.new(0, 8)
+	popupCorner.Parent = popup
+
+	local popupTitle = Instance.new("TextLabel")
+	popupTitle.Size = UDim2.new(1, 0, 0, 30)
+	popupTitle.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	popupTitle.BorderSizePixel = 0
+	popupTitle.Text = plr.Name .. "'s Info"
+	popupTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	popupTitle.Font = Enum.Font.GothamBold
+	popupTitle.TextSize = 14
+	popupTitle.Parent = popup
+
+	local popupClose = Instance.new("TextButton")
+	popupClose.Size = UDim2.new(0, 20, 0, 20)
+	popupClose.Position = UDim2.new(1, -26, 0.5, -10)
+	popupClose.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	popupClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+	popupClose.Text = "X"
+	popupClose.Font = Enum.Font.SourceSansBold
+	popupClose.TextSize = 14
+	popupClose.Parent = popupTitle
+
+	local popupCloseCorner = Instance.new("UICorner")
+	popupCloseCorner.CornerRadius = UDim.new(0, 4)
+	popupCloseCorner.Parent = popupClose
+
+	popupClose.MouseButton1Click:Connect(function()
+		popupGui.Enabled = false
+	end)
+
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Size = UDim2.new(1, -10, 0, 240)
+	scroll.Position = UDim2.new(0, 5, 0, 35)
+	scroll.BackgroundTransparency = 1
+	scroll.ScrollBarThickness = 4
+	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.Parent = popup
+
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, 5)
+	layout.Parent = scroll
+	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
+	end)
+
+	local function addInfoLine(text)
+		local line = Instance.new("TextLabel")
+		line.Size = UDim2.new(1, 0, 0, 16)
+		line.BackgroundTransparency = 1
+		line.Text = text
+		line.TextColor3 = Color3.fromRGB(255, 255, 255)
+		line.Font = Enum.Font.Gotham
+		line.TextSize = 11
+		line.TextXAlignment = Enum.TextXAlignment.Left
+		line.Parent = scroll
+		return line
+	end
+
+	addInfoLine("Display Name: " .. plr.DisplayName)
+	addInfoLine("Username: " .. plr.Name)
+	addInfoLine("User ID: " .. plr.UserId)
+
+	local years = math.floor(plr.AccountAge / 365)
+	local remaining = plr.AccountAge % 365
+	local months = math.floor(remaining / 30)
+	local days = remaining % 30
+	local ageText = plr.AccountAge .. " days"
+	if years > 0 or months > 0 or days > 0 then
+		ageText = ageText .. " (" .. years .. "y, " .. months .. "m, " .. days .. "d)"
+	end
+	addInfoLine("Account Age: " .. ageText)
+
+	local function calcRegDate(accountAge)
+		local now = os.time()
+		local utc = os.date("!*t", now)
+		local d = utc.day - math.max(accountAge - 1, 0)
+		local m = utc.month
+		local y = utc.year
+		local dim = {31,28,31,30,31,30,31,31,30,31,30,31}
+		while d < 1 do
+			m = m - 1
+			if m < 1 then m = 12; y = y - 1 end
+			local dm = dim[m]
+			if m == 2 and (y%4==0 and (y%100~=0 or y%400==0)) then dm = 29 end
+			d = d + dm
+		end
+		return string.format("%02d/%02d/%04d", d, m, y)
+	end
+
+	local function fetchRegDate(userId, accountAge)
+		local created = nil
+		local exactUnix = nil
+		local ok, result = pcall(function()
+			return (syn or _G).request({
+				Url = "https://users.roblox.com/v1/users/" .. userId,
+				Method = "GET"
+			})
+		end)
+		if not (ok and result and result.StatusCode == 200) then
+			ok, result = pcall(function()
+				return game:HttpGetAsync("https://users.roblox.com/v1/users/" .. userId)
+			end)
+		end
+		if ok and result then
+			local rawCreated = nil
+			if type(result) == "string" then
+				local data = game:GetService("HttpService"):JSONDecode(result)
+				if data and data.created then
+					rawCreated = data.created
+					local y, m, d = data.created:match("(%d+)-(%d+)-(%d+)")
+					if y and m and d then created = string.format("%02d/%02d/%04d", tonumber(d), tonumber(m), tonumber(y)) end
+				end
+			elseif result.StatusCode == 200 and result.Body then
+				local data = game:GetService("HttpService"):JSONDecode(result.Body)
+				if data and data.created then
+					rawCreated = data.created
+					local y, m, d = data.created:match("(%d+)-(%d+)-(%d+)")
+					if y and m and d then created = string.format("%02d/%02d/%04d", tonumber(d), tonumber(m), tonumber(y)) end
+				end
+			end
+			if rawCreated then
+				exactUnix = isoToUnix(rawCreated)
+			end
+		end
+		return (created or calcRegDate(accountAge)), exactUnix
+	end
+
+	local regDateStr, exactRegUnix = fetchRegDate(plr.UserId, plr.AccountAge)
+	addInfoLine("Registered: " .. regDateStr)
+
+	local exactAgeLine = addInfoLine("Current Age: N/A")
+	local avatarPriceLine = addInfoLine("Avatar Price: N/A")
+
+	local healthLine = addInfoLine("Health: N/A")
+	local speedLine = addInfoLine("Walk Speed: N/A")
+	local jumpLine = addInfoLine("Jump Power: N/A")
+	local positionLine = addInfoLine("Position: N/A")
+
+	local popupConns = {}
+	local popupAlive = true
+
+	local function disconnectConns()
+		for _, c in ipairs(popupConns) do c:Disconnect() end
+		popupConns = {}
+	end
+
+	local function attachCharStats(char)
+		disconnectConns()
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if not hum or not root then return end
+		local function updateJP()
+			if jumpLine and jumpLine.Parent then
+				jumpLine.Text = "Jump Power: " .. hum.JumpPower
+			end
+		end
+		updateJP()
+		table.insert(popupConns, hum:GetPropertyChangedSignal("JumpPower"):Connect(updateJP))
+	end
+
+	attachCharStats(plr.Character)
+	table.insert(popupConns, plr.CharacterAdded:Connect(function(newChar)
+		task.wait(1)
+		if popupAlive then attachCharStats(newChar) end
+	end))
+
+	local creationTime = exactRegUnix or (os.time() - plr.AccountAge * 86400)
+
+	task.spawn(function()
+		while popupAlive do
+			task.wait(0.15)
+			local char = plr.Character
+			if char then
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				local root = char:FindFirstChild("HumanoidRootPart")
+				if hum and root then
+					if healthLine and healthLine.Parent then
+						healthLine.Text = "Health: " .. math.floor(hum.Health) .. "/" .. hum.MaxHealth
+					end
+					local vel = root.AssemblyLinearVelocity
+					local horizSpeed = math.floor(math.sqrt(vel.X*vel.X + vel.Z*vel.Z) + 0.5)
+					if speedLine and speedLine.Parent then
+						speedLine.Text = "Walk Speed: " .. horizSpeed
+					end
+					if positionLine and positionLine.Parent then
+						local p = root.Position
+						positionLine.Text = string.format("Position: %.1f, %.1f, %.1f", p.X, p.Y, p.Z)
+					end
+				end
+			end
+			if exactAgeLine and exactAgeLine.Parent then
+				local diff = os.time() - creationTime
+				local totalDays = math.floor(diff / 86400)
+				local y = math.floor(totalDays / 365)
+				local rd = totalDays % 365
+				local m = math.floor(rd / 30)
+				local d = rd % 30
+				local h = math.floor((diff % 86400) / 3600)
+				local mn = math.floor((diff % 3600) / 60)
+				local s = diff % 60
+				exactAgeLine.Text = string.format("Current Age: %dy, %dm, %dd, %dh, %dm, %ds", y, m, d, h, mn, s)
+			end
+		end
+	end)
+
+	fetchAvatarPriceAsync(plr.UserId, avatarPriceLine)
+
+	addInfoLine("Gravity: " .. math.floor(workspace.Gravity))
+
+	popupGui.Destroying:Connect(function()
+		popupAlive = false
+		disconnectConns()
+	end)
+
+	-- Draggable popup
+	local popupDragging = false
+	local popupDragInput
+	local popupDragStart
+	local popupStartPos
+
+	popupTitle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			popupDragging = true
+			popupDragStart = input.Position
+			popupStartPos = popup.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					popupDragging = false
+				end
+			end)
+		end
+	end)
+
+	popupTitle.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			popupDragInput = input
+		end
+	end)
+
+	local popupDragCon = UserInputService.InputChanged:Connect(function(input)
+		if input == popupDragInput and popupDragging then
+			local delta = input.Position - popupDragStart
+			popup.Position = UDim2.new(popupStartPos.X.Scale, popupStartPos.X.Offset + delta.X, popupStartPos.Y.Scale, popupStartPos.Y.Offset + delta.Y)
+		end
+	end)
+
+	popup.Destroying:Connect(function()
+		popupDragCon:Disconnect()
+	end)
+
+	local escConn
+	escConn = UserInputService.InputBegan:Connect(function(input)
+		if input.KeyCode == Enum.KeyCode.Escape then
+			popupGui.Enabled = false
+		end
+	end)
+
+	exploiterPopupCache[plr.Name] = popupGui
+end
+
+-- Mark button: mark selected players as exploiters
+markButton.MouseButton1Click:Connect(function()
+	local count = 0
+	for name, plr in pairs(selectedExploiterTargets) do
+		markedExploiters[name] = true
+		count += 1
+	end
+	if count > 0 then
+		saveExploiters()
+		selectedExploiterTargets = {}
+		refreshExploiterList()
+		gameNotifSend("Exploiters", count .. " player(s) marked", Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 255, 255))
+	else
+		exploiterStatusLabel.Text = "No players selected!"
+		exploiterStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+		task.delay(1.5, updateExploiterStatus)
+	end
+end)
+
+-- Unmark button: unmark selected players
+unmarkButton.MouseButton1Click:Connect(function()
+	local count = 0
+	for name, plr in pairs(selectedExploiterTargets) do
+		markedExploiters[name] = nil
+		count += 1
+	end
+	if count > 0 then
+		saveExploiters()
+		selectedExploiterTargets = {}
+		refreshExploiterList()
+		gameNotifSend("Exploiters", count .. " player(s) unmarked", Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 255, 255))
+	else
+		exploiterStatusLabel.Text = "No players selected!"
+		exploiterStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+		task.delay(1.5, updateExploiterStatus)
+	end
+end)
+
+exploiterSelectAllButton.MouseButton1Click:Connect(function()
+	toggleAllExploiterPlayers(true)
+end)
+exploiterDeselectAllButton.MouseButton1Click:Connect(function()
+	toggleAllExploiterPlayers(false)
+end)
+
+notifyExploitersButton.MouseButton1Click:Connect(function()
+	notifyOnExploiters = not notifyOnExploiters
+	setToggleState(notifyExploitersButton, notifyOnExploiters, "Notify on Exploiters: ON", "Notify on Exploiters: OFF")
+end)
+
+-- Refresh exploiter list when tab opened
+do
+	local exploiterCatBtn = categoryFrames["Exploiters"]
+	if exploiterCatBtn then
+		-- Refresh on first load
+		refreshExploiterList()
+	end
+end
+
+-- Also refresh when players join/leave (for exploiter tab)
+Players.PlayerAdded:Connect(function()
+	refreshExploiterList()
+end)
+Players.PlayerRemoving:Connect(function(plr)
+	if exploiterPopupCache and exploiterPopupCache[plr.Name] then
+		exploiterPopupCache[plr.Name]:Destroy()
+		exploiterPopupCache[plr.Name] = nil
+	end
+	task.wait(0.1)
+	refreshExploiterList()
+end)
+
+-- Refresh exploiter list when tab is switched to
+do
+	local exploiterBtn = categoryFrames["Exploiters"].Parent and
+		categoryFrames["Exploiters"].Parent:FindFirstChild("ExploitersCatBtn")
+end
+
+-- ============================================
+-- Saved Exploiters (offline management)
+-- ============================================
+savedExploitersHeader = Instance.new("Frame")
+savedExploitersHeader.Name = "SavedExploitersHeader"
+savedExploitersHeader.Size = UDim2.new(1, 0, 0, 24)
+savedExploitersHeader.BackgroundTransparency = 1
+savedExploitersHeader.LayoutOrder = 103.5
+savedExploitersHeader.Parent = categoryFrames["Exploiters"]
+
+savedExploitersHeaderLabel = Instance.new("TextLabel")
+savedExploitersHeaderLabel.Size = UDim2.new(1, -28, 0, 24)
+savedExploitersHeaderLabel.BackgroundTransparency = 1
+savedExploitersHeaderLabel.Text = "Saved Exploiters"
+savedExploitersHeaderLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+savedExploitersHeaderLabel.TextXAlignment = Enum.TextXAlignment.Left
+savedExploitersHeaderLabel.Font = Enum.Font.SourceSansBold
+savedExploitersHeaderLabel.TextSize = 15
+savedExploitersHeaderLabel.Parent = savedExploitersHeader
+
+savedExploitersCollapseBtn = Instance.new("TextButton")
+savedExploitersCollapseBtn.Name = "SavedExploitersCollapseBtn"
+savedExploitersCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+savedExploitersCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+savedExploitersCollapseBtn.BackgroundTransparency = 1
+savedExploitersCollapseBtn.Text = "-"
+savedExploitersCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+savedExploitersCollapseBtn.Font = Enum.Font.SourceSansBold
+savedExploitersCollapseBtn.TextSize = 18
+savedExploitersCollapseBtn.Parent = savedExploitersHeader
+
+savedExploitersCollapsed = false
+savedExploitersCollapseBtn.MouseButton1Click:Connect(function()
+	savedExploitersCollapsed = not savedExploitersCollapsed
+	savedExploitersFrame.Visible = not savedExploitersCollapsed
+	savedExploitersCollapseBtn.Text = savedExploitersCollapsed and "+" or "-"
+end)
+
+savedExploitersFrame = Instance.new("Frame")
+savedExploitersFrame.Name = "SavedExploitersFrame"
+savedExploitersFrame.Size = UDim2.new(1, 0, 0, 160)
+savedExploitersFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+savedExploitersFrame.BorderSizePixel = 0
+savedExploitersFrame.LayoutOrder = 104
+savedExploitersFrame.Parent = categoryFrames["Exploiters"]
+
+savedExploitersCorner = Instance.new("UICorner")
+savedExploitersCorner.CornerRadius = UDim.new(0, 6)
+savedExploitersCorner.Parent = savedExploitersFrame
+
+savedExploitersScroll = Instance.new("ScrollingFrame")
+savedExploitersScroll.Name = "SavedExploitersScroll"
+savedExploitersScroll.Position = UDim2.new(0, 8, 0, 8)
+savedExploitersScroll.Size = UDim2.new(1, -16, 0, 144)
+savedExploitersScroll.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+savedExploitersScroll.BorderSizePixel = 0
+savedExploitersScroll.ScrollBarThickness = 4
+savedExploitersScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+savedExploitersScroll.Parent = savedExploitersFrame
+
+savedExploitersScrollCorner = Instance.new("UICorner")
+savedExploitersScrollCorner.CornerRadius = UDim.new(0, 6)
+savedExploitersScrollCorner.Parent = savedExploitersScroll
+
+savedExploitersPadding = Instance.new("UIPadding")
+savedExploitersPadding.PaddingLeft = UDim.new(0, 4)
+savedExploitersPadding.PaddingRight = UDim.new(0, 4)
+savedExploitersPadding.PaddingTop = UDim.new(0, 4)
+savedExploitersPadding.PaddingBottom = UDim.new(0, 4)
+savedExploitersPadding.Parent = savedExploitersScroll
+
+function refreshSavedExploiters()
+	if not savedExploitersScroll then return end
+	for _, child in ipairs(savedExploitersScroll:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+
+	local names = {}
+	for name, _ in pairs(markedExploiters) do
+		table.insert(names, name)
+	end
+	table.sort(names, function(a, b) return a:lower() < b:lower() end)
+
+	if #names == 0 then
+		local emptyLabel = Instance.new("TextLabel")
+		emptyLabel.Size = UDim2.new(1, 0, 0, 30)
+		emptyLabel.BackgroundTransparency = 1
+		emptyLabel.Text = "No saved exploiters"
+		emptyLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+		emptyLabel.Font = Enum.Font.SourceSansBold
+		emptyLabel.TextSize = 14
+		emptyLabel.Parent = savedExploitersScroll
+	end
+
+	local yPos = 0
+	for _, name in ipairs(names) do
+		local entry = Instance.new("Frame")
+		entry.Name = name .. "SavedEntry"
+		entry.Size = UDim2.new(1, 0, 0, 30)
+		entry.Position = UDim2.new(0, 0, 0, yPos)
+		entry.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		entry.BorderSizePixel = 0
+		entry.Parent = savedExploitersScroll
+
+		local entryCorner = Instance.new("UICorner")
+		entryCorner.CornerRadius = UDim.new(0, 6)
+		entryCorner.Parent = entry
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(1, -40, 1, 0)
+		nameLabel.Position = UDim2.new(0, 8, 0, 0)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = name
+		nameLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+		nameLabel.TextSize = 15
+		nameLabel.Font = Enum.Font.SourceSansBold
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Parent = entry
+
+		local deleteBtn = Instance.new("TextButton")
+		deleteBtn.Name = name .. "DelBtn"
+		deleteBtn.Size = UDim2.new(0, 24, 0, 24)
+		deleteBtn.Position = UDim2.new(1, -28, 0.5, -12)
+		deleteBtn.BackgroundColor3 = Color3.fromRGB(40, 10, 10)
+		deleteBtn.BorderSizePixel = 0
+		deleteBtn.Text = "X"
+		deleteBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+		deleteBtn.Font = Enum.Font.SourceSansBold
+		deleteBtn.TextSize = 14
+		deleteBtn.Parent = entry
+
+		local deleteBtnCorner = Instance.new("UICorner")
+		deleteBtnCorner.CornerRadius = UDim.new(0, 4)
+		deleteBtnCorner.Parent = deleteBtn
+
+		deleteBtn.MouseButton1Click:Connect(function()
+			markedExploiters[name] = nil
+			saveExploiters()
+			refreshSavedExploiters()
+			refreshExploiterList()
+			gameNotifSend("Exploiters", name .. " removed", Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 255, 255))
+		end)
+
+		deleteBtn.MouseEnter:Connect(function()
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(80, 20, 20)
+		end)
+		deleteBtn.MouseLeave:Connect(function()
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(40, 10, 10)
+		end)
+
+		yPos += 36
+	end
+
+	savedExploitersScroll.CanvasSize = UDim2.new(0, 0, 0, math.max(yPos, 0))
+end
+
+refreshSavedExploiters()
+
+task.spawn(function()
+	while task.wait(5) do
+		refreshSavedExploiters()
+	end
+end)
+
+currentCategory = "Scammers"
+createSection("Scammers", 100)
+
+-- Online Scammers section (marked players on server)
+onlineScammersHeader = Instance.new("Frame")
+onlineScammersHeader.Name = "OnlineScammersHeader"
+onlineScammersHeader.Size = UDim2.new(1, 0, 0, 24)
+onlineScammersHeader.BackgroundTransparency = 1
+onlineScammersHeader.LayoutOrder = 100.5
+onlineScammersHeader.Parent = categoryFrames["Scammers"]
+
+onlineScammersLabel = Instance.new("TextLabel")
+onlineScammersLabel.Size = UDim2.new(1, -28, 0, 24)
+onlineScammersLabel.BackgroundTransparency = 1
+onlineScammersLabel.Text = "Online Scammers"
+onlineScammersLabel.TextColor3 = Color3.fromRGB(180, 60, 60)
+onlineScammersLabel.TextXAlignment = Enum.TextXAlignment.Left
+onlineScammersLabel.Font = Enum.Font.SourceSansBold
+onlineScammersLabel.TextSize = 15
+onlineScammersLabel.Parent = onlineScammersHeader
+
+onlineScammersCollapseBtn = Instance.new("TextButton")
+onlineScammersCollapseBtn.Name = "OnlineScammersCollapseBtn"
+onlineScammersCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+onlineScammersCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+onlineScammersCollapseBtn.BackgroundTransparency = 1
+onlineScammersCollapseBtn.Text = "-"
+onlineScammersCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+onlineScammersCollapseBtn.Font = Enum.Font.SourceSansBold
+onlineScammersCollapseBtn.TextSize = 18
+onlineScammersCollapseBtn.Parent = onlineScammersHeader
+
+onlineScammersContainer = Instance.new("Frame")
+onlineScammersContainer.Name = "OnlineScammersContainer"
+onlineScammersContainer.Size = UDim2.new(1, 0, 0, 0)
+onlineScammersContainer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+onlineScammersContainer.BorderSizePixel = 0
+onlineScammersContainer.ClipsDescendants = true
+onlineScammersContainer.LayoutOrder = 100.6
+onlineScammersContainer.Parent = categoryFrames["Scammers"]
+
+onlineScammersContainerCorner = Instance.new("UICorner")
+onlineScammersContainerCorner.CornerRadius = UDim.new(0, 6)
+onlineScammersContainerCorner.Parent = onlineScammersContainer
+
+onlineScammersList = Instance.new("ScrollingFrame")
+onlineScammersList.Name = "OnlineScammersList"
+onlineScammersList.Size = UDim2.new(1, -8, 1, -8)
+onlineScammersList.Position = UDim2.new(0, 4, 0, 4)
+onlineScammersList.BackgroundTransparency = 1
+onlineScammersList.BorderSizePixel = 0
+onlineScammersList.ScrollBarThickness = 4
+onlineScammersList.CanvasSize = UDim2.new(0, 0, 0, 0)
+onlineScammersList.Parent = onlineScammersContainer
+
+onlineScammersListLayout = Instance.new("UIListLayout")
+onlineScammersListLayout.Padding = UDim.new(0, 5)
+onlineScammersListLayout.Parent = onlineScammersList
+onlineScammersListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	onlineScammersList.CanvasSize = UDim2.new(0, 0, 0, onlineScammersListLayout.AbsoluteContentSize.Y)
+end)
+
+onlineScammersCollapsed = false
+onlineScammersCollapseBtn.MouseButton1Click:Connect(function()
+	onlineScammersCollapsed = not onlineScammersCollapsed
+	onlineScammersContainer.Visible = not onlineScammersCollapsed
+	onlineScammersCollapseBtn.Text = onlineScammersCollapsed and "+" or "-"
+end)
+
+function refreshOnlineScammers()
+	if not onlineScammersList then return end
+	for _, child in ipairs(onlineScammersList:GetChildren()) do
+		if not child:IsA("UIListLayout") then
+			child:Destroy()
+		end
+	end
+
+	local markedOnline = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and markedScammers[plr.Name] == true then
+			table.insert(markedOnline, plr)
+		end
+	end
+	table.sort(markedOnline, function(a, b) return a.Name:lower() < b.Name:lower() end)
+
+	local count = #markedOnline
+	local entryHeight = 60
+	local maxContainerHeight = 190
+	local containerH = count > 0 and math.min(count * (entryHeight + 5) + 10, maxContainerHeight) or 0
+	onlineScammersContainer.Size = UDim2.new(1, 0, 0, containerH)
+
+	if count == 0 then
+		local emptyLabel = Instance.new("TextLabel")
+		emptyLabel.Size = UDim2.new(1, 0, 0, 30)
+		emptyLabel.BackgroundTransparency = 1
+		emptyLabel.Text = "No marked scammers online"
+		emptyLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+		emptyLabel.Font = Enum.Font.SourceSansBold
+		emptyLabel.TextSize = 13
+		emptyLabel.Parent = onlineScammersList
+		return
+	end
+
+	for _, plr in ipairs(markedOnline) do
+		local button = Instance.new("TextButton")
+		button.Name = plr.Name
+		button.Size = UDim2.new(1, 0, 0, entryHeight)
+		button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		button.BorderSizePixel = 0
+		button.Text = ""
+		button.AutoButtonColor = false
+		button.Parent = onlineScammersList
+
+		local btnCorner = Instance.new("UICorner")
+		btnCorner.CornerRadius = UDim.new(0, 6)
+		btnCorner.Parent = button
+
+		local avatar = Instance.new("ImageLabel")
+		avatar.Name = "Avatar"
+		avatar.Size = UDim2.new(0, 40, 0, 40)
+		avatar.Position = UDim2.new(0, 5, 0, 10)
+		avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		avatar.BorderSizePixel = 0
+		avatar.Parent = button
+
+		local avatarCorner = Instance.new("UICorner")
+		avatarCorner.CornerRadius = UDim.new(0, 6)
+		avatarCorner.Parent = avatar
+
+		coroutine.wrap(function()
+			local thumb = Players:GetUserThumbnailAsync(plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+			avatar.Image = thumb
+		end)()
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(1, -60, 0, 20)
+		nameLabel.Position = UDim2.new(0, 55, 0, 20)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = plr.DisplayName .. " (" .. plr.Name .. ")"
+		nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		nameLabel.Font = Enum.Font.GothamBold
+		nameLabel.TextSize = 14
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Parent = button
+
+		button.MouseEnter:Connect(function()
+			button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+		end)
+		button.MouseLeave:Connect(function()
+			button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		end)
+
+		button.MouseButton1Click:Connect(function()
+			showPlayerInfoPopup(plr)
+		end)
+	end
+end
+
+-- Title bar with collapse button
+scammerTitleBar = Instance.new("Frame")
+scammerTitleBar.Name = "ScammerTitleBar"
+scammerTitleBar.Size = UDim2.new(1, 0, 0, 24)
+scammerTitleBar.BackgroundTransparency = 1
+scammerTitleBar.LayoutOrder = 101
+scammerTitleBar.Parent = categoryFrames["Scammers"]
+
+scammerStatusLabel = Instance.new("TextLabel")
+scammerStatusLabel.Name = "ScammerStatusLabel"
+scammerStatusLabel.Size = UDim2.new(1, -28, 0, 24)
+scammerStatusLabel.BackgroundTransparency = 1
+scammerStatusLabel.Text = "Select players to mark as scammers"
+scammerStatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+scammerStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+scammerStatusLabel.Font = Enum.Font.SourceSansBold
+scammerStatusLabel.TextSize = 15
+scammerStatusLabel.Parent = scammerTitleBar
+
+scammerCollapseBtn = Instance.new("TextButton")
+scammerCollapseBtn.Name = "ScammerCollapseBtn"
+scammerCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+scammerCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+scammerCollapseBtn.BackgroundTransparency = 1
+scammerCollapseBtn.Text = "-"
+scammerCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+scammerCollapseBtn.Font = Enum.Font.SourceSansBold
+scammerCollapseBtn.TextSize = 18
+scammerCollapseBtn.Parent = scammerTitleBar
+
+scammerListCollapsed = false
+scammerCollapseBtn.MouseButton1Click:Connect(function()
+	scammerListCollapsed = not scammerListCollapsed
+	scammerFrame.Visible = not scammerListCollapsed
+	scammerSearchBox.Visible = not scammerListCollapsed
+	scammerCollapseBtn.Text = scammerListCollapsed and "+" or "-"
+end)
+
+-- Search box
+scammerSearchBox = Instance.new("TextBox")
+scammerSearchBox.Name = "ScammerSearchBox"
+scammerSearchBox.Size = UDim2.new(1, 0, 0, 32)
+scammerSearchBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+scammerSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+scammerSearchBox.PlaceholderText = "Search players..."
+scammerSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+scammerSearchBox.Text = ""
+scammerSearchBox.Font = Enum.Font.SourceSansBold
+scammerSearchBox.TextSize = 15
+scammerSearchBox.ClearTextOnFocus = false
+scammerSearchBox.LayoutOrder = 101.5
+scammerSearchBox.Parent = categoryFrames["Scammers"]
+
+scammerSearchCorner = Instance.new("UICorner")
+scammerSearchCorner.CornerRadius = UDim.new(0, 6)
+scammerSearchCorner.Parent = scammerSearchBox
+
+scammerSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local searchText = string.lower(scammerSearchBox.Text)
+	for _, data in pairs(scammerCheckboxes) do
+		if data.Entry and data.NameLabel then
+			local playerName = data.NameLabel.Text:gsub("^%[!%] ", "")
+			data.Entry.Visible = searchText == "" or string.find(string.lower(playerName), searchText, 1, true) ~= nil
+		end
+	end
+end)
+
+scammerFrame = Instance.new("Frame")
+scammerFrame.Name = "ScammerFrame"
+scammerFrame.Size = UDim2.new(1, 0, 0, 220)
+scammerFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+scammerFrame.BorderSizePixel = 0
+scammerFrame.LayoutOrder = 102
+scammerFrame.Parent = categoryFrames["Scammers"]
+
+scammerFrameCorner = Instance.new("UICorner")
+scammerFrameCorner.CornerRadius = UDim.new(0, 6)
+scammerFrameCorner.Parent = scammerFrame
+
+scammerScrollFrame = Instance.new("ScrollingFrame")
+scammerScrollFrame.Name = "ScammerScrollFrame"
+scammerScrollFrame.Position = UDim2.new(0, 8, 0, 8)
+scammerScrollFrame.Size = UDim2.new(1, -16, 0, 124)
+scammerScrollFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+scammerScrollFrame.BorderSizePixel = 0
+scammerScrollFrame.ScrollBarThickness = 4
+scammerScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scammerScrollFrame.Parent = scammerFrame
+
+scammerScrollCorner = Instance.new("UICorner")
+scammerScrollCorner.CornerRadius = UDim.new(0, 6)
+scammerScrollCorner.Parent = scammerScrollFrame
+
+scammerScrollPadding = Instance.new("UIPadding")
+scammerScrollPadding.PaddingLeft = UDim.new(0, 4)
+scammerScrollPadding.PaddingRight = UDim.new(0, 4)
+scammerScrollPadding.PaddingTop = UDim.new(0, 4)
+scammerScrollPadding.PaddingBottom = UDim.new(0, 4)
+scammerScrollPadding.Parent = scammerScrollFrame
+
+-- Mark button
+scammerMarkButton = Instance.new("TextButton")
+scammerMarkButton.Name = "ScammerMarkButton"
+scammerMarkButton.Size = UDim2.new(0.5, -12, 0, 34)
+scammerMarkButton.Position = UDim2.new(0, 8, 0, 140)
+scammerMarkButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+scammerMarkButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+scammerMarkButton.Text = "MARK"
+scammerMarkButton.Font = Enum.Font.SourceSansBold
+scammerMarkButton.TextSize = 16
+scammerMarkButton.Parent = scammerFrame
+
+scammerMarkCorner = Instance.new("UICorner")
+scammerMarkCorner.CornerRadius = UDim.new(0, 6)
+scammerMarkCorner.Parent = scammerMarkButton
+
+-- Unmark button
+scammerUnmarkButton = Instance.new("TextButton")
+scammerUnmarkButton.Name = "ScammerUnmarkButton"
+scammerUnmarkButton.Size = UDim2.new(0.5, -12, 0, 34)
+scammerUnmarkButton.Position = UDim2.new(0.5, 4, 0, 140)
+scammerUnmarkButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+scammerUnmarkButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+scammerUnmarkButton.Text = "UNMARK"
+scammerUnmarkButton.Font = Enum.Font.SourceSansBold
+scammerUnmarkButton.TextSize = 16
+scammerUnmarkButton.Parent = scammerFrame
+
+scammerUnmarkCorner = Instance.new("UICorner")
+scammerUnmarkCorner.CornerRadius = UDim.new(0, 6)
+scammerUnmarkCorner.Parent = scammerUnmarkButton
+
+-- Select All (scammer list)
+scammerSelectAllButton = Instance.new("TextButton")
+scammerSelectAllButton.Name = "ScammerSelectAllButton"
+scammerSelectAllButton.Size = UDim2.new(0.5, -12, 0, 30)
+scammerSelectAllButton.Position = UDim2.new(0, 8, 0, 182)
+scammerSelectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+scammerSelectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+scammerSelectAllButton.Text = "SELECT ALL"
+scammerSelectAllButton.Font = Enum.Font.SourceSansBold
+scammerSelectAllButton.TextSize = 14
+scammerSelectAllButton.Parent = scammerFrame
+
+scammerSelectAllCorner = Instance.new("UICorner")
+scammerSelectAllCorner.CornerRadius = UDim.new(0, 6)
+scammerSelectAllCorner.Parent = scammerSelectAllButton
+
+-- Deselect All (scammer list)
+scammerDeselectAllButton = Instance.new("TextButton")
+scammerDeselectAllButton.Name = "ScammerDeselectAllButton"
+scammerDeselectAllButton.Size = UDim2.new(0.5, -12, 0, 30)
+scammerDeselectAllButton.Position = UDim2.new(0.5, 4, 0, 182)
+scammerDeselectAllButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+scammerDeselectAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+scammerDeselectAllButton.Text = "DESELECT ALL"
+scammerDeselectAllButton.Font = Enum.Font.SourceSansBold
+scammerDeselectAllButton.TextSize = 14
+scammerDeselectAllButton.Parent = scammerFrame
+
+scammerDeselectAllCorner = Instance.new("UICorner")
+scammerDeselectAllCorner.CornerRadius = UDim.new(0, 6)
+scammerDeselectAllCorner.Parent = scammerDeselectAllButton
+
+-- Notify on Scammers button
+notifyScammersButton = Instance.new("TextButton")
+notifyScammersButton.Name = "NotifyScammersButton"
+notifyScammersButton.Size = UDim2.new(1, 0, 0, 42)
+notifyScammersButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+notifyScammersButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+notifyScammersButton.Text = "Notify on Scammers: OFF"
+notifyScammersButton.Font = Enum.Font.SourceSansBold
+notifyScammersButton.TextSize = 16
+notifyScammersButton.LayoutOrder = 105
+notifyScammersButton.Parent = categoryFrames["Scammers"]
+
+notifyScammersCorner = Instance.new("UICorner")
+notifyScammersCorner.CornerRadius = UDim.new(0, 6)
+notifyScammersCorner.Parent = notifyScammersButton
+
+-- Scammer player list logic
+scammerCheckboxes = {}
+selectedScammerTargets = {}
+
+function updateScammerStatus()
+	if not scammerStatusLabel then return end
+	local count = 0
+	for _ in pairs(selectedScammerTargets) do count += 1 end
+	scammerStatusLabel.Text = count == 0 and "Select players to mark as scammers" or (count .. " player(s) selected")
+	scammerStatusLabel.TextColor3 = count == 0 and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 50, 50)
+end
+
+function refreshScammerList()
+	if not scammerScrollFrame then return end
+	if refreshSavedScammers then refreshSavedScammers() end
+	if refreshOnlineScammers then refreshOnlineScammers() end
+	for _, child in ipairs(scammerScrollFrame:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+	scammerCheckboxes = {}
+
+	local playerList = Players:GetPlayers()
+	table.sort(playerList, function(a, b)
+		local aMarked = markedScammers[a.Name] == true
+		local bMarked = markedScammers[b.Name] == true
+		if aMarked ~= bMarked then return aMarked end
+		return a.Name:lower() < b.Name:lower()
+	end)
+
+	local yPosition = 0
+	for _, plr in ipairs(playerList) do
+		if plr ~= player then
+			local isMarked = markedScammers[plr.Name] == true
+
+			local playerEntry = Instance.new("Frame")
+			playerEntry.Name = plr.Name .. "ScammerEntry"
+			playerEntry.Size = UDim2.new(1, 0, 0, 30)
+			playerEntry.Position = UDim2.new(0, 0, 0, yPosition)
+			playerEntry.BackgroundColor3 = isMarked and Color3.fromRGB(50, 0, 15) or Color3.fromRGB(0, 0, 0)
+			playerEntry.BorderSizePixel = 0
+			playerEntry.Parent = scammerScrollFrame
+
+			local entryCorner = Instance.new("UICorner")
+			entryCorner.CornerRadius = UDim.new(0, 6)
+			entryCorner.Parent = playerEntry
+
+			local checkbox = Instance.new("TextButton")
+			checkbox.Size = UDim2.new(0, 24, 0, 24)
+			checkbox.Position = UDim2.new(0, 3, 0.5, -12)
+			checkbox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			checkbox.BorderSizePixel = 0
+			checkbox.Text = ""
+			checkbox.Parent = playerEntry
+
+			local checkboxCorner = Instance.new("UICorner")
+			checkboxCorner.CornerRadius = UDim.new(0, 6)
+			checkboxCorner.Parent = checkbox
+
+			local checkmark = Instance.new("TextLabel")
+			checkmark.Size = UDim2.new(1, 0, 1, 0)
+			checkmark.BackgroundTransparency = 1
+			checkmark.Text = "✓"
+			checkmark.TextColor3 = Color3.fromRGB(180, 50, 50)
+			checkmark.Font = Enum.Font.GothamBold
+			checkmark.TextSize = 20
+			checkmark.Visible = selectedScammerTargets[plr.Name] ~= nil
+			checkmark.Parent = checkbox
+
+			local nameLabel = Instance.new("TextLabel")
+			nameLabel.Size = UDim2.new(1, -35, 1, 0)
+			nameLabel.Position = UDim2.new(0, 32, 0, 0)
+			nameLabel.BackgroundTransparency = 1
+			nameLabel.Text = (isMarked and "[!] " or "") .. plr.Name
+			nameLabel.TextColor3 = isMarked and Color3.fromRGB(180, 60, 60) or Color3.fromRGB(255, 255, 255)
+			nameLabel.TextSize = 16
+			nameLabel.Font = Enum.Font.SourceSansBold
+			nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+			nameLabel.Parent = playerEntry
+
+			local clickArea = Instance.new("TextButton")
+			clickArea.Size = UDim2.new(1, -30, 1, 0)
+			clickArea.BackgroundTransparency = 1
+			clickArea.Text = ""
+			clickArea.Parent = playerEntry
+
+			clickArea.MouseButton1Click:Connect(function()
+				if selectedScammerTargets[plr.Name] then
+					selectedScammerTargets[plr.Name] = nil
+					checkmark.Visible = false
+				else
+					selectedScammerTargets[plr.Name] = plr
+					checkmark.Visible = true
+				end
+				updateScammerStatus()
+			end)
+
+			local infoBtn = Instance.new("TextButton")
+			infoBtn.Name = plr.Name .. "ScammerInfoBtn"
+			infoBtn.Size = UDim2.new(0, 24, 0, 24)
+			infoBtn.Position = UDim2.new(1, -27, 0.5, -12)
+			infoBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			infoBtn.BorderSizePixel = 0
+			infoBtn.Text = ">"
+			infoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+			infoBtn.Font = Enum.Font.SourceSansBold
+			infoBtn.TextSize = 16
+			infoBtn.Parent = playerEntry
+
+			local infoBtnCorner = Instance.new("UICorner")
+			infoBtnCorner.CornerRadius = UDim.new(0, 4)
+			infoBtnCorner.Parent = infoBtn
+
+			infoBtn.MouseButton1Click:Connect(function()
+				showPlayerInfoPopup(plr)
+			end)
+
+			infoBtn.MouseEnter:Connect(function()
+				infoBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+			end)
+			infoBtn.MouseLeave:Connect(function()
+				infoBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			end)
+
+			scammerCheckboxes[plr.Name] = {
+				Entry = playerEntry,
+				Checkmark = checkmark,
+				NameLabel = nameLabel,
+				InfoBtn = infoBtn,
+			}
+
+			yPosition += 36
+		end
+	end
+
+	scammerScrollFrame.CanvasSize = UDim2.new(0, 0, 0, yPosition)
+	updateScammerStatus()
+	if scammerSearchBox then
+		local searchText = string.lower(scammerSearchBox.Text)
+		for _, data in pairs(scammerCheckboxes) do
+			if data.Entry and data.NameLabel then
+				local playerName = data.NameLabel.Text:gsub("^%[!%] ", "")
+				data.Entry.Visible = searchText == "" or string.find(string.lower(playerName), searchText, 1, true) ~= nil
+			end
+		end
+	end
+end
+
+function toggleAllScammerPlayers(selectAll)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local checkboxData = scammerCheckboxes[plr.Name]
+			if checkboxData then
+				if selectAll then
+					selectedScammerTargets[plr.Name] = plr
+					checkboxData.Checkmark.Visible = true
+				else
+					selectedScammerTargets[plr.Name] = nil
+					checkboxData.Checkmark.Visible = false
+				end
+			end
+		end
+	end
+	updateScammerStatus()
+end
+
+-- Mark button: mark selected players as scammers
+scammerMarkButton.MouseButton1Click:Connect(function()
+	local count = 0
+	for name, plr in pairs(selectedScammerTargets) do
+		markedScammers[name] = true
+		count += 1
+	end
+	if count > 0 then
+		saveScammers()
+		selectedScammerTargets = {}
+		refreshScammerList()
+		gameNotifSend("Scammers", count .. " player(s) marked", Color3.fromRGB(180, 50, 50), Color3.fromRGB(255, 255, 255))
+	else
+		scammerStatusLabel.Text = "No players selected!"
+		scammerStatusLabel.TextColor3 = Color3.fromRGB(180, 50, 50)
+		task.delay(1.5, updateScammerStatus)
+	end
+end)
+
+-- Unmark button: unmark selected players
+scammerUnmarkButton.MouseButton1Click:Connect(function()
+	local count = 0
+	for name, plr in pairs(selectedScammerTargets) do
+		markedScammers[name] = nil
+		count += 1
+	end
+	if count > 0 then
+		saveScammers()
+		selectedScammerTargets = {}
+		refreshScammerList()
+		gameNotifSend("Scammers", count .. " player(s) unmarked", Color3.fromRGB(180, 50, 50), Color3.fromRGB(255, 255, 255))
+	else
+		scammerStatusLabel.Text = "No players selected!"
+		scammerStatusLabel.TextColor3 = Color3.fromRGB(180, 50, 50)
+		task.delay(1.5, updateScammerStatus)
+	end
+end)
+
+scammerSelectAllButton.MouseButton1Click:Connect(function()
+	toggleAllScammerPlayers(true)
+end)
+scammerDeselectAllButton.MouseButton1Click:Connect(function()
+	toggleAllScammerPlayers(false)
+end)
+
+notifyScammersButton.MouseButton1Click:Connect(function()
+	notifyOnScammers = not notifyOnScammers
+	setToggleState(notifyScammersButton, notifyOnScammers, "Notify on Scammers: ON", "Notify on Scammers: OFF")
+end)
+
+-- Refresh scammer list when tab opened
+do
+	local scammerCatBtn = categoryFrames["Scammers"]
+	if scammerCatBtn then
+		refreshScammerList()
+	end
+end
+
+-- Also refresh when players join/leave (for scammer tab)
+Players.PlayerAdded:Connect(function()
+	refreshScammerList()
+end)
+Players.PlayerRemoving:Connect(function(plr)
+	if scammerPopupCache and scammerPopupCache[plr.Name] then
+		scammerPopupCache[plr.Name]:Destroy()
+		scammerPopupCache[plr.Name] = nil
+	end
+	task.wait(0.1)
+	refreshScammerList()
+end)
+
+-- ============================================
+-- Saved Scammers (offline management)
+-- ============================================
+savedScammersHeader = Instance.new("Frame")
+savedScammersHeader.Name = "SavedScammersHeader"
+savedScammersHeader.Size = UDim2.new(1, 0, 0, 24)
+savedScammersHeader.BackgroundTransparency = 1
+savedScammersHeader.LayoutOrder = 103.5
+savedScammersHeader.Parent = categoryFrames["Scammers"]
+
+savedScammersHeaderLabel = Instance.new("TextLabel")
+savedScammersHeaderLabel.Size = UDim2.new(1, -28, 0, 24)
+savedScammersHeaderLabel.BackgroundTransparency = 1
+savedScammersHeaderLabel.Text = "Saved Scammers"
+savedScammersHeaderLabel.TextColor3 = Color3.fromRGB(180, 60, 60)
+savedScammersHeaderLabel.TextXAlignment = Enum.TextXAlignment.Left
+savedScammersHeaderLabel.Font = Enum.Font.SourceSansBold
+savedScammersHeaderLabel.TextSize = 15
+savedScammersHeaderLabel.Parent = savedScammersHeader
+
+savedScammersCollapseBtn = Instance.new("TextButton")
+savedScammersCollapseBtn.Name = "SavedScammersCollapseBtn"
+savedScammersCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+savedScammersCollapseBtn.Position = UDim2.new(1, -24, 0, 0)
+savedScammersCollapseBtn.BackgroundTransparency = 1
+savedScammersCollapseBtn.Text = "-"
+savedScammersCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+savedScammersCollapseBtn.Font = Enum.Font.SourceSansBold
+savedScammersCollapseBtn.TextSize = 18
+savedScammersCollapseBtn.Parent = savedScammersHeader
+
+savedScammersCollapsed = false
+savedScammersCollapseBtn.MouseButton1Click:Connect(function()
+	savedScammersCollapsed = not savedScammersCollapsed
+	savedScammersFrame.Visible = not savedScammersCollapsed
+	savedScammersCollapseBtn.Text = savedScammersCollapsed and "+" or "-"
+end)
+
+savedScammersFrame = Instance.new("Frame")
+savedScammersFrame.Name = "SavedScammersFrame"
+savedScammersFrame.Size = UDim2.new(1, 0, 0, 160)
+savedScammersFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+savedScammersFrame.BorderSizePixel = 0
+savedScammersFrame.LayoutOrder = 104
+savedScammersFrame.Parent = categoryFrames["Scammers"]
+
+savedScammersCorner = Instance.new("UICorner")
+savedScammersCorner.CornerRadius = UDim.new(0, 6)
+savedScammersCorner.Parent = savedScammersFrame
+
+savedScammersScroll = Instance.new("ScrollingFrame")
+savedScammersScroll.Name = "SavedScammersScroll"
+savedScammersScroll.Position = UDim2.new(0, 8, 0, 8)
+savedScammersScroll.Size = UDim2.new(1, -16, 0, 144)
+savedScammersScroll.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+savedScammersScroll.BorderSizePixel = 0
+savedScammersScroll.ScrollBarThickness = 4
+savedScammersScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+savedScammersScroll.Parent = savedScammersFrame
+
+savedScammersScrollCorner = Instance.new("UICorner")
+savedScammersScrollCorner.CornerRadius = UDim.new(0, 6)
+savedScammersScrollCorner.Parent = savedScammersScroll
+
+savedScammersPadding = Instance.new("UIPadding")
+savedScammersPadding.PaddingLeft = UDim.new(0, 4)
+savedScammersPadding.PaddingRight = UDim.new(0, 4)
+savedScammersPadding.PaddingTop = UDim.new(0, 4)
+savedScammersPadding.PaddingBottom = UDim.new(0, 4)
+savedScammersPadding.Parent = savedScammersScroll
+
+function refreshSavedScammers()
+	if not savedScammersScroll then return end
+	for _, child in ipairs(savedScammersScroll:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+
+	local names = {}
+	for name, _ in pairs(markedScammers) do
+		table.insert(names, name)
+	end
+	table.sort(names, function(a, b) return a:lower() < b:lower() end)
+
+	if #names == 0 then
+		local emptyLabel = Instance.new("TextLabel")
+		emptyLabel.Size = UDim2.new(1, 0, 0, 30)
+		emptyLabel.BackgroundTransparency = 1
+		emptyLabel.Text = "No saved scammers"
+		emptyLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+		emptyLabel.Font = Enum.Font.SourceSansBold
+		emptyLabel.TextSize = 14
+		emptyLabel.Parent = savedScammersScroll
+	end
+
+	local yPos = 0
+	for _, name in ipairs(names) do
+		local entry = Instance.new("Frame")
+		entry.Name = name .. "SavedScammerEntry"
+		entry.Size = UDim2.new(1, 0, 0, 30)
+		entry.Position = UDim2.new(0, 0, 0, yPos)
+		entry.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		entry.BorderSizePixel = 0
+		entry.Parent = savedScammersScroll
+
+		local entryCorner = Instance.new("UICorner")
+		entryCorner.CornerRadius = UDim.new(0, 6)
+		entryCorner.Parent = entry
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(1, -40, 1, 0)
+		nameLabel.Position = UDim2.new(0, 8, 0, 0)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = name
+		nameLabel.TextColor3 = Color3.fromRGB(180, 60, 60)
+		nameLabel.TextSize = 15
+		nameLabel.Font = Enum.Font.SourceSansBold
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Parent = entry
+
+		local deleteBtn = Instance.new("TextButton")
+		deleteBtn.Name = name .. "ScammerDelBtn"
+		deleteBtn.Size = UDim2.new(0, 24, 0, 24)
+		deleteBtn.Position = UDim2.new(1, -28, 0.5, -12)
+		deleteBtn.BackgroundColor3 = Color3.fromRGB(50, 0, 15)
+		deleteBtn.BorderSizePixel = 0
+		deleteBtn.Text = "X"
+		deleteBtn.TextColor3 = Color3.fromRGB(180, 50, 50)
+		deleteBtn.Font = Enum.Font.SourceSansBold
+		deleteBtn.TextSize = 14
+		deleteBtn.Parent = entry
+
+		local deleteBtnCorner = Instance.new("UICorner")
+		deleteBtnCorner.CornerRadius = UDim.new(0, 4)
+		deleteBtnCorner.Parent = deleteBtn
+
+		deleteBtn.MouseButton1Click:Connect(function()
+			markedScammers[name] = nil
+			saveScammers()
+			refreshSavedScammers()
+			refreshScammerList()
+			gameNotifSend("Scammers", name .. " removed", Color3.fromRGB(180, 50, 50), Color3.fromRGB(255, 255, 255))
+		end)
+
+		deleteBtn.MouseEnter:Connect(function()
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 30)
+		end)
+		deleteBtn.MouseLeave:Connect(function()
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(50, 0, 15)
+		end)
+
+		yPos += 36
+	end
+
+	savedScammersScroll.CanvasSize = UDim2.new(0, 0, 0, math.max(yPos, 0))
+end
+
+refreshSavedScammers()
+
+task.spawn(function()
+	while task.wait(5) do
+		refreshSavedScammers()
+	end
+end)
