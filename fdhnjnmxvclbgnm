@@ -124,6 +124,7 @@ local function saveConfig()
 	config.values.popupBtnWidth = popupBtnWidth
 	config.values.popupBtnHeight = popupBtnHeight
 	config.values.customFov = customFov
+	config.values.scriptActivationCount = scriptActivationCount
 
 	if featureBinds then
 		for name, key in pairs(featureBinds) do
@@ -175,6 +176,15 @@ local function loadConfigFromDisk()
 end
 
 loadConfigFromDisk()
+
+scriptActivationCount = (loadedConfig.values and loadedConfig.values.scriptActivationCount) or 0
+scriptActivationCount += 1
+if loadedConfig.values then
+    loadedConfig.values.scriptActivationCount = scriptActivationCount
+else
+    loadedConfig.values = { scriptActivationCount = scriptActivationCount }
+end
+saveConfig()
 
 local function stringToKey(str)
 	if not str then return nil end
@@ -810,7 +820,8 @@ ESP_DEFAULT_COLOR  = Color3.fromRGB(0, 255, 0)
 ESP_MURDERER_COLOR = Color3.fromRGB(255, 0, 0)
 ESP_SHERIFF_COLOR  = Color3.fromRGB(0, 0, 255)
 ESP_HERO_COLOR     = Color3.fromRGB(255, 255, 0)
-ESP_GUN_COLOR      = Color3.fromRGB(255, 170, 0)
+ESP_GUN_COLOR      = Color3.fromRGB(170, 0, 255)
+ESP_DEAD_COLOR     = Color3.fromRGB(255, 255, 255)
 ESP_FILL_ALPHA     = 1
 ESP_OUTLINE_ALPHA  = 0
 
@@ -823,6 +834,7 @@ espTrackedData = {}
 espTrackedGuns = {}
 espConnections = {}
 espRoles = nil
+espCurrentHero = nil
 
 ESP_MAP_NAMES = {
 	"Hotel", "Factory", "BioLab", "Mansion2", "House2",
@@ -830,13 +842,63 @@ ESP_MAP_NAMES = {
 	"ResearchFacility"
 }
 
+function espIsAlive(plr)
+	local char = plr.Character
+	if char then
+		local attr = char:GetAttribute("Alive")
+		if attr ~= nil then return attr end
+	end
+	local data = espRoles and espRoles[plr.Name]
+	if data then
+		return not data.Killed and not data.Dead
+	end
+	return false
+end
+
+function espIsHero(plr)
+	if not plr then return false end
+	if not espRoles then return false end
+	local data = espRoles[plr.Name]
+	if not data then return false end
+	if data.Role == "Murderer" then return false end
+	if data.Role == "Sheriff" then return false end
+	local sheriffName = nil
+	for name, v in pairs(espRoles) do
+		if v.Role == "Sheriff" then sheriffName = name; break end
+	end
+	if sheriffName then
+		local sheriffPlr = Players:FindFirstChild(sheriffName)
+		if sheriffPlr and espIsAlive(sheriffPlr) then return false end
+	end
+	if plr.Name == espCurrentHero then return true end
+	if data.HasGun then return true end
+	local char = plr.Character
+	if char then
+		for _, tool in ipairs(char:GetChildren()) do
+			if tool:IsA("Tool") and tool.Name:lower():find("gun") then
+				return true
+			end
+		end
+		local backpack = plr:FindFirstChild("Backpack")
+		if backpack then
+			for _, tool in ipairs(backpack:GetChildren()) do
+				if tool:IsA("Tool") and tool.Name:lower():find("gun") then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
 function espGetRoleColor(plr)
 	if not espRoles then return ESP_DEFAULT_COLOR end
+	if not espIsAlive(plr) then return ESP_DEAD_COLOR end
 	local data = espRoles[plr.Name]
 	if not data then return ESP_DEFAULT_COLOR end
 	if data.Role == "Murderer" then return ESP_MURDERER_COLOR
-	elseif data.Role == "Sheriff" or data.HasGun then return ESP_SHERIFF_COLOR
-	elseif data.Role == "Hero" then return ESP_HERO_COLOR
+	elseif data.Role == "Sheriff" then return ESP_SHERIFF_COLOR
+	elseif espIsHero(plr) then return ESP_HERO_COLOR
 	else return ESP_DEFAULT_COLOR end
 end
 
@@ -846,8 +908,7 @@ function espGetRoleName(plr)
 	if not data then return "" end
 	if data.Role == "Murderer" then return " [MURDERER]"
 	elseif data.Role == "Sheriff" then return " [SHERIFF]"
-	elseif data.HasGun then return " [GUN]"
-	elseif data.Role == "Hero" then return " [HERO]"
+	elseif espIsHero(plr) then return " [HERO]"
 	else return "" end
 end
 
@@ -1097,11 +1158,18 @@ function espCleanCharacter(character)
 	end
 end
 
+_espFrameCounter = 0
+RunService.Heartbeat:Connect(function()
+	_espFrameCounter = _espFrameCounter + 1
+end)
+
 function espHookCharacter(plr, character)
 	character:WaitForChild("HumanoidRootPart", 10)
+	local myOffset = math.random(0, 2)
 	local conn = RunService.Heartbeat:Connect(function()
 		if not espEnabled then return end
 		if not character.Parent then return end
+		if _espFrameCounter % 3 ~= myOffset then return end
 		espUpdatePlayer(plr)
 	end)
 	local prev = espTrackedData[plr]
@@ -1170,8 +1238,14 @@ function espEnableAll()
 			end)
 			if ok and result then
 				espRoles = result
+				espCurrentHero = nil
+				for name, v in pairs(result) do
+					if v.Role == "Hero" then
+						espCurrentHero = name
+					end
+				end
 			end
-			task.wait(0.5)
+			task.wait(0.75)
 		end
 	end)
 
@@ -4549,6 +4623,7 @@ end)
 resetWhitelist = {
 	["Erereer454"] = true,
 	["daniellfc09"] = true,
+	["Zero_RuO"] = true,
 }
 
 function isPlayerWhitelisted(name)
@@ -4596,73 +4671,203 @@ function executeNanFling()
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	if not hrp or not hum then return end
 
-	local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if not targetRoot then
+	local targetChar = targetPlayer.Character
+	local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+	local targetHum = targetChar:FindFirstChildOfClass("Humanoid")
+	if not targetRoot or not targetHum then
 		notify("Error", "Target has no character", 2)
 		return
 	end
 
+	for _, part in pairs(targetChar:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = true
+			part.Anchored = false
+		end
+	end
+
 	local savedCFrame = hrp.CFrame
-	local savedVelocity = hrp.Velocity
+	local savedVelocity = hrp.AssemblyLinearVelocity
+	local savedRotVelocity = hrp.AssemblyAngularVelocity
 	local savedPlatformStand = hum.PlatformStand
-	local nanValue = 0 / 0
-	local nanVector = Vector3.new(nanValue, nanValue, nanValue)
+	local savedCanCollide = hrp.CanCollide
+	local destroyHeight = workspace.FallenPartsDestroyHeight or -500
 
 	hum.PlatformStand = true
-	local startTime = tick()
+	hrp.CanCollide = false
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
 
+	local startTime = tick()
+	local flingComplete = false
+	local lastTargetPos = targetRoot.Position
+
+	local FLING_DURATION = 1.5
+	local MAX_DURATION   = 2.5
 	nanFlingConnection = RunService.Heartbeat:Connect(function()
 		if nanFlingCallCounter ~= currentFlingId then return end
+		if flingComplete then return end
 
-		if tick() - startTime >= 1.5 then
+		local tChar = targetPlayer.Character
+		targetRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+		local tHum = tChar and tChar:FindFirstChildOfClass("Humanoid")
+		if not targetRoot or not targetRoot.Parent then
 			nanFlingConnection:Disconnect()
 			nanFlingConnection = nil
-			task.defer(function()
-				if nanFlingCallCounter ~= currentFlingId then return end
-				hum.PlatformStand = savedPlatformStand
-
-				pcall(sethiddenproperty, hrp, "PhysicsRepRootPart", hrp)
-
-				local restoreCF = savedCFrame
-				if restoreCF then
-					local safeY = (workspace.FallenPartsDestroyHeight or -500) + 50
-					if restoreCF.Position.Y < safeY then
-						restoreCF = CFrame.new(restoreCF.Position.X, safeY, restoreCF.Position.Z)
-					end
-				end
-
-				for i = 1, 15 do
-					if nanFlingCallCounter ~= currentFlingId then return end
-					for _, part in pairs(char:GetDescendants()) do
-						if part:IsA("BasePart") then
-							part.Velocity = Vector3.zero
-							part.RotVelocity = Vector3.zero
-							part.AssemblyLinearVelocity = Vector3.zero
-							part.AssemblyAngularVelocity = Vector3.zero
-						end
-					end
-					hrp.CFrame = restoreCF
-					char:SetPrimaryPartCFrame(restoreCF)
-					task.wait()
-				end
-
-				pcall(function()
-					hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-				end)
-			end)
 			return
 		end
 
-		hrp.CFrame = targetRoot.CFrame
-		hrp.AssemblyLinearVelocity = nanVector
-		hrp.AssemblyAngularVelocity = nanVector
-		pcall(function()
-			hum:Move(nanVector)
-		end)
-		pcall(sethiddenproperty, hrp, "PhysicsRepRootPart", targetRoot)
+		local elapsed = tick() - startTime
+
+		if (tHum and tHum.Health <= 0) or targetRoot.Position.Y < destroyHeight then
+			flingComplete = true
+			nanFlingConnection:Disconnect()
+			nanFlingConnection = nil
+			return
+		end
+
+		for _, part in pairs(tChar:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = true
+				part.Anchored = false
+			end
+		end
+
+		local targetVel = targetRoot.AssemblyLinearVelocity
+		local targetPos = targetRoot.Position + targetVel * 0.02
+		lastTargetPos = targetPos
+
+		if elapsed < 0.01 then
+			hrp.CFrame = CFrame.new(targetPos)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+			pcall(sethiddenproperty, hrp, "PhysicsRepRootPart", targetRoot)
+		elseif elapsed < 0.05 then
+			hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 2, 0))
+			hrp.AssemblyLinearVelocity = Vector3.new(0, -350000, 0)
+			hrp.AssemblyAngularVelocity = Vector3.new(0, -350000, 0)
+			pcall(sethiddenproperty, hrp, "PhysicsRepRootPart", targetRoot)
+		elseif elapsed < FLING_DURATION then
+			local oscillation = math.sin(elapsed * 60) * 3
+			hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 1.5 + oscillation, 0))
+			hrp.AssemblyLinearVelocity = Vector3.new(
+				targetVel.X * 0.5,
+				-350000,
+				targetVel.Z * 0.5
+			)
+			hrp.AssemblyAngularVelocity = Vector3.new(
+				math.random(-250000, 250000),
+				-math.random(300000, 500000),
+				math.random(-250000, 250000)
+			)
+			pcall(sethiddenproperty, hrp, "PhysicsRepRootPart", targetRoot)
+
+			local phase = math.floor(elapsed * 60) % 8
+			if phase == 0 then
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 20, 0))
+				hrp.AssemblyLinearVelocity = Vector3.new(0, -500000, 0)
+				hrp.AssemblyAngularVelocity = Vector3.new(0, -500000, 0)
+			elseif phase == 1 then
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-5,5), 3, math.random(-5,5)))
+				hrp.AssemblyLinearVelocity = Vector3.new(math.random(-300000,300000), -600000, math.random(-300000,300000))
+				hrp.AssemblyAngularVelocity = Vector3.new(-500000, -600000, -500000)
+			elseif phase == 2 then
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 25, 0))
+				hrp.AssemblyLinearVelocity = Vector3.new(0, -700000, 0)
+				hrp.AssemblyAngularVelocity = Vector3.new(-700000, -700000, -700000)
+			elseif phase == 3 then
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-8,8), 2, math.random(-8,8)))
+				hrp.AssemblyLinearVelocity = Vector3.new(math.random(-350000,350000), -650000, math.random(-350000,350000))
+				hrp.AssemblyAngularVelocity = Vector3.new(0, -700000, 0)
+			elseif phase == 4 then
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 28, 0))
+				hrp.AssemblyLinearVelocity = Vector3.new(0, -800000, 0)
+				hrp.AssemblyAngularVelocity = Vector3.new(-800000, -800000, -800000)
+			elseif phase == 5 then
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-10,10), 4, math.random(-10,10)))
+				hrp.AssemblyLinearVelocity = Vector3.new(math.random(-400000,400000), -750000, math.random(-400000,400000))
+				hrp.AssemblyAngularVelocity = Vector3.new(-600000, -800000, -600000)
+			elseif phase == 6 then
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 30, 0))
+				hrp.AssemblyLinearVelocity = Vector3.new(0, -900000, 0)
+				hrp.AssemblyAngularVelocity = Vector3.new(-900000, -900000, -900000)
+			elseif phase == 7 then
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-12,12), 1, math.random(-12,12)))
+				hrp.AssemblyLinearVelocity = Vector3.new(math.random(-450000,450000), -850000, math.random(-450000,450000))
+				hrp.AssemblyAngularVelocity = Vector3.new(0, -900000, 0)
+			end
+
+			pcall(function()
+				targetRoot.AssemblyLinearVelocity = Vector3.new(0, -9e8, 0)
+				targetRoot.AssemblyAngularVelocity = Vector3.new(9e8, 9e8, 9e8)
+			end)
+		elseif elapsed < MAX_DURATION then
+			hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 25, 0))
+			hrp.AssemblyLinearVelocity = Vector3.new(0, -900000, 0)
+			hrp.AssemblyAngularVelocity = Vector3.new(-900000, -900000, -900000)
+			pcall(sethiddenproperty, hrp, "PhysicsRepRootPart", targetRoot)
+			pcall(function()
+				targetRoot.AssemblyLinearVelocity = Vector3.new(0, -9e8, 0)
+				targetRoot.AssemblyAngularVelocity = Vector3.new(9e8, 9e8, 9e8)
+			end)
+		else
+			flingComplete = true
+			nanFlingConnection:Disconnect()
+			nanFlingConnection = nil
+		end
 	end)
 
-	notify("NaN Fling", "Flinging " .. targetPlayer.Name, 2)
+	local function restoreCharacter()
+		if nanFlingCallCounter ~= currentFlingId then return end
+
+		nanFlingConnection = nil
+		flingComplete = true
+
+		hum.PlatformStand = savedPlatformStand
+		hrp.CanCollide = savedCanCollide
+
+		pcall(sethiddenproperty, hrp, "PhysicsRepRootPart", hrp)
+
+		local restoreCF = savedCFrame
+		if restoreCF then
+			local safeY = destroyHeight + 50
+			if restoreCF.Position.Y < safeY then
+				restoreCF = CFrame.new(restoreCF.Position.X, safeY, restoreCF.Position.Z)
+			end
+		end
+
+		for i = 1, 10 do
+			if nanFlingCallCounter ~= currentFlingId then return end
+			for _, part in pairs(char:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Velocity = Vector3.zero
+					part.RotVelocity = Vector3.zero
+					part.AssemblyLinearVelocity = Vector3.zero
+					part.AssemblyAngularVelocity = Vector3.zero
+				end
+			end
+			hrp.CFrame = restoreCF
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+			pcall(function() char:PivotTo(restoreCF) end)
+			task.wait()
+		end
+
+		pcall(function()
+			hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+		end)
+	end
+
+	task.spawn(function()
+		local t0 = tick()
+		while not flingComplete and (tick() - t0) < MAX_DURATION do
+			task.wait()
+		end
+		task.wait(0.05)
+		restoreCharacter()
+	end)
+
+	notify("Instant Fling", "Killing " .. targetPlayer.Name, 1.5)
 end
 
 function executeNanFlingByRole(roleName)
@@ -4673,14 +4878,23 @@ function executeNanFlingByRole(roleName)
 		notify("Error", "Could not get roles", 2)
 		return
 	end
+	local function isAlive(name)
+		local plr = Players:FindFirstChild(name)
+		return plr and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0
+	end
+
 	if roleName == "Sheriff" then
 		local heroTarget, sheriffTarget = nil, nil
 		for name, data in pairs(result) do
 			if name ~= player.Name and not isPlayerWhitelisted(name) then
 				if data.Role == "Hero" or (data.HasGun and data.Role ~= "Murderer") then
-					if not heroTarget then heroTarget = name end
+					if not heroTarget or (not isAlive(heroTarget) and isAlive(name)) then
+						heroTarget = name
+					end
 				elseif data.Role == "Sheriff" then
-					if not sheriffTarget then sheriffTarget = name end
+					if not sheriffTarget or (not isAlive(sheriffTarget) and isAlive(name)) then
+						sheriffTarget = name
+					end
 				end
 			end
 		end
@@ -4691,12 +4905,20 @@ function executeNanFlingByRole(roleName)
 			return
 		end
 	elseif roleName == "Murderer" then
+		local aliveTarget = nil
 		for name, data in pairs(result) do
 			if data.Role == "Murderer" and name ~= player.Name and not isPlayerWhitelisted(name) then
-				nanFlingTargetName = name
-				executeNanFling()
-				return
+				if isAlive(name) then
+					aliveTarget = name
+					break
+				end
+				if not aliveTarget then aliveTarget = name end
 			end
+		end
+		if aliveTarget then
+			nanFlingTargetName = aliveTarget
+			executeNanFling()
+			return
 		end
 	end
 	notify("Error", "No " .. roleName .. " found", 2)
@@ -6519,7 +6741,6 @@ function createTeamerPlayerButton(plr)
 		addInfoLine("Account Age: " .. ageText)
 
 		local exactAgeLine = addInfoLine("Current Age: N/A")
-		local avatarPriceLine = addInfoLine("Avatar Price: N/A")
 		local positionLine = addInfoLine("Player Position: N/A")
 
 		-- Р вЂ“Р С‘Р Р†РЎвЂ№Р Вµ Р В»Р ВµР в„–Р В±Р В»РЎвЂ№ РЎРѓР С”Р С•РЎР‚Р С•РЎРѓРЎвЂљР С‘/Р С—РЎР‚РЎвЂ№Р В¶Р С”Р В°
@@ -6596,8 +6817,6 @@ function createTeamerPlayerButton(plr)
 				end
 			end
 		end)
-
-		fetchAvatarPriceAsync(plr.UserId, avatarPriceLine)
 
 		popupGui.Destroying:Connect(function()
 			teamerLoopAlive = false
@@ -7394,78 +7613,6 @@ end)
 -- ============================================
 
 
-function fetchAvatarPriceAsync(userId, label)
-	task.spawn(function()
-		local total = 0
-		local found = false
-
-		-- Method 1: currently-wearing items via MarketplaceService
-		local ok, result = pcall(function()
-			return (syn or _G).request({
-				Url = "https://avatar.roblox.com/v1/users/" .. userId .. "/currently-wearing",
-				Method = "GET"
-			})
-		end)
-		if not (ok and result and result.StatusCode == 200) then
-			ok, result = pcall(function()
-				return game:HttpGetAsync("https://avatar.roblox.com/v1/users/" .. userId .. "/currently-wearing")
-			end)
-		end
-		if ok and result then
-			local body = result
-			if type(result) == "table" and result.Body then
-				body = result.Body
-			end
-			local ok2, data = pcall(function()
-				return game:GetService("HttpService"):JSONDecode(body)
-			end)
-			if ok2 and data and data.assetIds then
-				for _, aid in ipairs(data.assetIds) do
-					local s, info = pcall(function()
-						return game:GetService("MarketplaceService"):GetProductInfo(aid)
-					end)
-					if s and info and info.PriceInRobux ~= nil then
-						total = total + math.max(info.PriceInRobux, 0)
-						found = true
-					end
-				end
-			end
-		end
-
-		-- Method 2: collectibles RAP
-		local ok3, result3 = pcall(function()
-			return (syn or _G).request({
-				Url = "https://inventory.roblox.com/v1/users/" .. userId .. "/assets/collectibles?sortOrder=Asc&limit=100",
-				Method = "GET"
-			})
-		end)
-		if not (ok3 and result3 and result3.StatusCode == 200) then
-			ok3, result3 = pcall(function()
-				return game:HttpGetAsync("https://inventory.roblox.com/v1/users/" .. userId .. "/assets/collectibles?sortOrder=Asc&limit=100")
-			end)
-		end
-		if ok3 and result3 then
-			local body3 = result3
-			if type(result3) == "table" and result3.Body then
-				body3 = result3.Body
-			end
-			local ok4, inv = pcall(function()
-				return game:GetService("HttpService"):JSONDecode(body3)
-			end)
-			if ok4 and inv and inv.data then
-				for _, item in ipairs(inv.data) do
-					if item.recentAveragePrice and item.recentAveragePrice > 0 then
-						total = total + item.recentAveragePrice
-						found = true
-					end
-				end
-			end
-		end
-
-		label.Text = "Avatar Price: " .. (found and tostring(total) .. " R$" or "N/A")
-	end)
-end
-
 -- ============================================
 -- SECTION 8: Main (Your Profile)
 -- ============================================
@@ -7474,7 +7621,7 @@ createSection("Main", 700)
 
 local mainProfileFrame = Instance.new("Frame")
 mainProfileFrame.Name = "MainProfileFrame"
-mainProfileFrame.Size = UDim2.new(1, 0, 0, 320)
+mainProfileFrame.Size = UDim2.new(1, 0, 0, 362)
 mainProfileFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 mainProfileFrame.BorderSizePixel = 0
 mainProfileFrame.LayoutOrder = 701
@@ -7531,8 +7678,9 @@ createProfileLabel("Subscription: WIN-X Premium & Star+", 76)
 createProfileLabel("Display Name: " .. player.DisplayName, 98)
 createProfileLabel("Username: " .. player.Name, 120)
 createProfileLabel("User ID: " .. player.UserId, 142)
+scriptActivationLabel = createProfileLabel("Script Activations: " .. scriptActivationCount, 164)
 
-local regDateLabel = createProfileLabel("Registered: Loading...", 164)
+local regDateLabel = createProfileLabel("Registered: Loading...", 186)
 local mainCreationTime = os.time() - player.AccountAge * 86400
 coroutine.wrap(function()
 	local function calcRegDate(accountAge)
@@ -7599,14 +7747,14 @@ local ageText = player.AccountAge .. " days"
 if years > 0 or months > 0 or days > 0 then
 	ageText = ageText .. " (" .. years .. "y, " .. months .. "m, " .. days .. "d)"
 end
-createProfileLabel("Account Age: " .. ageText, 186)
+createProfileLabel("Account Age: " .. ageText, 208)
 
-local exactAgeLabel = createProfileLabel("Exact Age: N/A", 208)
+local exactAgeLabel = createProfileLabel("Exact Age: N/A", 230)
 
-local speedLabel = createProfileLabel("Walk Speed: N/A", 230)
-local jumpPowerLabel = createProfileLabel("Jump Power: N/A", 252)
-local healthLabel = createProfileLabel("Health: N/A", 274)
-local gravityLabel = createProfileLabel("Gravity: N/A", 296)
+local speedLabel = createProfileLabel("Walk Speed: N/A", 252)
+local jumpPowerLabel = createProfileLabel("Jump Power: N/A", 274)
+local healthLabel = createProfileLabel("Health: N/A", 296)
+local gravityLabel = createProfileLabel("Gravity: N/A", 318)
 
 local function updatePlayerStats()
 	local char = player.Character
@@ -10025,7 +10173,6 @@ function showPlayerInfoPopup(plr)
 	addInfoLine("Registered: " .. regDateStr)
 
 	local exactAgeLine = addInfoLine("Current Age: N/A")
-	local avatarPriceLine = addInfoLine("Avatar Price: N/A")
 
 	local healthLine = addInfoLine("Health: N/A")
 	local speedLine = addInfoLine("Walk Speed: N/A")
@@ -10098,8 +10245,6 @@ function showPlayerInfoPopup(plr)
 			end
 		end
 	end)
-
-	fetchAvatarPriceAsync(plr.UserId, avatarPriceLine)
 
 	addInfoLine("Gravity: " .. math.floor(workspace.Gravity))
 
