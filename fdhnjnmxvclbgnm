@@ -4925,14 +4925,14 @@ function executeNanFlingByRole(roleName)
 end
 
 currentCategory = "Utilities"
-local resetPlayerRow = Instance.new("Frame")
+resetPlayerRow = Instance.new("Frame")
 resetPlayerRow.Name = "ResetPlayerRow"
 resetPlayerRow.Size = UDim2.new(1, 0, 0, 42)
 resetPlayerRow.BackgroundTransparency = 1
 resetPlayerRow.LayoutOrder = 115.1
 resetPlayerRow.Parent = categoryFrames["Utilities"]
 
-local resetPlayerBtn = Instance.new("TextButton")
+resetPlayerBtn = Instance.new("TextButton")
 resetPlayerBtn.Name = "ResetPlayerButton"
 resetPlayerBtn.Size = UDim2.new(1, -140, 1, 0)
 resetPlayerBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -4942,11 +4942,11 @@ resetPlayerBtn.Font = Enum.Font.SourceSansBold
 resetPlayerBtn.TextSize = 14
 resetPlayerBtn.Parent = resetPlayerRow
 
-local resetPlayerBtnCorner = Instance.new("UICorner")
+resetPlayerBtnCorner = Instance.new("UICorner")
 resetPlayerBtnCorner.CornerRadius = UDim.new(0, 6)
 resetPlayerBtnCorner.Parent = resetPlayerBtn
 
-local resetPlayerInput = Instance.new("TextBox")
+resetPlayerInput = Instance.new("TextBox")
 resetPlayerInput.Name = "ResetPlayerInput"
 resetPlayerInput.Size = UDim2.new(0, 134, 1, 0)
 resetPlayerInput.Position = UDim2.new(1, -134, 0, 0)
@@ -4960,7 +4960,7 @@ resetPlayerInput.TextSize = 13
 resetPlayerInput.ClearTextOnFocus = false
 resetPlayerInput.Parent = resetPlayerRow
 
-local resetPlayerInputCorner = Instance.new("UICorner")
+resetPlayerInputCorner = Instance.new("UICorner")
 resetPlayerInputCorner.CornerRadius = UDim.new(0, 6)
 resetPlayerInputCorner.Parent = resetPlayerInput
 
@@ -4980,23 +4980,23 @@ function executeNanFlingEveryone()
 			if char and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
 				nanFlingTargetName = plr.Name
 				executeNanFling()
-				task.wait(0.7)
+				task.wait(0.05)
 			end
 		end
 	end
 end
 
-local resetEveryoneBtn = createButton("ResetEveryoneButton", "Reset Everyone", 115.2)
+resetEveryoneBtn = createButton("ResetEveryoneButton", "Reset Everyone", 115.2)
 resetEveryoneBtn.MouseButton1Click:Connect(function()
 	executeNanFlingEveryone()
 end)
 
-local resetSheriffBtn = createButton("ResetSheriffButton", "Reset Sheriff/Hero", 115.3)
+resetSheriffBtn = createButton("ResetSheriffButton", "Reset Sheriff/Hero", 115.3)
 resetSheriffBtn.MouseButton1Click:Connect(function()
 	executeNanFlingByRole("Sheriff")
 end)
 
-local resetMurdererBtn = createButton("ResetMurdererButton", "Reset Murderer", 115.4)
+resetMurdererBtn = createButton("ResetMurdererButton", "Reset Murderer", 115.4)
 resetMurdererBtn.MouseButton1Click:Connect(function()
 	executeNanFlingByRole("Murderer")
 end)
@@ -5012,7 +5012,7 @@ function toggleAutoResetPlayer()
 				if nanFlingTargetName ~= "" then
 					executeNanFling()
 				end
-				task.wait(0.3)
+				task.wait(0.05)
 			end
 		end)
 	end
@@ -5033,7 +5033,7 @@ function toggleAutoResetEveryone()
 		task.spawn(function()
 			while autoResetEveryoneEnabled do
 				executeNanFlingEveryone()
-				task.wait(0.3)
+				task.wait(0.05)
 			end
 		end)
 	end
@@ -5054,7 +5054,7 @@ function toggleAutoResetSheriff()
 		task.spawn(function()
 			while autoResetSheriffEnabled do
 				executeNanFlingByRole("Sheriff")
-				task.wait(0.3)
+				task.wait(0.05)
 			end
 		end)
 	end
@@ -5075,7 +5075,7 @@ function toggleAutoResetMurderer()
 		task.spawn(function()
 			while autoResetMurdererEnabled do
 				executeNanFlingByRole("Murderer")
-				task.wait(0.3)
+				task.wait(0.05)
 			end
 		end)
 	end
