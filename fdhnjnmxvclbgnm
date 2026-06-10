@@ -4748,18 +4748,15 @@ function executeNanFling()
 			hrp.AssemblyAngularVelocity = Vector3.new(0, -350000, 0)
 			pcall(sethiddenproperty, hrp, "PhysicsRepRootPart", targetRoot)
 		elseif elapsed < FLING_DURATION then
+			-- Mobile-robust oscillating fling: keep ALL motion strictly VERTICAL.
+			-- On low / variable mobile framerates (Delta) the desktop build's huge
+			-- random horizontal velocities make the body orbit the target instead of
+			-- snapping up/down, so here X/Z velocity is forced to 0 and we only drive
+			-- the character sharply up and down while slamming it into the void.
 			local oscillation = math.sin(elapsed * 60) * 3
 			hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 1.5 + oscillation, 0))
-			hrp.AssemblyLinearVelocity = Vector3.new(
-				targetVel.X * 0.5,
-				-350000,
-				targetVel.Z * 0.5
-			)
-			hrp.AssemblyAngularVelocity = Vector3.new(
-				math.random(-250000, 250000),
-				-math.random(300000, 500000),
-				math.random(-250000, 250000)
-			)
+			hrp.AssemblyLinearVelocity = Vector3.new(0, -350000, 0)
+			hrp.AssemblyAngularVelocity = Vector3.new(0, -math.random(300000, 500000), 0)
 			pcall(sethiddenproperty, hrp, "PhysicsRepRootPart", targetRoot)
 
 			local phase = math.floor(elapsed * 60) % 8
@@ -4768,38 +4765,38 @@ function executeNanFling()
 				hrp.AssemblyLinearVelocity = Vector3.new(0, -500000, 0)
 				hrp.AssemblyAngularVelocity = Vector3.new(0, -500000, 0)
 			elseif phase == 1 then
-				hrp.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-5,5), 3, math.random(-5,5)))
-				hrp.AssemblyLinearVelocity = Vector3.new(math.random(-300000,300000), -600000, math.random(-300000,300000))
-				hrp.AssemblyAngularVelocity = Vector3.new(-500000, -600000, -500000)
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
+				hrp.AssemblyLinearVelocity = Vector3.new(0, -600000, 0)
+				hrp.AssemblyAngularVelocity = Vector3.new(0, -600000, 0)
 			elseif phase == 2 then
 				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 25, 0))
 				hrp.AssemblyLinearVelocity = Vector3.new(0, -700000, 0)
-				hrp.AssemblyAngularVelocity = Vector3.new(-700000, -700000, -700000)
+				hrp.AssemblyAngularVelocity = Vector3.new(0, -700000, 0)
 			elseif phase == 3 then
-				hrp.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-8,8), 2, math.random(-8,8)))
-				hrp.AssemblyLinearVelocity = Vector3.new(math.random(-350000,350000), -650000, math.random(-350000,350000))
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 2, 0))
+				hrp.AssemblyLinearVelocity = Vector3.new(0, -650000, 0)
 				hrp.AssemblyAngularVelocity = Vector3.new(0, -700000, 0)
 			elseif phase == 4 then
 				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 28, 0))
 				hrp.AssemblyLinearVelocity = Vector3.new(0, -800000, 0)
-				hrp.AssemblyAngularVelocity = Vector3.new(-800000, -800000, -800000)
+				hrp.AssemblyAngularVelocity = Vector3.new(0, -800000, 0)
 			elseif phase == 5 then
-				hrp.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-10,10), 4, math.random(-10,10)))
-				hrp.AssemblyLinearVelocity = Vector3.new(math.random(-400000,400000), -750000, math.random(-400000,400000))
-				hrp.AssemblyAngularVelocity = Vector3.new(-600000, -800000, -600000)
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 4, 0))
+				hrp.AssemblyLinearVelocity = Vector3.new(0, -750000, 0)
+				hrp.AssemblyAngularVelocity = Vector3.new(0, -800000, 0)
 			elseif phase == 6 then
 				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 30, 0))
 				hrp.AssemblyLinearVelocity = Vector3.new(0, -900000, 0)
-				hrp.AssemblyAngularVelocity = Vector3.new(-900000, -900000, -900000)
+				hrp.AssemblyAngularVelocity = Vector3.new(0, -900000, 0)
 			elseif phase == 7 then
-				hrp.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-12,12), 1, math.random(-12,12)))
-				hrp.AssemblyLinearVelocity = Vector3.new(math.random(-450000,450000), -850000, math.random(-450000,450000))
+				hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 1, 0))
+				hrp.AssemblyLinearVelocity = Vector3.new(0, -850000, 0)
 				hrp.AssemblyAngularVelocity = Vector3.new(0, -900000, 0)
 			end
 
 			pcall(function()
 				targetRoot.AssemblyLinearVelocity = Vector3.new(0, -9e8, 0)
-				targetRoot.AssemblyAngularVelocity = Vector3.new(9e8, 9e8, 9e8)
+				targetRoot.AssemblyAngularVelocity = Vector3.new(0, 9e8, 0)
 			end)
 		elseif elapsed < MAX_DURATION then
 			hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 25, 0))
