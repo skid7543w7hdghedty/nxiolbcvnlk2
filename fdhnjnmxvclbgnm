@@ -16148,6 +16148,23 @@ btnFeatures = {
 	{name = "Auto Reset Murderer",
 	 toggle = function() toggleAutoResetMurderer(); setToggleState(autoResetMurdererBtn, autoResetMurdererEnabled, "Auto Reset Murderer: ON", "Auto Reset Murderer: OFF"); setExtractedBtnState("Auto Reset Murderer", autoResetMurdererEnabled) end,
 	 getState = function() return autoResetMurdererEnabled end},
+	{name = "Kill Everyone",
+	 toggle = function() local c = doKillEveryone(false); if c == nil then notify("Kill Everyone", "You need the knife (be the Murderer).", 2) else notify("Kill Everyone", "Hit " .. c .. " player(s).", 1.5) end end},
+	{name = "Kill Everyone (No Friends)",
+	 toggle = function() local c = doKillEveryone(true); if c == nil then notify("Kill Everyone", "You need the knife (be the Murderer).", 2) else notify("Kill Everyone", "Hit " .. c .. " non-friend(s).", 1.5) end end},
+	{name = "Kill Sheriff",
+	 toggle = function() local c = doKillSheriff(); if c == nil then notify("Kill Sheriff", "You need the knife (be the Murderer).", 2) elseif c == 0 then notify("Kill Sheriff", "No Sheriff / gun holder found.", 2) else notify("Kill Sheriff", "Hit " .. c .. " target(s).", 1.5) end end},
+	{name = "Kill Player",
+	 toggle = function() local sel = killPicker and killPicker.selectedName; if not sel then notify("Kill Player", "No player selected.", 2) return end; local ok, why = doKillPlayer(sel); if ok then notify("Kill Player", "Knifed " .. sel, 1.5) elseif why == "noknife" then notify("Kill Player", "You need the knife (be the Murderer).", 2) elseif why == "dead" then notify("Kill Player", sel .. " is already dead.", 2) else notify("Kill Player", "Target not available.", 2) end end},
+	{name = "Auto Kill Everyone",
+	 toggle = function() autoKillEveryoneEnabled = not autoKillEveryoneEnabled; setToggleState(autoKillEveryoneBtn, autoKillEveryoneEnabled, "Auto Kill Everyone: ON", "Auto Kill Everyone: OFF"); setExtractedBtnState("Auto Kill Everyone", autoKillEveryoneEnabled); if autoKillEveryoneEnabled then startAutoKillEveryone() end end,
+	 getState = function() return autoKillEveryoneEnabled end},
+	{name = "Auto Kill Everyone (No Friends)",
+	 toggle = function() autoKillEveryoneNoFriendsEnabled = not autoKillEveryoneNoFriendsEnabled; setToggleState(autoKillEveryoneNoFriendsBtn, autoKillEveryoneNoFriendsEnabled, "Auto Kill Everyone (except friends): ON", "Auto Kill Everyone (except friends): OFF"); setExtractedBtnState("Auto Kill Everyone (No Friends)", autoKillEveryoneNoFriendsEnabled); if autoKillEveryoneNoFriendsEnabled then startAutoKillEveryoneNoFriends() end end,
+	 getState = function() return autoKillEveryoneNoFriendsEnabled end},
+	{name = "Auto Kill Sheriff",
+	 toggle = function() autoKillSheriffEnabled = not autoKillSheriffEnabled; setToggleState(autoKillSheriffBtn, autoKillSheriffEnabled, "Auto Kill Sheriff: ON", "Auto Kill Sheriff: OFF"); setExtractedBtnState("Auto Kill Sheriff", autoKillSheriffEnabled); if autoKillSheriffEnabled then startAutoKillSheriff() end end,
+	 getState = function() return autoKillSheriffEnabled end},
 	{name = "Anti-Bang",
 	 toggle = function() executeAntiBang() end},
 	{name = "Shoot Murderer",
@@ -16434,9 +16451,14 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			local width = isBoth and 200 or 150
 			local height = isBoth and 64 or 46
 
+			local vpY = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.Y or 800
+			local maxRows = math.max(1, math.floor((vpY - 20) / (height + 2)))
+			local col = math.floor(extractedCount / maxRows)
+			local row = extractedCount % maxRows
+
 			local popupBorder = Instance.new("Frame")
 			popupBorder.Size = UDim2.new(0, width, 0, height)
-			popupBorder.Position = UDim2.new(0, 10, 0, 10 + extractedCount * (height + 2))
+			popupBorder.Position = UDim2.new(0, 10 + col * (width + 4), 0, 10 + row * (height + 2))
 			popupBorder.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 			popupBorder.BackgroundTransparency = popupBgTransparency
 			popupBorder.BorderSizePixel = 0
@@ -16546,9 +16568,14 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			extractedCount = extractedCount + 1
 		end
 
+		local vpY = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.Y or 800
+		local maxRows = math.max(1, math.floor((vpY - 20) / 50))
+		local col = math.floor(extractedCount / maxRows)
+		local row = extractedCount % maxRows
+
 		local popupBorder = Instance.new("Frame")
 		popupBorder.Size = UDim2.new(0, popupBtnWidth, 0, popupBtnHeight)
-		popupBorder.Position = UDim2.new(0, 10, 0, 10 + extractedCount * 48)
+		popupBorder.Position = UDim2.new(0, 10 + col * (popupBtnWidth + 4), 0, 10 + row * 50)
 		popupBorder.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		popupBorder.BackgroundTransparency = 1
 		popupBorder.BorderSizePixel = 0
