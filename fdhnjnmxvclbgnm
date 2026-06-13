@@ -67,7 +67,7 @@ DesyncOffsetRange = 50
 -- positional offset so bullets/silent-aim miss even while you walk.
 DesyncSpinActive = false
 desyncSpinConnection = nil
-DesyncSpinOffset = 1
+DesyncSpinOffset = 3
 function RandomNumberRange(a)
 	return math.random(-a * 100, a * 100) / 100
 end
