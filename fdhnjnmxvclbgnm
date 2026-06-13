@@ -1772,6 +1772,13 @@ function antiFlingCollide(plr)
 end
 
 function antiFlingEnable()
+	-- Skip Anti-Fling when our own features intentionally use high velocity / CFrame changes.
+	-- Without this bypass, Anti-Fling fights against Fling, Anti-Shoot, Desync, Touch Fling, etc.
+	if flingActive or hiddenfling or PastedSources or DesyncSpinActive or (nanFlingConnection ~= nil) then
+		_antiFlingLastSafePos = nil -- reset safe position so we don't snap back after feature ends
+		return
+	end
+
 	-- Self-protection: detect abnormal velocity and snap back
 	local char = player.Character
 	if char then
@@ -2162,16 +2169,16 @@ function espUpdatePlayer(plr)
 	local nameLabel, distLabel = espGetOrMakeBillboard(character)
 	if nameLabel then
 		nameLabel.TextColor3 = color
-		-- Build extra tags for Exploiter/Teamer/Scammer ESP labels
+		-- Build extra tags for Exploiter/Teamer/Scammer ESP labels (abbreviated for mobile)
 		local extraTags = ""
 		if espLabelExploitersEnabled and markedExploiters and markedExploiters[plr.Name] then
-			extraTags = extraTags .. " [EXPLOITER]"
+			extraTags = extraTags .. " [E]"
 		end
 		if espLabelTeamersEnabled and markedTeamers and markedTeamers[plr.Name] then
-			extraTags = extraTags .. " [TEAMER]"
+			extraTags = extraTags .. " [T]"
 		end
 		if espLabelScammersEnabled and markedScammers and markedScammers[plr.Name] then
-			extraTags = extraTags .. " [SCAMMER]"
+			extraTags = extraTags .. " [S]"
 		end
 		nameLabel.Text = plr.Name .. roleSuffix .. extraTags
 	end
