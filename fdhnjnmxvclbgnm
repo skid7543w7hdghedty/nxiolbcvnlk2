@@ -3929,6 +3929,20 @@ local function resolveImageAsset(filePath)
 			return result
 		end
 	end
+	-- GIF fallback: copy bytes to .png and retry (some executors reject .gif extension)
+	if string.lower(filePath):match("%.gif$") then
+		local readOk, bytes = pcall(function() return readfile(filePath) end)
+		if readOk and bytes then
+			local pngPath = filePath:gsub("%.[gG][iI][fF]$", "_adrenalin_bg.png")
+			pcall(function() writefile(pngPath, bytes) end)
+			for _, fn in ipairs(funcs) do
+				local ok2, result2 = pcall(fn, pngPath)
+				if ok2 and result2 then
+					return result2
+				end
+			end
+		end
+	end
 	return nil
 end
 
@@ -6183,6 +6197,27 @@ watchSheriffPicker = createPlayerPicker({
 -- Monitoring loop: every 0.5s check roles and trigger auto-reset
 watchRoleLastMurderer = nil
 watchRoleLastSheriff = nil
+watchRoleLoopingSheriff = false  -- true while loop-resetting Sheriff
+watchRoleLoopingMurderer = false -- true while loop-resetting Murderer
+
+local function watchRoleIsTargetAlive(roleName)
+	local ok2, res2 = pcall(function()
+		return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+	end)
+	if not (ok2 and res2) then return false end
+	for name, data in pairs(res2) do
+		if data.Role == roleName then
+			local plr = Players:FindFirstChild(name)
+			if plr and plr.Character then
+				local hum = plr.Character:FindFirstChild("Humanoid")
+				return hum and hum.Health > 0
+			end
+			return false
+		end
+	end
+	return false
+end
+
 task.spawn(function()
 	while true do
 		task.wait(0.5)
@@ -6203,16 +6238,38 @@ task.spawn(function()
 			if data.Role == "Murderer" then curMurderer = name end
 			if data.Role == "Sheriff" then curSheriff = name end
 		end
-		-- Watch for Murderer: if selected player just became Murderer → Reset Sheriff
-		if watchM and curMurderer == watchM and watchRoleLastMurderer ~= watchM then
-			notify("Watch Role", watchM .. " became Murderer — resetting Sheriff!", 3)
-			task.spawn(function() executeNanFlingByRole("Sheriff") end)
+		-- Watch for Murderer: if selected player just became Murderer → loop Reset Sheriff until dead
+		if watchM and curMurderer == watchM and watchRoleLastMurderer ~= watchM and not watchRoleLoopingSheriff then
+			notify("Watch Role", watchM .. " became Murderer — loop resetting Sheriff!", 3)
+			watchRoleLoopingSheriff = true
+			task.spawn(function()
+				while watchRoleLoopingSheriff do
+					executeNanFlingByRole("Sheriff")
+					task.wait(2)
+					if not watchRoleIsTargetAlive("Sheriff") then
+						watchRoleLoopingSheriff = false
+						notify("Watch Role", "Sheriff/Hero is dead — stopped", 2)
+						break
+					end
+				end
+			end)
 		end
 		watchRoleLastMurderer = curMurderer
-		-- Watch for Sheriff: if selected player just became Sheriff → Reset Murderer
-		if watchS and curSheriff == watchS and watchRoleLastSheriff ~= watchS then
-			notify("Watch Role", watchS .. " became Sheriff — resetting Murderer!", 3)
-			task.spawn(function() executeNanFlingByRole("Murderer") end)
+		-- Watch for Sheriff: if selected player just became Sheriff → loop Reset Murderer until dead
+		if watchS and curSheriff == watchS and watchRoleLastSheriff ~= watchS and not watchRoleLoopingMurderer then
+			notify("Watch Role", watchS .. " became Sheriff — loop resetting Murderer!", 3)
+			watchRoleLoopingMurderer = true
+			task.spawn(function()
+				while watchRoleLoopingMurderer do
+					executeNanFlingByRole("Murderer")
+					task.wait(2)
+					if not watchRoleIsTargetAlive("Murderer") then
+						watchRoleLoopingMurderer = false
+						notify("Watch Role", "Murderer is dead — stopped", 2)
+						break
+					end
+				end
+			end)
 		end
 		watchRoleLastSheriff = curSheriff
 	end
@@ -8194,18 +8251,19 @@ aimTargetDot = nil
 
 AIM_CONFIG = {
 	pingScale          = 1.0,
-	extraLeadSec       = 0.0,
+	extraLeadSec       = 0.02,
 	renderDelta        = 1/60,
-	maxLeadSec         = 0.50,
+	maxLeadSec         = 0.55,
 	aimPart            = "Torso",          -- center mass for bigger hitbox
 	rolePollRate       = 0.25,
 	gravityComp        = true,
-	shotsPerClick      = 3,                -- 3 shots per click for higher hit chance
+	shotsPerClick      = 4,                -- 4 shots per click for maximum hit chance
 	shotSpacing        = 0.0,
 	wallbangOriginDist = 1.5,              -- closer origin = more reliable piercer
-	autoShotCooldown   = 0.35,
-	scatterRadius      = 0.8,             -- stud offset for scatter shots
-	scatterShots       = 2,               -- extra scattered shots per main shot
+	autoShotCooldown   = 0.25,             -- faster auto shoot cycle
+	scatterRadius      = 1.0,             -- wider scatter = catch jumpy targets
+	scatterShots       = 3,               -- more scattered shots per main shot
+	jumpAimYBoost      = 1.2,             -- extra Y offset for jumping targets (studs)
 }
 
 -- Our own role cache (used only when the ESP cache espRoles is not available)
@@ -8277,9 +8335,19 @@ local function aimPredictTorso(character)
 	local px = p.X + v.X * t
 	local pz = p.Z + v.Z * t
 	local py
-	if AIM_CONFIG.gravityComp and aimIsAirborne(character) then
+	local airborne = AIM_CONFIG.gravityComp and aimIsAirborne(character)
+	if airborne then
 		local g = workspace.Gravity
 		py = p.Y + v.Y * t - 0.5 * g * t * t
+		-- Boost Y aim for jumping players: aim slightly higher to catch the arc
+		local boost = AIM_CONFIG.jumpAimYBoost or 0
+		if v.Y > 5 then
+			-- Jumping up: aim higher
+			py = py + boost
+		elseif v.Y < -5 then
+			-- Falling down: aim lower
+			py = py - boost * 0.5
+		end
 	else
 		py = p.Y + v.Y * t
 	end
@@ -8877,10 +8945,33 @@ autoKillEveryoneEnabled = false
 autoKillEveryoneNoFriendsEnabled = false
 autoKillSheriffEnabled = false
 
+local function autoKillIsMurderer()
+	local ok, result = pcall(function()
+		return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+	end)
+	if ok and result then
+		local me = result[player.Name]
+		if me and me.Role == "Murderer" then return true end
+	end
+	return false
+end
+
+local function autoKillHasKnife()
+	local char = player.Character
+	if not char then return false end
+	if char:FindFirstChild("Knife") then return true end
+	local bp = player:FindFirstChild("Backpack")
+	if bp and bp:FindFirstChild("Knife") then return true end
+	return false
+end
+
 function startAutoKillEveryone()
 	task.spawn(function()
 		while autoKillEveryoneEnabled do
-			pcall(doKillEveryone, false)
+			-- Wait until we are Murderer AND have the knife (round started)
+			if autoKillIsMurderer() and autoKillHasKnife() then
+				pcall(doKillEveryone, false)
+			end
 			task.wait(0.1)
 		end
 	end)
@@ -8889,7 +8980,10 @@ end
 function startAutoKillEveryoneNoFriends()
 	task.spawn(function()
 		while autoKillEveryoneNoFriendsEnabled do
-			pcall(doKillEveryone, true)
+			-- Wait until we are Murderer AND have the knife (round started)
+			if autoKillIsMurderer() and autoKillHasKnife() then
+				pcall(doKillEveryone, true)
+			end
 			task.wait(0.1)
 		end
 	end)
@@ -17655,6 +17749,8 @@ local function closeMenu()
 	autoResetMurdererEnabled = false
 	watchRoleLastMurderer = nil
 	watchRoleLastSheriff = nil
+	watchRoleLoopingSheriff = false
+	watchRoleLoopingMurderer = false
 	if voidReturnConn then voidReturnConn:Disconnect() voidReturnConn = nil end
 	getgenv().AdrenalinWinLoaded = nil
 end
