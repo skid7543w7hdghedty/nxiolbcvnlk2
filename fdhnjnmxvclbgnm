@@ -67,7 +67,7 @@ DesyncOffsetRange = 50
 -- positional offset so bullets/silent-aim miss even while you walk.
 DesyncSpinActive = false
 desyncSpinConnection = nil
-DesyncSpinOffset = 3
+DesyncSpinOffset = 1
 function RandomNumberRange(a)
 	return math.random(-a * 100, a * 100) / 100
 end
@@ -192,6 +192,8 @@ function saveConfig()
 	if resetPicker then config.pickerCollapsed.Reset = resetPicker.collapsed end
 	if shootPicker then config.pickerCollapsed.Shoot = shootPicker.collapsed end
 	if killPicker then config.pickerCollapsed.Kill = killPicker.collapsed end
+	if watchMurdererPicker then config.pickerCollapsed.WatchMurderer = watchMurdererPicker.collapsed end
+	if watchSheriffPicker then config.pickerCollapsed.WatchSheriff = watchSheriffPicker.collapsed end
 	config.values.toggleBgTransparency = toggleBgTransparency
 	config.values.mainBgTransparency = mainBgTransparency
 	config.values.popupBgTransparency = popupBgTransparency
@@ -684,6 +686,19 @@ function cycleMode()
 		currentMode = 0
 		running = false
 		antiAimStopAnim()
+		if antiAimConnection then
+			antiAimConnection:Disconnect()
+			antiAimConnection = nil
+		end
+		antiAimRealCF = nil
+		-- Restore AutoRotate only if Fake Duck isn't also spinning
+		if not fakeDuckEnabled then
+			local c = player.Character
+			if c then
+				local h = c:FindFirstChildOfClass("Humanoid")
+				if h then h.AutoRotate = true end
+			end
+		end
 		-- Stop speed glitch
 		stopAntiAimSpeedGlitch()
 		-- LoopSpeed integration: restore previous value
@@ -6130,6 +6145,77 @@ autoResetMurdererBtn.MouseButton1Click:Connect(function()
 	toggleAutoResetMurderer()
 	setToggleState(autoResetMurdererBtn, autoResetMurdererEnabled, "Auto Reset Murderer: ON", "Auto Reset Murderer: OFF")
 	setExtractedBtnState("Auto Reset Murderer", autoResetMurdererEnabled)
+end)
+
+-- ============================================
+-- Role-based Auto-Reset — watch a player, auto-reset when they get a role
+-- ============================================
+-- Picker 1: when selected player becomes Murderer → Reset Sheriff/Hero
+watchMurdererPicker = createPlayerPicker({
+	parent = categoryFrames["Utilities"],
+	order = 115.85,
+	prefix = "WatchMurderer",
+	statusText = "Watch → Murderer ⇒ Reset Sheriff",
+	onSelect = function(name)
+		if name then
+			notify("Watch Role", "Watching " .. name .. " — will Reset Sheriff if they become Murderer", 3)
+		else
+			notify("Watch Role", "Cleared Murderer watch", 2)
+		end
+	end,
+})
+
+-- Picker 2: when selected player becomes Sheriff → Reset Murderer
+watchSheriffPicker = createPlayerPicker({
+	parent = categoryFrames["Utilities"],
+	order = 115.95,
+	prefix = "WatchSheriff",
+	statusText = "Watch → Sheriff ⇒ Reset Murderer",
+	onSelect = function(name)
+		if name then
+			notify("Watch Role", "Watching " .. name .. " — will Reset Murderer if they become Sheriff", 3)
+		else
+			notify("Watch Role", "Cleared Sheriff watch", 2)
+		end
+	end,
+})
+
+-- Monitoring loop: every 0.5s check roles and trigger auto-reset
+watchRoleLastMurderer = nil
+watchRoleLastSheriff = nil
+task.spawn(function()
+	while true do
+		task.wait(0.5)
+		local watchM = watchMurdererPicker and watchMurdererPicker.selectedName
+		local watchS = watchSheriffPicker and watchSheriffPicker.selectedName
+		if not watchM and not watchS then
+			watchRoleLastMurderer = nil
+			watchRoleLastSheriff = nil
+			continue
+		end
+		local ok, result = pcall(function()
+			return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+		end)
+		if not (ok and result) then continue end
+		local curMurderer = nil
+		local curSheriff = nil
+		for name, data in pairs(result) do
+			if data.Role == "Murderer" then curMurderer = name end
+			if data.Role == "Sheriff" then curSheriff = name end
+		end
+		-- Watch for Murderer: if selected player just became Murderer → Reset Sheriff
+		if watchM and curMurderer == watchM and watchRoleLastMurderer ~= watchM then
+			notify("Watch Role", watchM .. " became Murderer — resetting Sheriff!", 3)
+			task.spawn(function() executeNanFlingByRole("Sheriff") end)
+		end
+		watchRoleLastMurderer = curMurderer
+		-- Watch for Sheriff: if selected player just became Sheriff → Reset Murderer
+		if watchS and curSheriff == watchS and watchRoleLastSheriff ~= watchS then
+			notify("Watch Role", watchS .. " became Sheriff — resetting Murderer!", 3)
+			task.spawn(function() executeNanFlingByRole("Murderer") end)
+		end
+		watchRoleLastSheriff = curSheriff
+	end
 end)
 
 -- ============================================
@@ -17567,6 +17653,8 @@ local function closeMenu()
 	autoResetEveryoneEnabled = false
 	autoResetSheriffEnabled = false
 	autoResetMurdererEnabled = false
+	watchRoleLastMurderer = nil
+	watchRoleLastSheriff = nil
 	if voidReturnConn then voidReturnConn:Disconnect() voidReturnConn = nil end
 	getgenv().AdrenalinWinLoaded = nil
 end
@@ -18478,7 +18566,7 @@ function restoreFullConfig()
 
 	-- Restore picker collapse states
 	if c and c.pickerCollapsed then
-		local pickers = { Troll = trollPicker, Reset = resetPicker, Shoot = shootPicker, Kill = killPicker }
+		local pickers = { Troll = trollPicker, Reset = resetPicker, Shoot = shootPicker, Kill = killPicker, WatchMurderer = watchMurdererPicker, WatchSheriff = watchSheriffPicker }
 		for key, picker in pairs(pickers) do
 			if picker and c.pickerCollapsed[key] ~= nil and c.pickerCollapsed[key] ~= picker.collapsed then
 				picker.collapsed = c.pickerCollapsed[key]
