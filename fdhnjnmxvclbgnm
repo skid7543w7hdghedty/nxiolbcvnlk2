@@ -7,6 +7,7 @@ TweenService = game:GetService("TweenService")
 Workspace = game:GetService("Workspace")
 ReplicatedStorage = game:GetService("ReplicatedStorage")
 Players = game:GetService("Players")
+TeleportService = game:GetService("TeleportService")
 
 -- Safe firetouchinterest wrapper: some executors throw or expose it under a
 -- different name. Wrapping in pcall stops a single failed touch from aborting the
@@ -18,6 +19,38 @@ function safeFireTouch(a, b)
 	pcall(_fireTouchFn, a, b, 0)
 	pcall(_fireTouchFn, a, b, 1)
 end
+
+_playerDataRemote = nil
+_roleDataCache = nil
+_roleDataCacheAt = 0
+_roleDataInFlight = false
+function invokePlayerData()
+	local now = os.clock()
+	if _roleDataCache and (now - _roleDataCacheAt) <= 0.35 then
+		return _roleDataCache
+	end
+	if _roleDataInFlight then
+		return _roleDataCache
+	end
+	_roleDataInFlight = true
+	local ok, result = pcall(function()
+		local remote = _playerDataRemote
+		if not remote then
+			remote = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+			_playerDataRemote = remote
+		end
+		return remote and remote:InvokeServer()
+	end)
+	_roleDataInFlight = false
+	if ok and type(result) == "table" then
+		_roleDataCache = result
+		_roleDataCacheAt = os.clock()
+	end
+	return _roleDataCache
+end
+
+-- Server join time tracking
+serverJoinTime = os.clock()
 
 -- One-time activation protection
 if getgenv().AdrenalinWinLoaded then
@@ -161,6 +194,9 @@ function saveConfig()
 	config.toggles.autoDodgeEnabled = autoDodgeEnabled
 	config.toggles.gunAuraEnabled = gunAuraEnabled
 	config.toggles.autoDeleteCoinsEnabled = autoDeleteCoinsEnabled
+	config.toggles.coinAuraEnabled = coinAuraEnabled
+	config.values.coinAuraRadius = coinAuraRadius
+	config.toggles.tryhardAnimEnabled = tryhardAnimEnabled
 	config.toggles.autoKillEveryoneEnabled = autoKillEveryoneEnabled
 	config.toggles.autoKillEveryoneNoFriendsEnabled = autoKillEveryoneNoFriendsEnabled
 	config.toggles.autoKillSheriffEnabled = autoKillSheriffEnabled
@@ -190,6 +226,15 @@ function saveConfig()
 	config.toggles.crosshairEnabled = crosshairEnabled
 	config.toggles.keystrokeEnabled = keystrokeEnabled
 	config.toggles.shadersEnabled = shadersEnabled
+	config.toggles.autofarmEnabled = autofarmEnabled
+	config.toggles.autofarmResetInnocentEnabled = autofarmResetInnocentEnabled
+	config.toggles.autofarmResetSheriffEnabled = autofarmResetSheriffEnabled
+	config.toggles.autofarmResetMurdererEnabled = autofarmResetMurdererEnabled
+	config.toggles.autofarmKillAllEnabled = autofarmKillAllEnabled
+	config.toggles.autofarmShootPiercerEnabled = autofarmShootPiercerEnabled
+	config.toggles.autofarmWebhookEnabled = autofarmWebhookEnabled
+	config.toggles.autofarmServerHopEnabled = autofarmServerHopEnabled
+	config.toggles.autofarmResetDeathEnabled = autofarmResetDeathEnabled
 
 	config.values.JUMP_BOOST_POWER = JUMP_BOOST_POWER
 	config.values.FAKE_SPEED_CFRAME_SPEED = FAKE_SPEED_CFRAME_SPEED
@@ -212,6 +257,17 @@ function saveConfig()
 	config.pickerCollapsed = {}
 	config.values.multiFlingCollapsed = multiFlingCollapsed or false
 	config.values.airStrafeMultiplier = airStrafeMultiplier
+	config.values.autofarmWebhookUrl = AUTOFARM_WEBHOOK_URL
+	config.values.autofarmTargetCoins = autofarmTargetCoins
+	config.values.autofarmSpeed = autofarmSpeed
+	config.values.autofarmTpModeIndex = autofarmTpModeIndex
+	config.values.autofarmTpEnabled = autofarmTpEnabled
+	config.values.autofarmPreTpModeIndex = autofarmPreTpModeIndex
+	config.values.autofarmPreTpEnabled = autofarmPreTpEnabled
+	config.values.autofarmWebhookIntervalMin = autofarmWebhookIntervalMin
+	config.values.autofarmScriptUrl = AUTOFARM_SCRIPT_URL
+	config.values.autofarmSessionCoins = autofarmSessionCoins
+	config.values.autofarmSessionElapsed = autofarmSessionStart and (os.clock() - autofarmSessionStart) or 0
 	if trollPicker then config.pickerCollapsed.Troll = trollPicker.collapsed end
 
 	if resetPicker then config.pickerCollapsed.Reset = resetPicker.collapsed end
@@ -231,6 +287,8 @@ function saveConfig()
 	config.values.animationEnabled = animationEnabled
 	config.values.btnPressAnimationEnabled = btnPressAnimationEnabled
 	config.values.animationStyle = animationStyle
+	config.values.loadingAnimStyle = loadingAnimStyle
+	config.values.menuAppearStyle = menuAppearStyle
 	config.values.mainBgImageUrl = mainBgImageUrl
 	config.values.clickSoundPath = clickSoundPath
 	config.values.toggleSoundPath = toggleSoundPath
@@ -659,7 +717,7 @@ function antiAimStep(dt)
 	if (not antiAimYaw) or antiAimRandTimer >= interval then
 		antiAimRandTimer = 0
 		antiAimYaw = math.random() * math.pi * 2
-		-- Only horizontal (yaw) rotation — no vertical pitch/roll jitter
+		-- Only horizontal (yaw) rotation вЂ” no vertical pitch/roll jitter
 		antiAimPitch = 0
 		antiAimRoll = 0
 	end
@@ -2713,7 +2771,7 @@ animationButtons = {
 	125329959146841, "Massive Poop", 72007752012770, "Poop sniff", 90333292347820, "The Worm",
 	133566007754001, "Drop Kick", 115518346414107, "Gangnam Style", 90018336892195, "Nervy Dance",
 	108747312576405, "Les goooo", 108242544356577, "Shake Dance",
-	99499783161907, "Aura farm", 114400428765989, "180° Flip", 70432904702322, "Get skinwalked", 109873544976020, "Weird Spin",
+	99499783161907, "Aura farm", 114400428765989, "180В° Flip", 70432904702322, "Get skinwalked", 109873544976020, "Weird Spin",
 	126264342780589, "Punch Anim"
 }
 animationObject = Instance.new("Animation")
@@ -2796,7 +2854,7 @@ function refreshPlayerList()
 			local checkmark = Instance.new("TextLabel")
 			checkmark.Size = UDim2.new(1, 0, 1, 0)
 			checkmark.BackgroundTransparency = 1
-			checkmark.Text = "✓"
+			checkmark.Text = "вњ“"
 			checkmark.TextColor3 = Color3.fromRGB(85, 255, 127)
 			checkmark.Font = Enum.Font.GothamBold
 			checkmark.TextSize = 20
@@ -3135,8 +3193,8 @@ function playAnimation(animationId, speedValue)
 end
 
 -- ============================================
--- Detached emote buttons (выносимые кнопки эмоций)
--- A star toggle (☆/★) on each emote row pops that emote out as a small draggable
+-- Detached emote buttons (РІС‹РЅРѕСЃРёРјС‹Рµ РєРЅРѕРїРєРё СЌРјРѕС†РёР№)
+-- A star toggle (в†/в…) on each emote row pops that emote out as a small draggable
 -- on-screen button, so emotes like Take the L, Dahood Stomp, etc. can be played
 -- without opening the menu. Position + which emotes are detached are saved to the
 -- config and restored on the next load.
@@ -3174,7 +3232,7 @@ function removeDetachedEmote(animationId, skipSave)
 	if d.frame then d.frame:Destroy() end
 	detachedEmotes[animationId] = nil
 	local ui = animationUiById[animationId]
-	if ui and ui.PopOut then ui.PopOut.Text = "☆" end
+	if ui and ui.PopOut then ui.PopOut.Text = "в†" end
 	if not skipSave then pcall(saveConfig) end
 end
 
@@ -3315,7 +3373,7 @@ function createDetachedEmote(animationId, animationName, savedPos, skipSave, sav
 		updateDetachedEmoteVisual(animationId)
 	end)
 
-	if ui and ui.PopOut then ui.PopOut.Text = "★" end
+	if ui and ui.PopOut then ui.PopOut.Text = "в…" end
 	updateDetachedEmoteVisual(animationId)
 	if not skipSave then pcall(saveConfig) end
 end
@@ -3346,7 +3404,7 @@ function onCharacterAdded(char)
 		antiAimRealCF = nil
 	end
 
-	-- РџРµСЂРµРїРѕРґРєР»СЋС‡РёС‚СЊ Anti-Fling РµСЃР»Рё РѕРЅ Р±С‹Р» РІРєР»СЋС‡РµРЅ
+	-- Р СџР ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ Anti-Fling Р ВµРЎРѓР В»Р С‘ Р С•Р Р… Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎР ВµР Р…
 	if antiFlingEnabled then
 		if antiFlingConnection then
 			antiFlingConnection:Disconnect()
@@ -3366,11 +3424,11 @@ function onCharacterAdded(char)
 		setupLoopSpeed()
 	end
 
-	-- РџРµСЂРµРїРѕРґРєР»СЋС‡РёС‚СЊ ESP РµСЃР»Рё РѕРЅ Р±С‹Р» РІРєР»СЋС‡РµРЅ (ESP СЃР°Рј РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ CharacterAdded С‡РµСЂРµР· espHookPlayer)
-	-- РќРёС‡РµРіРѕ РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕРіРѕ РЅРµ РЅСѓР¶РЅРѕ, ESP СѓР¶Рµ РїРѕРґРїРёСЃР°РЅ РЅР° CharacterAdded
+	-- Р СџР ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ ESP Р ВµРЎРѓР В»Р С‘ Р С•Р Р… Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎР ВµР Р… (ESP РЎРѓР В°Р С Р С•Р В±РЎР‚Р В°Р В±Р В°РЎвЂљРЎвЂ№Р Р†Р В°Р ВµРЎвЂљ CharacterAdded РЎвЂЎР ВµРЎР‚Р ВµР В· espHookPlayer)
+	-- Р СњР С‘РЎвЂЎР ВµР С–Р С• Р Т‘Р С•Р С—Р С•Р В»Р Р…Р С‘РЎвЂљР ВµР В»РЎРЉР Р…Р С•Р С–Р С• Р Р…Р Вµ Р Р…РЎС“Р В¶Р Р…Р С•, ESP РЎС“Р В¶Р Вµ Р С—Р С•Р Т‘Р С—Р С‘РЎРѓР В°Р Р… Р Р…Р В° CharacterAdded
 
 	humanoid.Died:Connect(function()
-		-- РћС‚РєР»СЋС‡Р°РµРј Desync
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Desync
 		PastedSources = false
 		if desyncConnection then desyncConnection:Disconnect() desyncConnection = nil end
 		if desyncButton then
@@ -3388,7 +3446,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Desync", false)
 
-		-- РћС‚РєР»СЋС‡Р°РµРј Wallhop
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Wallhop
 		wallhopToggle = false
 		if button2 then
 			button2.Text = "Wallhop: OFF"
@@ -3400,7 +3458,7 @@ function onCharacterAdded(char)
 		-- Anti-Aim intentionally persists across death/respawn (the driver re-arms
 		-- on the new character), so we do NOT disable it here.
 
-		-- РћС‚РєР»СЋС‡Р°РµРј Infinite Jump
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Infinite Jump
 		isEnabled = false
 		if button1 then
 			button1.Text = "Infinite Jump: OFF"
@@ -3409,7 +3467,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Infinite Jump", false)
 
-		-- РћС‚РєР»СЋС‡Р°РµРј Invisibility
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Invisibility
 		invis_on = false
 		if button5 then
 			button5.Text = "Invisibility: OFF"
@@ -3446,7 +3504,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Auto TP", false)
 
-		-- РћС‚РєР»СЋС‡Р°РµРј Clumsy
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Clumsy
 		clumsy_on = false
 		removeClumsyGhost()
 		if clumsyButton then
@@ -3456,11 +3514,11 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Clumsy", false)
 
-		-- ==== РќР• РѕС‚РєР»СЋС‡Р°РµРј Speed Glitch - СЃРѕС…СЂР°РЅСЏРµРј РµРіРѕ СЃРѕСЃС‚РѕСЏРЅРёРµ ====
-		-- fakeSpeedEnabled РѕСЃС‚Р°С‘С‚СЃСЏ РєР°Рє Р±С‹Р»Рѕ
-		-- РџСЂРё РЅРѕРІРѕРј РїРµСЂСЃРѕРЅР°Р¶Рµ Р±СѓРґРµС‚ РїРµСЂРµРїРѕРґРєР»СЋС‡РµРЅ РІ onCharacterAdded
+		-- ==== Р СњР вЂў Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Speed Glitch - РЎРѓР С•РЎвЂ¦РЎР‚Р В°Р Р…РЎРЏР ВµР С Р ВµР С–Р С• РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ ====
+		-- fakeSpeedEnabled Р С•РЎРѓРЎвЂљР В°РЎвЂРЎвЂљРЎРѓРЎРЏ Р С”Р В°Р С” Р В±РЎвЂ№Р В»Р С•
+		-- Р СџРЎР‚Р С‘ Р Р…Р С•Р Р†Р С•Р С Р С—Р ВµРЎР‚РЎРѓР С•Р Р…Р В°Р В¶Р Вµ Р В±РЎС“Р Т‘Р ВµРЎвЂљ Р С—Р ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР ВµР Р… Р Р† onCharacterAdded
 
-		-- РћС‚РєР»СЋС‡Р°РµРј Noclip
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Noclip
 		noclipEnabled = false
 		if noclipButton then
 			noclipButton.Text = "Noclip: OFF"
@@ -3473,7 +3531,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Noclip", false)
 
-		-- РћС‚РєР»СЋС‡Р°РµРј KillAura
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С KillAura
 		reachEnabled = false
 		if reachButton then
 			reachButton.Text = "KillAura: OFF"
@@ -3486,7 +3544,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("KillAura", false)
 
-		-- РћС‚РєР»СЋС‡Р°РµРј Air Strafe
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Air Strafe
 		airStrafeEnabled = false
 		isStrafing = false
 		if airStrafeButton then
@@ -3504,7 +3562,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Air Strafe", false)
 
-		-- РћС‚РєР»СЋС‡Р°РµРј Second Life
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Second Life
 		if secondLifeEnabled then
 			disableSecondLife()
 			if secondLifeButton then
@@ -3515,24 +3573,24 @@ function onCharacterAdded(char)
 			setExtractedBtnState("Second Life", false)
 		end
 
-		-- Touch Fling: НЕ отключаем после смерти (оставляем включенным)
-		-- hiddenfling остаётся как был
+		-- Touch Fling: РќР• РѕС‚РєР»СЋС‡Р°РµРј РїРѕСЃР»Рµ СЃРјРµСЂС‚Рё (РѕСЃС‚Р°РІР»СЏРµРј РІРєР»СЋС‡РµРЅРЅС‹Рј)
+		-- hiddenfling РѕСЃС‚Р°С‘С‚СЃСЏ РєР°Рє Р±С‹Р»
 
-		-- Anti-Fling: НЕ отключаем, только disconnect старого connection (персонаж умер)
-		-- При респавне переподключится в onCharacterAdded
+		-- Anti-Fling: РќР• РѕС‚РєР»СЋС‡Р°РµРј, С‚РѕР»СЊРєРѕ disconnect СЃС‚Р°СЂРѕРіРѕ connection (РїРµСЂСЃРѕРЅР°Р¶ СѓРјРµСЂ)
+		-- РџСЂРё СЂРµСЃРїР°РІРЅРµ РїРµСЂРµРїРѕРґРєР»СЋС‡РёС‚СЃСЏ РІ onCharacterAdded
 		if antiFlingEnabled then
 			if antiFlingConnection then
 				antiFlingConnection:Disconnect()
 				antiFlingConnection = nil
 			end
-			-- Кнопку НЕ трогаем - оставляем зелёной
+			-- РљРЅРѕРїРєСѓ РќР• С‚СЂРѕРіР°РµРј - РѕСЃС‚Р°РІР»СЏРµРј Р·РµР»С‘РЅРѕР№
 		end
 
-		-- ESP: НЕ отключаем - ESP сам обрабатывает смену персонажа
-		-- Кнопку НЕ трогаем
+		-- ESP: РќР• РѕС‚РєР»СЋС‡Р°РµРј - ESP СЃР°Рј РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ СЃРјРµРЅСѓ РїРµСЂСЃРѕРЅР°Р¶Р°
+		-- РљРЅРѕРїРєСѓ РќР• С‚СЂРѕРіР°РµРј
 
-		-- Anti-Void: НЕ отключаем - Anti-Void сам обрабатывает CharacterAdded
-		-- Кнопку НЕ трогаем
+		-- Anti-Void: РќР• РѕС‚РєР»СЋС‡Р°РµРј - Anti-Void СЃР°Рј РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ CharacterAdded
+		-- РљРЅРѕРїРєСѓ РќР• С‚СЂРѕРіР°РµРј
 
 		stopCurrentAnimation()
 		isAlive = false
@@ -3576,17 +3634,17 @@ player.CharacterRemoving:Connect(function()
 		airStrafeInputConnection = nil
 	end
 	setExtractedBtnState("Air Strafe", false)
-	-- ==== РќР• РѕС‚РєР»СЋС‡Р°РµРј Speed Glitch РїСЂРё СЃРјРµСЂС‚Рё ====
-	-- РћРЅ РґРѕР»Р¶РµРЅ РѕСЃС‚Р°С‚СЊСЃСЏ РІРєР»СЋС‡С‘РЅРЅС‹Рј РµСЃР»Рё Р±С‹Р» РІРєР»СЋС‡С‘РЅ
-	-- РќРѕ РЅСѓР¶РЅРѕ РїРµСЂРµРїРѕРґРєР»СЋС‡РёС‚СЊ connection
+	-- ==== Р СњР вЂў Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Speed Glitch Р С—РЎР‚Р С‘ РЎРѓР СР ВµРЎР‚РЎвЂљР С‘ ====
+	-- Р С›Р Р… Р Т‘Р С•Р В»Р В¶Р ВµР Р… Р С•РЎРѓРЎвЂљР В°РЎвЂљРЎРЉРЎРѓРЎРЏ Р Р†Р С”Р В»РЎР‹РЎвЂЎРЎвЂР Р…Р Р…РЎвЂ№Р С Р ВµРЎРѓР В»Р С‘ Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎРЎвЂР Р…
+	-- Р СњР С• Р Р…РЎС“Р В¶Р Р…Р С• Р С—Р ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ connection
 if fakeSpeedEnabled then
 		setupFakeSpeed()
 	end
 	
-	-- Touch Fling: НЕ отключаем после смерти (оставляем включенным)
-	-- hiddenfling остаётся как был
+	-- Touch Fling: РќР• РѕС‚РєР»СЋС‡Р°РµРј РїРѕСЃР»Рµ СЃРјРµСЂС‚Рё (РѕСЃС‚Р°РІР»СЏРµРј РІРєР»СЋС‡РµРЅРЅС‹Рј)
+	-- hiddenfling РѕСЃС‚Р°С‘С‚СЃСЏ РєР°Рє Р±С‹Р»
 
-	-- Anti-Fling: НЕ отключаем состояние, только disconnect connection
+	-- Anti-Fling: РќР• РѕС‚РєР»СЋС‡Р°РµРј СЃРѕСЃС‚РѕСЏРЅРёРµ, С‚РѕР»СЊРєРѕ disconnect connection
 	if antiFlingEnabled then
 		if antiFlingConnection then
 			antiFlingConnection:Disconnect()
@@ -3594,8 +3652,8 @@ if fakeSpeedEnabled then
 		end
 	end
 
-	-- ESP: НЕ отключаем
-	-- Anti-Void: НЕ отключаем
+	-- ESP: РќР• РѕС‚РєР»СЋС‡Р°РµРј
+	-- Anti-Void: РќР• РѕС‚РєР»СЋС‡Р°РµРј
 
 	clumsy_on = false
 	if clumsyButton then
@@ -3605,7 +3663,7 @@ if fakeSpeedEnabled then
 	end
 	setExtractedBtnState("Clumsy", false)
 
-	-- stopFling() УБРАН - флинг не должен отключаться после смерти
+	-- stopFling() РЈР‘Р РђРќ - С„Р»РёРЅРі РЅРµ РґРѕР»Р¶РµРЅ РѕС‚РєР»СЋС‡Р°С‚СЊСЃСЏ РїРѕСЃР»Рµ СЃРјРµСЂС‚Рё
 	stopCurrentAnimation()
 	isAlive = false
 	PastedSources = false
@@ -3793,6 +3851,10 @@ animationEnabled = true
 btnPressAnimationEnabled = true
 animationStyle = 1
 animStyles = {"Scale", "Fade Only", "Slide Left", "Slide Right", "Slide Up", "Bounce", "Scale+Fade"}
+loadingAnimStyle = 1
+loadingAnimStyles = {"Letter by Letter", "Fade In", "Scale Up", "Slide Up"}
+menuAppearStyle = 1
+menuAppearStyles = {"None", "Fade In", "Scale Up", "Slide Down", "Bounce", "Blur Reveal"}
 mainBgImageUrl = ""
 clickSoundPath = ""
 toggleSoundPath = ""
@@ -3840,6 +3902,154 @@ mainBgTransparency = 0
 toggleButtonSize = 56
 mainMenuWidth = 400
 mainMenuHeight = 230
+
+-- ============================================
+-- Loading Screen (Mobile-optimized)
+-- ============================================
+function playLoadingScreen()
+	local LOADING_DURATION = 2.5
+	local style = loadingAnimStyles[loadingAnimStyle] or "Letter by Letter"
+
+	local blur = Instance.new("BlurEffect")
+	blur.Size = 0
+	blur.Parent = game:GetService("Lighting")
+
+	local loaderGui = Instance.new("ScreenGui")
+	loaderGui.Name = "AdrenalinLoader"
+	loaderGui.IgnoreGuiInset = true
+	loaderGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+	loaderGui.DisplayOrder = 999999
+	loaderGui.Parent = playerGui
+
+	local blackFrame = Instance.new("Frame")
+	blackFrame.Size = UDim2.new(1, 0, 1, 0)
+	blackFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	blackFrame.BackgroundTransparency = 1
+	blackFrame.BorderSizePixel = 0
+	blackFrame.Parent = loaderGui
+
+	local textsFrame = Instance.new("Frame")
+	textsFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	textsFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+	textsFrame.Size = UDim2.new(0.9, 0, 0, 120)
+	textsFrame.BackgroundTransparency = 1
+	textsFrame.Parent = loaderGui
+
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.Padding = UDim.new(0, -2)
+	layout.Parent = textsFrame
+
+	TweenService:Create(blur, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = 50}):Play()
+	TweenService:Create(blackFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.6}):Play()
+	task.wait(0.5)
+
+	local loadText = "Adrenalin.win"
+	local textObjs = {}
+
+	if style == "Letter by Letter" then
+		for i = 1, #loadText do
+			local char = loadText:sub(i, i)
+			local letterFrame = Instance.new("Frame")
+			letterFrame.Size = UDim2.new(0, 28, 0, 80)
+			letterFrame.BackgroundTransparency = 1
+			letterFrame.LayoutOrder = i
+			letterFrame.Parent = textsFrame
+
+			local letterLabel = Instance.new("TextLabel")
+			letterLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+			letterLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+			letterLabel.Size = UDim2.new(0, 24, 0, 50)
+			letterLabel.BackgroundTransparency = 1
+			letterLabel.Text = char
+			letterLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+			letterLabel.Font = Enum.Font.GothamBold
+			letterLabel.TextSize = 32
+			letterLabel.TextTransparency = 1
+			letterLabel.Parent = letterFrame
+
+			table.insert(textObjs, letterLabel)
+		end
+
+		for i, lbl in ipairs(textObjs) do
+			TweenService:Create(lbl, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+			task.wait(0.06)
+		end
+
+	elseif style == "Fade In" then
+		local fullLabel = Instance.new("TextLabel")
+		fullLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+		fullLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+		fullLabel.Size = UDim2.new(1, 0, 0, 80)
+		fullLabel.BackgroundTransparency = 1
+		fullLabel.Text = loadText
+		fullLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		fullLabel.Font = Enum.Font.GothamBold
+		fullLabel.TextSize = 36
+		fullLabel.TextTransparency = 1
+		fullLabel.TextScaled = false
+		fullLabel.Parent = textsFrame
+
+		TweenService:Create(fullLabel, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+
+	elseif style == "Scale Up" then
+		local fullLabel = Instance.new("TextLabel")
+		fullLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+		fullLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+		fullLabel.Size = UDim2.new(1, 0, 0, 80)
+		fullLabel.BackgroundTransparency = 1
+		fullLabel.Text = loadText
+		fullLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		fullLabel.Font = Enum.Font.GothamBold
+		fullLabel.TextSize = 8
+		fullLabel.TextTransparency = 0
+		fullLabel.TextScaled = false
+		fullLabel.Parent = textsFrame
+
+		TweenService:Create(fullLabel, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 36}):Play()
+
+	elseif style == "Slide Up" then
+		local fullLabel = Instance.new("TextLabel")
+		fullLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+		fullLabel.Position = UDim2.new(0.5, 0, 0.5, 80)
+		fullLabel.Size = UDim2.new(1, 0, 0, 80)
+		fullLabel.BackgroundTransparency = 1
+		fullLabel.Text = loadText
+		fullLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		fullLabel.Font = Enum.Font.GothamBold
+		fullLabel.TextSize = 36
+		fullLabel.TextTransparency = 0
+		fullLabel.TextScaled = false
+		fullLabel.Parent = textsFrame
+
+		TweenService:Create(fullLabel, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+	end
+
+	task.wait(LOADING_DURATION)
+
+	TweenService:Create(blur, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = 0}):Play()
+	TweenService:Create(blackFrame, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+
+	for _, lbl in ipairs(textObjs) do
+		TweenService:Create(lbl, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 1}):Play()
+	end
+
+	for _, child in ipairs(textsFrame:GetDescendants()) do
+		if child:IsA("TextLabel") then
+			TweenService:Create(child, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 1}):Play()
+		end
+	end
+
+	task.wait(1.1)
+
+	loaderGui:Destroy()
+	blur:Destroy()
+end
+
+playLoadingScreen()
 
 -- ============================================
 -- GUI 1 (T1) - Main GUI
@@ -4404,7 +4614,7 @@ function createCategoryScrollFrame(categoryName)
 	categoryFrames[categoryName] = scroll
 end
 
-	canScroll = false  -- Р¤Р»Р°Рі РґР»СЏ Р±Р»РѕРєРёСЂРѕРІРєРё СЃРєСЂРѕР»Р»Р° РїСЂРё РёРЅРёС†РёР°Р»РёР·Р°С†РёРё
+	canScroll = false  -- Р В¤Р В»Р В°Р С– Р Т‘Р В»РЎРЏ Р В±Р В»Р С•Р С”Р С‘РЎР‚Р С•Р Р†Р С”Р С‘ РЎРѓР С”РЎР‚Р С•Р В»Р В»Р В° Р С—РЎР‚Р С‘ Р С‘Р Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р В°РЎвЂ Р С‘Р С‘
 
 createCategoryScrollFrame("Main")
 createCategoryScrollFrame("Movement")
@@ -4738,7 +4948,7 @@ function createPlayerPicker(opts)
 				local checkmark = Instance.new("TextLabel")
 				checkmark.Size = UDim2.new(1, 0, 1, 0)
 				checkmark.BackgroundTransparency = 1
-				checkmark.Text = "✓"
+				checkmark.Text = "вњ“"
 				checkmark.TextColor3 = Color3.fromRGB(255, 80, 80)
 				checkmark.Font = Enum.Font.GothamBold
 				checkmark.TextSize = 20
@@ -4855,7 +5065,7 @@ function setToggleState(btn, state, onText, offText)
 	saveConfig()
 end
 
--- РЎРёСЃС‚РµРјР° Р±РёРЅРґРёРЅРіР° РєР»Р°РІРёС€
+-- Р РЋР С‘РЎРѓРЎвЂљР ВµР СР В° Р В±Р С‘Р Р…Р Т‘Р С‘Р Р…Р С–Р В° Р С”Р В»Р В°Р Р†Р С‘РЎв‚¬
 keyBinds = {}
 featureBinds = {}
 
@@ -5478,7 +5688,7 @@ function autoGrabClaimDrop(drop)
 	local cf = root.CFrame
 	local zero = Vector3.zero
 
-	-- INSTANT: teleport + touch in same frame (no anchor delay — direct CFrame set)
+	-- INSTANT: teleport + touch in same frame (no anchor delay вЂ” direct CFrame set)
 	for i = 1, #parts do
 		local part = parts[i]
 		part.CanCollide = false
@@ -5491,7 +5701,7 @@ function autoGrabClaimDrop(drop)
 	-- First burst: immediate firetouchinterest
 	for i = 1, #parts do safeFireTouch(root, parts[i]) end
 
-	-- Second burst: RenderStepped (fires before next render — faster than task.defer)
+	-- Second burst: RenderStepped (fires before next render вЂ” faster than task.defer)
 	local renderConn
 	renderConn = RunService.RenderStepped:Connect(function()
 		renderConn:Disconnect()
@@ -5565,14 +5775,14 @@ function autoGrabConnectModel(model)
 	if autoGrabGunConnectedModels[model] then return end
 	autoGrabGunConnectedModels[model] = true
 
-	-- РњРіРЅРѕРІРµРЅРЅР°СЏ РїСЂРѕРІРµСЂРєР° СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёС…
+	-- Р СљР С–Р Р…Р С•Р Р†Р ВµР Р…Р Р…Р В°РЎРЏ Р С—РЎР‚Р С•Р Р†Р ВµРЎР‚Р С”Р В° РЎРѓРЎС“РЎвЂ°Р ВµРЎРѓРЎвЂљР Р†РЎС“РЎР‹РЎвЂ°Р С‘РЎвЂ¦
 	for _, child in ipairs(model:GetDescendants()) do
 		if child.Name == "GunDrop" then
 			autoGrabClaimDrop(child)
 		end
 	end
 
-	-- DescendantAdded - РїСЂСЏРјРѕР№ РІС‹Р·РѕРІ Р±РµР· Р·Р°РґРµСЂР¶РєРё (Р±С‹СЃС‚СЂРµРµ task.defer)
+	-- DescendantAdded - Р С—РЎР‚РЎРЏР СР С•Р в„– Р Р†РЎвЂ№Р В·Р С•Р Р† Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘ (Р В±РЎвЂ№РЎРѓРЎвЂљРЎР‚Р ВµР Вµ task.defer)
 	local conn = model.DescendantAdded:Connect(function(descendant)
 		if not autoGrabGunEnabled then return end
 		if descendant.Name == "GunDrop" then
@@ -5581,7 +5791,7 @@ function autoGrabConnectModel(model)
 	end)
 	autoGrabGunConnections[model] = conn
 
-	-- ChildAdded - РґСѓР±Р»РёСЂСѓСЋС‰РёР№ РїРµСЂРµС…РІР°С‚
+	-- ChildAdded - Р Т‘РЎС“Р В±Р В»Р С‘РЎР‚РЎС“РЎР‹РЎвЂ°Р С‘Р в„– Р С—Р ВµРЎР‚Р ВµРЎвЂ¦Р Р†Р В°РЎвЂљ
 	local conn2 = model.ChildAdded:Connect(function(child)
 		if not autoGrabGunEnabled then return end
 		if child.Name == "GunDrop" then
@@ -5613,7 +5823,7 @@ function autoGrabScanWorkspace()
 		if obj:IsA("Model") and autoGrabGunTargets[obj.Name] then
 			autoGrabConnectModel(obj)
 		end
-		-- РўР°РєР¶Рµ Р»РѕРІРёРј GunDrop РЅР°РїСЂСЏРјСѓСЋ
+		-- Р СћР В°Р С”Р В¶Р Вµ Р В»Р С•Р Р†Р С‘Р С GunDrop Р Р…Р В°Р С—РЎР‚РЎРЏР СРЎС“РЎР‹
 		if obj.Name == "GunDrop" then
 			autoGrabClaimDrop(obj)
 		end
@@ -5635,18 +5845,18 @@ function enableAutoGrabGun()
 
 	autoGrabScanWorkspace()
 
-	-- Workspace.DescendantAdded - РїСЂСЏРјРѕР№ РІС‹Р·РѕРІ, Р±РµР· Р·Р°РґРµСЂР¶РєРё
+	-- Workspace.DescendantAdded - Р С—РЎР‚РЎРЏР СР С•Р в„– Р Р†РЎвЂ№Р В·Р С•Р Р†, Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘
 	table.insert(autoGrabGunConnections, Workspace.DescendantAdded:Connect(function(obj)
 		if not autoGrabGunEnabled then return end
 		if obj.Name == "GunDrop" then
-			-- GunDrop РІ РїРµСЂРІСѓСЋ РѕС‡РµСЂРµРґСЊ - СЃР°РјС‹Р№ РїСЂРёРѕСЂРёС‚РµС‚РЅС‹Р№ СЃР»СѓС‡Р°Р№
+			-- GunDrop Р Р† Р С—Р ВµРЎР‚Р Р†РЎС“РЎР‹ Р С•РЎвЂЎР ВµРЎР‚Р ВµР Т‘РЎРЉ - РЎРѓР В°Р СРЎвЂ№Р в„– Р С—РЎР‚Р С‘Р С•РЎР‚Р С‘РЎвЂљР ВµРЎвЂљР Р…РЎвЂ№Р в„– РЎРѓР В»РЎС“РЎвЂЎР В°Р в„–
 			autoGrabClaimDrop(obj)
 		elseif obj:IsA("Model") and autoGrabGunTargets[obj.Name] then
 			autoGrabConnectModel(obj)
 		end
 	end))
 
-	-- Workspace.ChildAdded - РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Р№ РїРµСЂРµС…РІР°С‚ РІРµСЂС…РЅРµРіРѕ СѓСЂРѕРІРЅСЏ
+	-- Workspace.ChildAdded - Р Т‘Р С•Р С—Р С•Р В»Р Р…Р С‘РЎвЂљР ВµР В»РЎРЉР Р…РЎвЂ№Р в„– Р С—Р ВµРЎР‚Р ВµРЎвЂ¦Р Р†Р В°РЎвЂљ Р Р†Р ВµРЎР‚РЎвЂ¦Р Р…Р ВµР С–Р С• РЎС“РЎР‚Р С•Р Р†Р Р…РЎРЏ
 	table.insert(autoGrabGunConnections, Workspace.ChildAdded:Connect(function(obj)
 		if not autoGrabGunEnabled then return end
 		if obj.Name == "GunDrop" then
@@ -5669,7 +5879,7 @@ function enableAutoGrabGun()
 		autoGrabScanWorkspace()
 	end))
 
-	-- РџРµСЂРёРѕРґРёС‡РµСЃРєРѕРµ СЃРєР°РЅРёСЂРѕРІР°РЅРёРµ - РєР°Р¶РґС‹Рµ 5 СЃРµРєСѓРЅРґ (DescendantAdded Р»РѕРІРёС‚ РјРіРЅРѕРІРµРЅРЅРѕ)
+	-- Р СџР ВµРЎР‚Р С‘Р С•Р Т‘Р С‘РЎвЂЎР ВµРЎРѓР С”Р С•Р Вµ РЎРѓР С”Р В°Р Р…Р С‘РЎР‚Р С•Р Р†Р В°Р Р…Р С‘Р Вµ - Р С”Р В°Р В¶Р Т‘РЎвЂ№Р Вµ 5 РЎРѓР ВµР С”РЎС“Р Р…Р Т‘ (DescendantAdded Р В»Р С•Р Р†Р С‘РЎвЂљ Р СР С–Р Р…Р С•Р Р†Р ВµР Р…Р Р…Р С•)
 	task.spawn(function()
 		while autoGrabGunEnabled do
 			task.wait(1)
@@ -6571,32 +6781,32 @@ autoResetMurdererBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ============================================
--- Role-based Auto-Reset — watch a player, auto-reset when they get a role
+-- Role-based Auto-Reset вЂ” watch a player, auto-reset when they get a role
 -- ============================================
--- Picker 1: when selected player becomes Murderer → Reset Sheriff/Hero
+-- Picker 1: when selected player becomes Murderer в†’ Reset Sheriff/Hero
 watchMurdererPicker = createPlayerPicker({
 	parent = categoryFrames["Utilities"],
 	order = 115.85,
 	prefix = "WatchMurderer",
-	statusText = "Watch → Murderer ⇒ Reset Sheriff",
+	statusText = "Watch в†’ Murderer в‡’ Reset Sheriff",
 	onSelect = function(name)
 		if name then
-			notify("Watch Role", "Watching " .. name .. " — will Reset Sheriff if they become Murderer", 3)
+			notify("Watch Role", "Watching " .. name .. " вЂ” will Reset Sheriff if they become Murderer", 3)
 		else
 			notify("Watch Role", "Cleared Murderer watch", 2)
 		end
 	end,
 })
 
--- Picker 2: when selected player becomes Sheriff → Reset Murderer
+-- Picker 2: when selected player becomes Sheriff в†’ Reset Murderer
 watchSheriffPicker = createPlayerPicker({
 	parent = categoryFrames["Utilities"],
 	order = 115.95,
 	prefix = "WatchSheriff",
-	statusText = "Watch → Sheriff ⇒ Reset Murderer",
+	statusText = "Watch в†’ Sheriff в‡’ Reset Murderer",
 	onSelect = function(name)
 		if name then
-			notify("Watch Role", "Watching " .. name .. " — will Reset Murderer if they become Sheriff", 3)
+			notify("Watch Role", "Watching " .. name .. " вЂ” will Reset Murderer if they become Sheriff", 3)
 		else
 			notify("Watch Role", "Cleared Sheriff watch", 2)
 		end
@@ -6647,9 +6857,9 @@ task.spawn(function()
 			if data.Role == "Murderer" then curMurderer = name end
 			if data.Role == "Sheriff" then curSheriff = name end
 		end
-		-- Watch for Murderer: if selected player just became Murderer → loop Reset Sheriff until dead
+		-- Watch for Murderer: if selected player just became Murderer в†’ loop Reset Sheriff until dead
 		if watchM and curMurderer == watchM and watchRoleLastMurderer ~= watchM and not watchRoleLoopingSheriff then
-			notify("Watch Role", watchM .. " became Murderer — loop resetting Sheriff!", 3)
+			notify("Watch Role", watchM .. " became Murderer вЂ” loop resetting Sheriff!", 3)
 			watchRoleLoopingSheriff = true
 			task.spawn(function()
 				while watchRoleLoopingSheriff do
@@ -6659,7 +6869,7 @@ task.spawn(function()
 						task.wait(0.5)
 						if not watchRoleIsTargetAlive("Sheriff") and not watchRoleIsTargetAlive("Hero") then
 							watchRoleLoopingSheriff = false
-							notify("Watch Role", "Sheriff/Hero is dead — stopped", 2)
+							notify("Watch Role", "Sheriff/Hero is dead вЂ” stopped", 2)
 							break
 						end
 					end
@@ -6668,9 +6878,9 @@ task.spawn(function()
 			end)
 		end
 		watchRoleLastMurderer = curMurderer
-		-- Watch for Sheriff: if selected player just became Sheriff → loop Reset Murderer until dead
+		-- Watch for Sheriff: if selected player just became Sheriff в†’ loop Reset Murderer until dead
 		if watchS and curSheriff == watchS and watchRoleLastSheriff ~= watchS and not watchRoleLoopingMurderer then
-			notify("Watch Role", watchS .. " became Sheriff — loop resetting Murderer!", 3)
+			notify("Watch Role", watchS .. " became Sheriff вЂ” loop resetting Murderer!", 3)
 			watchRoleLoopingMurderer = true
 			task.spawn(function()
 				while watchRoleLoopingMurderer do
@@ -6680,7 +6890,7 @@ task.spawn(function()
 						task.wait(0.5)
 						if not watchRoleIsTargetAlive("Murderer") then
 							watchRoleLoopingMurderer = false
-							notify("Watch Role", "Murderer is dead — stopped", 2)
+							notify("Watch Role", "Murderer is dead вЂ” stopped", 2)
 							break
 						end
 					end
@@ -6693,7 +6903,7 @@ task.spawn(function()
 end)
 
 -- ============================================
--- Map Vote Dupe (3 buttons) — Utilities tab
+-- Map Vote Dupe (3 buttons) вЂ” Utilities tab
 -- ============================================
 voteMapCoords = {
 	CFrame.new(25, 507, 49),  -- Map 1
@@ -6745,7 +6955,7 @@ function voteDupeStart(mapIndex)
 				-- Teleport to vote pad + touch, wait for server to register, then reset
 				pcall(function() hrp.CFrame = voteCF end)
 				RunService.Heartbeat:Wait()
-				-- Touch vote-area parts (first burst — immediate)
+				-- Touch vote-area parts (first burst вЂ” immediate)
 				pcall(function()
 					for _, d in ipairs(Workspace:GetDescendants()) do
 						if d:IsA("BasePart") and (d.Position - voteCF.Position).Magnitude < 6 then
@@ -7257,6 +7467,95 @@ btn.autoDeleteCoins.MouseButton1Click:Connect(function()
 	setExtractedBtnState("Auto Remove Coins", autoDeleteCoinsEnabled)
 end)
 
+-- Coin Aura -- magnetically attract coins within radius
+coinAuraEnabled = false
+coinAuraRadius = 10
+coinAuraConnections = {}
+
+function coinAuraGetRoot()
+	local char = player.Character
+	if not char then return nil end
+	return char:FindFirstChild("HumanoidRootPart")
+end
+
+function coinAuraGetCoinPart(coin)
+	if coin:IsA("BasePart") then return coin end
+	local p = coin:FindFirstChild("Coin")
+	if p and p:IsA("BasePart") then return p end
+	return coin:FindFirstChildWhichIsA("BasePart")
+end
+
+function coinAuraTouchCoin(root, coinPart)
+	if not (root and coinPart and coinPart.Parent) then return end
+	pcall(function()
+		coinPart.CFrame = root.CFrame
+		coinPart.CanCollide = false
+	end)
+	safeFireTouch(root, coinPart)
+end
+
+function enableCoinAura()
+	coinAuraEnabled = true
+	for _, conn in ipairs(coinAuraConnections) do
+		if typeof(conn) == "RBXScriptConnection" and conn.Connected then conn:Disconnect() end
+	end
+	coinAuraConnections = {}
+	table.insert(coinAuraConnections, RunService.Heartbeat:Connect(function()
+		if not coinAuraEnabled then return end
+		local root = coinAuraGetRoot()
+		if not root then return end
+		local playerPos = root.Position
+		local cc = Workspace:FindFirstChild("CoinContainer", true)
+		if not cc then return end
+		for _, coin in ipairs(cc:GetChildren()) do
+			if coin.Parent then
+				local coinPart = coinAuraGetCoinPart(coin)
+				if coinPart then
+					local dist = (playerPos - coinPart.Position).Magnitude
+					if dist <= coinAuraRadius then
+						coinAuraTouchCoin(root, coinPart)
+					end
+				end
+			end
+		end
+	end))
+	table.insert(coinAuraConnections, player.CharacterAdded:Connect(function()
+		if not coinAuraEnabled then return end
+	end))
+end
+
+function disableCoinAura()
+	coinAuraEnabled = false
+	for _, conn in ipairs(coinAuraConnections) do
+		if typeof(conn) == "RBXScriptConnection" and conn.Connected then conn:Disconnect() end
+	end
+	coinAuraConnections = {}
+end
+
+function toggleCoinAura()
+	if coinAuraEnabled then
+		disableCoinAura()
+	else
+		enableCoinAura()
+	end
+end
+
+btn.coinAura, ui.coinAuraRadiusInput = createDualRow("CoinAuraButton", "Coin Aura: OFF", "Radius", coinAuraRadius, 106)
+btn.coinAura.MouseButton1Click:Connect(function()
+	toggleCoinAura()
+	setToggleState(btn.coinAura, coinAuraEnabled, "Coin Aura: ON", "Coin Aura: OFF")
+	setExtractedBtnState("Coin Aura", coinAuraEnabled)
+end)
+
+ui.coinAuraRadiusInput.FocusLost:Connect(function()
+	local val = tonumber(ui.coinAuraRadiusInput.Text)
+	if val and val >= 1 and val <= 20 then
+		coinAuraRadius = val
+	else
+		ui.coinAuraRadiusInput.Text = tostring(coinAuraRadius)
+	end
+end)
+
 -- Auto Mute Coins: fully silence MM2 coin pickup / collect sounds
 autoMuteCoinsEnabled = false
 autoMuteCoinsConnections = {}
@@ -7372,13 +7671,13 @@ function tpGetRoles()
 	end
 end
 
--- РњРіРЅРѕРІРµРЅРЅР°СЏ С‚РµР»РµРїРѕСЂС‚Р°С†РёСЏ Рє CFrame
+-- Р СљР С–Р Р…Р С•Р Р†Р ВµР Р…Р Р…Р В°РЎРЏ РЎвЂљР ВµР В»Р ВµР С—Р С•РЎР‚РЎвЂљР В°РЎвЂ Р С‘РЎРЏ Р С” CFrame
 function doInstantTp(myHrp, myChar, targetCF)
 	myHrp.CFrame = targetCF
 	myChar:SetPrimaryPartCFrame(targetCF)
 	myHrp.AssemblyLinearVelocity = Vector3.zero
 	myHrp.AssemblyAngularVelocity = Vector3.zero
-	-- Р¤РёРєСЃРёСЂСѓРµРј РЅР° 2 РєР°РґСЂР° С‡С‚РѕР± С„РёР·РёРєР° РЅРµ РѕС‚РєРёРЅСѓР»Р°
+	-- Р В¤Р С‘Р С”РЎРѓР С‘РЎР‚РЎС“Р ВµР С Р Р…Р В° 2 Р С”Р В°Р Т‘РЎР‚Р В° РЎвЂЎРЎвЂљР С•Р В± РЎвЂћР С‘Р В·Р С‘Р С”Р В° Р Р…Р Вµ Р С•РЎвЂљР С”Р С‘Р Р…РЎС“Р В»Р В°
 	local n = 0
 	local fixConn
 	fixConn = RunService.Heartbeat:Connect(function()
@@ -7867,6 +8166,50 @@ btn.zombieBtn.MouseButton1Click:Connect(function()
 	setToggleState(btn.zombieBtn, zombieTryhardEnabled, "Zombie Tryhard: ON", "Zombie Tryhard: OFF")
 end)
 
+-- Tryhard Anim (R15 only)
+tryhardAnimEnabled = false
+local tryhardAnimConn = nil
+
+function applyTryhardAnim(char)
+	local animate = char:WaitForChild("Animate")
+	local humanoid = char:WaitForChild("Humanoid")
+	local animator = humanoid:WaitForChild("Animator")
+	for _, track in pairs(animator:GetPlayingAnimationTracks()) do track:Stop() end
+	if humanoid.RigType ~= Enum.HumanoidRigType.R15 then return end
+	animate.idle.Animation1.AnimationId = "rbxassetid://782841498"
+	animate.idle.Animation2.AnimationId = "rbxassetid://782845736"
+	if animate.idle:FindFirstChild("Animation3") then
+		animate.idle.Animation3.AnimationId = "rbxassetid://980952228"
+	else
+		local pose = Instance.new("Animation"); pose.Name = "Animation3"
+		pose.AnimationId = "rbxassetid://980952228"; pose.Parent = animate.idle
+	end
+	animate.walk.WalkAnim.AnimationId = "rbxassetid://616122287"
+	animate.run.RunAnim.AnimationId = "rbxassetid://782842708"
+	animate.jump.JumpAnim.AnimationId = "rbxassetid://10921242013"
+	animate.climb.ClimbAnim.AnimationId = "rbxassetid://10921229866"
+	animate.fall.FallAnim.AnimationId = "rbxassetid://782846423"
+	humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+	animate.Disabled = false
+end
+
+function enableTryhardAnim()
+	tryhardAnimEnabled = true
+	if player.Character then applyTryhardAnim(player.Character) end
+	tryhardAnimConn = player.CharacterAdded:Connect(applyTryhardAnim)
+end
+
+function disableTryhardAnim()
+	tryhardAnimEnabled = false
+	if tryhardAnimConn then tryhardAnimConn:Disconnect(); tryhardAnimConn = nil end
+end
+
+btn.tryhardAnimBtn = createButton("TryhardAnimButton", "Tryhard Anim: OFF", 116.6)
+btn.tryhardAnimBtn.MouseButton1Click:Connect(function()
+	if tryhardAnimEnabled then disableTryhardAnim() else enableTryhardAnim() end
+	setToggleState(btn.tryhardAnimBtn, tryhardAnimEnabled, "Tryhard Anim: ON", "Tryhard Anim: OFF")
+end)
+
 -- Headless & Korblox (toggleable)
 headlessKorbloxEnabled = false
 local headlessConn = nil
@@ -8011,9 +8354,9 @@ function createKeystrokeUI()
 		if i > 1 then cx = cx + gap end; table.insert(keys,{Name=kd[1],KeyCode=kd[2],Position=UDim2.new(0,cx,0,nav_row2_y),Size=UDim2.new(0,base_u,0,base_u),AllowGameProcessed=true}); cx = cx + base_u
 	end
 	local arrow_row1_y = row_y_offset + 3*(base_u+gap); local arrow_row2_y = row_y_offset + 4*(base_u+gap)
-	table.insert(keys,{Name="↑",KeyCode=Enum.KeyCode.Up,Position=UDim2.new(0,nav_cluster_x+base_u+gap,0,arrow_row1_y),Size=UDim2.new(0,base_u,0,base_u),AllowGameProcessed=true})
+	table.insert(keys,{Name="в†‘",KeyCode=Enum.KeyCode.Up,Position=UDim2.new(0,nav_cluster_x+base_u+gap,0,arrow_row1_y),Size=UDim2.new(0,base_u,0,base_u),AllowGameProcessed=true})
 	cx = nav_cluster_x
-	for i,kd in ipairs({{"←",Enum.KeyCode.Left},{"↓",Enum.KeyCode.Down},{"→",Enum.KeyCode.Right}}) do
+	for i,kd in ipairs({{"в†ђ",Enum.KeyCode.Left},{"в†“",Enum.KeyCode.Down},{"в†’",Enum.KeyCode.Right}}) do
 		if i > 1 then cx = cx + gap end; table.insert(keys,{Name=kd[1],KeyCode=kd[2],Position=UDim2.new(0,cx,0,arrow_row2_y),Size=UDim2.new(0,base_u,0,base_u),AllowGameProcessed=true}); cx = cx + base_u
 	end
 	max_x = math.max(nav_cluster_x + 3*base_u + 2*gap, max_x)
@@ -8024,8 +8367,8 @@ function createKeystrokeUI()
 	Instance.new("UICorner",mb4); local mb4s=Instance.new("UIStroke",mb4); mb4s.Thickness=1; mb4s.Color=Color3.fromRGB(90,90,90)
 	local mb5 = Instance.new("Frame"); mb5.Name = "MB5"; mb5.Parent = Frame; mb5.BackgroundColor3 = Color3.fromRGB(50,50,50); mb5.BackgroundTransparency = 0.3; mb5.BorderSizePixel = 0; mb5.Position = UDim2.new(0,mouse_x-sideBW-2,0,mouse_y+26+sideBH+sideBG); mb5.Size = UDim2.new(0,sideBW,0,sideBH)
 	Instance.new("UICorner",mb5); local mb5s=Instance.new("UIStroke",mb5); mb5s.Thickness=1; mb5s.Color=Color3.fromRGB(90,90,90)
-	do local l=Instance.new("TextLabel",mb4); l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,1,0); l.Font=Enum.Font.GothamBold; l.Text="▲"; l.TextColor3=Color3.fromRGB(100,100,100); l.TextSize=8 end
-	do local l=Instance.new("TextLabel",mb5); l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,1,0); l.Font=Enum.Font.GothamBold; l.Text="▼"; l.TextColor3=Color3.fromRGB(100,100,100); l.TextSize=8 end
+	do local l=Instance.new("TextLabel",mb4); l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,1,0); l.Font=Enum.Font.GothamBold; l.Text="в–І"; l.TextColor3=Color3.fromRGB(100,100,100); l.TextSize=8 end
+	do local l=Instance.new("TextLabel",mb5); l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,1,0); l.Font=Enum.Font.GothamBold; l.Text="в–ј"; l.TextColor3=Color3.fromRGB(100,100,100); l.TextSize=8 end
 	local mouseFrame = Instance.new("Frame"); mouseFrame.Name = "MouseBody"; mouseFrame.Parent = Frame; mouseFrame.BackgroundColor3 = Color3.fromRGB(35,35,35); mouseFrame.BackgroundTransparency = 0.3; mouseFrame.BorderSizePixel = 0; mouseFrame.Position = UDim2.new(0,mouse_x,0,mouse_y); mouseFrame.Size = UDim2.new(0,mouseWidth,0,mouseHeight)
 	Instance.new("UICorner",mouseFrame).CornerRadius = UDim.new(0,22)
 	local mbs=Instance.new("UIStroke",mouseFrame); mbs.Thickness=2; mbs.Color=Color3.fromRGB(100,100,100); mbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
@@ -8049,8 +8392,8 @@ function createKeystrokeUI()
 	local palm = Instance.new("Frame",mouseFrame); palm.BackgroundColor3 = Color3.fromRGB(40,40,40); palm.BackgroundTransparency = 0.5; palm.BorderSizePixel = 0; palm.Position = UDim2.new(0,10,0,buttonAreaHeight+10); palm.Size = UDim2.new(0,mouseWidth-20,0,mouseHeight-buttonAreaHeight-24)
 	Instance.new("UICorner",palm).CornerRadius = UDim.new(0,15)
 	local dpi = Instance.new("Frame",mouseFrame); dpi.BackgroundColor3 = Color3.fromRGB(80,80,80); dpi.BorderSizePixel = 0; dpi.Position = UDim2.new(0.5,-3,0,buttonAreaHeight+4); dpi.Size = UDim2.new(0,6,0,6); Instance.new("UICorner",dpi).CornerRadius = UDim.new(1,0)
-	local scUp = Instance.new("TextLabel",mouseFrame); scUp.BackgroundTransparency=1; scUp.Position=UDim2.new(0,scX-2,0,scY-12); scUp.Size=UDim2.new(0,scrollWW+4,0,10); scUp.Font=Enum.Font.GothamBold; scUp.Text="▲"; scUp.TextColor3=Color3.fromRGB(80,80,80); scUp.TextSize=8; scUp.TextTransparency=1; scUp.ZIndex=4
-	local scDn = Instance.new("TextLabel",mouseFrame); scDn.BackgroundTransparency=1; scDn.Position=UDim2.new(0,scX-2,0,scY+scrollWH+1); scDn.Size=UDim2.new(0,scrollWW+4,0,10); scDn.Font=Enum.Font.GothamBold; scDn.Text="▼"; scDn.TextColor3=Color3.fromRGB(80,80,80); scDn.TextSize=8; scDn.TextTransparency=1; scDn.ZIndex=4
+	local scUp = Instance.new("TextLabel",mouseFrame); scUp.BackgroundTransparency=1; scUp.Position=UDim2.new(0,scX-2,0,scY-12); scUp.Size=UDim2.new(0,scrollWW+4,0,10); scUp.Font=Enum.Font.GothamBold; scUp.Text="в–І"; scUp.TextColor3=Color3.fromRGB(80,80,80); scUp.TextSize=8; scUp.TextTransparency=1; scUp.ZIndex=4
+	local scDn = Instance.new("TextLabel",mouseFrame); scDn.BackgroundTransparency=1; scDn.Position=UDim2.new(0,scX-2,0,scY+scrollWH+1); scDn.Size=UDim2.new(0,scrollWW+4,0,10); scDn.Font=Enum.Font.GothamBold; scDn.Text="в–ј"; scDn.TextColor3=Color3.fromRGB(80,80,80); scDn.TextSize=8; scDn.TextTransparency=1; scDn.ZIndex=4
 	local total_width = mouse_x + mouseWidth + 9; local frame_height = keyboard_height + 9; Frame.Size = UDim2.new(0,total_width,0,frame_height)
 	local buttons = {}
 	for _, kd in ipairs(keys) do
@@ -8374,7 +8717,7 @@ function gameNotifSend(title, text, color, strokeColor, plr, userId)
 		notifGui.Parent = player.PlayerGui
 	end
 
-	-- РЎС‡РёС‚Р°РµРј СЃРєРѕР»СЊРєРѕ СѓРІРµРґРѕРјР»РµРЅРёР№ СѓР¶Рµ РЅР° СЌРєСЂР°РЅРµ
+	-- Р РЋРЎвЂЎР С‘РЎвЂљР В°Р ВµР С РЎРѓР С”Р С•Р В»РЎРЉР С”Р С• РЎС“Р Р†Р ВµР Т‘Р С•Р СР В»Р ВµР Р…Р С‘Р в„– РЎС“Р В¶Р Вµ Р Р…Р В° РЎРЊР С”РЎР‚Р В°Р Р…Р Вµ
 	local slotIndex = #gameNotifActiveNotifs
 
 	local frame = Instance.new("Frame")
@@ -8451,15 +8794,15 @@ function gameNotifSend(title, text, color, strokeColor, plr, userId)
 		end)
 	end
 
-	-- Р”РѕР±Р°РІР»СЏРµРј РІ СЃРїРёСЃРѕРє Р°РєС‚РёРІРЅС‹С…
+	-- Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµР С Р Р† РЎРѓР С—Р С‘РЎРѓР С•Р С” Р В°Р С”РЎвЂљР С‘Р Р†Р Р…РЎвЂ№РЎвЂ¦
 	table.insert(gameNotifActiveNotifs, frame)
 
-	-- РђРЅРёРјР°С†РёСЏ РїРѕСЏРІР»РµРЅРёСЏ
+	-- Р С’Р Р…Р С‘Р СР В°РЎвЂ Р С‘РЎРЏ Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘РЎРЏ
 	TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Size = UDim2.new(0, 340, 0, 80)
 	}):Play()
 
-	-- РСЃС‡РµР·РЅРѕРІРµРЅРёРµ С‡РµСЂРµР· 4 СЃРµРєСѓРЅРґС‹
+	-- Р ВРЎРѓРЎвЂЎР ВµР В·Р Р…Р С•Р Р†Р ВµР Р…Р С‘Р Вµ РЎвЂЎР ВµРЎР‚Р ВµР В· 4 РЎРѓР ВµР С”РЎС“Р Р…Р Т‘РЎвЂ№
 	task.delay(4, function()
 		local fadeOut = TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 			Size = UDim2.new(0, 340, 0, 0)
@@ -8467,7 +8810,7 @@ function gameNotifSend(title, text, color, strokeColor, plr, userId)
 		fadeOut:Play()
 		fadeOut.Completed:Wait()
 
-		-- РЈРґР°Р»СЏРµРј РёР· СЃРїРёСЃРєР°
+		-- Р Р€Р Т‘Р В°Р В»РЎРЏР ВµР С Р С‘Р В· РЎРѓР С—Р С‘РЎРѓР С”Р В°
 		for i, f in ipairs(gameNotifActiveNotifs) do
 			if f == frame then
 				table.remove(gameNotifActiveNotifs, i)
@@ -8476,7 +8819,7 @@ function gameNotifSend(title, text, color, strokeColor, plr, userId)
 		end
 		frame:Destroy()
 
-		-- РЎРґРІРёРіР°РµРј РѕСЃС‚Р°РІС€РёРµСЃСЏ СѓРІРµРґРѕРјР»РµРЅРёСЏ РІРЅРёР·
+		-- Р РЋР Т‘Р Р†Р С‘Р С–Р В°Р ВµР С Р С•РЎРѓРЎвЂљР В°Р Р†РЎв‚¬Р С‘Р ВµРЎРѓРЎРЏ РЎС“Р Р†Р ВµР Т‘Р С•Р СР В»Р ВµР Р…Р С‘РЎРЏ Р Р†Р Р…Р С‘Р В·
 		gameNotifRepositionAll()
 	end)
 end
@@ -8642,7 +8985,7 @@ function gameNotifSendRound(murdererName, sheriffName)
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = frame
 
-	-- Murderer СЃС‚СЂРѕРєР° СЃ Р°РІР°С‚Р°СЂРєРѕР№
+	-- Murderer РЎРѓРЎвЂљРЎР‚Р С•Р С”Р В° РЎРѓ Р В°Р Р†Р В°РЎвЂљР В°РЎР‚Р С”Р С•Р в„–
 	local murdererAvatar = Instance.new("ImageLabel")
 	murdererAvatar.Size = UDim2.new(0, 24, 0, 24)
 	murdererAvatar.Position = UDim2.new(0, 10, 0, 34)
@@ -8685,7 +9028,7 @@ function gameNotifSendRound(murdererName, sheriffName)
 		end
 	end)
 
-	-- Sheriff СЃС‚СЂРѕРєР° СЃ Р°РІР°С‚Р°СЂРєРѕР№
+	-- Sheriff РЎРѓРЎвЂљРЎР‚Р С•Р С”Р В° РЎРѓ Р В°Р Р†Р В°РЎвЂљР В°РЎР‚Р С”Р С•Р в„–
 	local sheriffAvatar = Instance.new("ImageLabel")
 	sheriffAvatar.Size = UDim2.new(0, 24, 0, 24)
 	sheriffAvatar.Position = UDim2.new(0, 10, 0, 54)
@@ -8752,7 +9095,7 @@ function gameNotifSendRound(murdererName, sheriffName)
 	end)
 end
 
--- РћС‚СЃР»РµР¶РёРІР°РЅРёРµ СЂРѕР»РµР№
+-- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р Р…Р С‘Р Вµ РЎР‚Р С•Р В»Р ВµР в„–
 task.spawn(function()
 	while true do
 		task.wait(0.5)
@@ -8899,7 +9242,7 @@ task.spawn(function()
 	end
 end)
 
--- РћС‚СЃР»РµР¶РёРІР°РЅРёРµ РїРѕРґР±РѕСЂР° GunDrop
+-- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р Р…Р С‘Р Вµ Р С—Р С•Р Т‘Р В±Р С•РЎР‚Р В° GunDrop
 task.spawn(function()
 	while true do
 		task.wait(0.5)
@@ -8974,7 +9317,7 @@ task.spawn(function()
 	end
 end)
 
--- РћС‚СЃР»РµР¶РёРІР°РЅРёРµ РїРѕСЏРІР»РµРЅРёСЏ GunDrop
+-- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р Р…Р С‘Р Вµ Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘РЎРЏ GunDrop
 task.spawn(function()
 	Workspace.DescendantAdded:Connect(function(obj)
 		if obj.Name == "GunDrop" then
@@ -9129,7 +9472,7 @@ local function aimPredictTorso(character)
 	local velPart = root or aimPart
 	local v = velPart.AssemblyLinearVelocity
 	local p = aimPart.Position
-	-- Check horizontal speed — if target barely moves, aim directly (no prediction error)
+	-- Check horizontal speed вЂ” if target barely moves, aim directly (no prediction error)
 	local hSpeed = math.sqrt(v.X * v.X + v.Z * v.Z)
 	if hSpeed < 2 then
 		-- Standing or nearly standing: aim at exact current position
@@ -9471,7 +9814,7 @@ desyncOffsetInput.FocusLost:Connect(function()
 	end
 end)
 
--- Shoot Murderer / Wall Bang / Auto Shot (ported from Aim.lua) — right after Anti-Shoot
+-- Shoot Murderer / Wall Bang / Auto Shot (ported from Aim.lua) вЂ” right after Anti-Shoot
 shootMurdererButton = createButton("ShootMurdererButton", "Shoot Murderer", 203.1)
 shootMurdererButton.MouseButton1Click:Connect(function()
 	doShootMurderer()
@@ -9538,7 +9881,7 @@ autoShotButton.MouseButton1Click:Connect(function()
 end)
 
 -- ============================================================
--- Kill functions: knife touch-kill (no teleport) — only works while you
+-- Kill functions: knife touch-kill (no teleport) вЂ” only works while you
 -- hold the Murderer's knife. Kills from where you are via firetouchinterest.
 -- ============================================================
 function killGetKnife()
@@ -9858,7 +10201,7 @@ autoKillSheriffBtn.MouseButton1Click:Connect(function()
 end)
 
 clumsyButton = createButton("ClumsyButton", "Clumsy: OFF", 204)
--- Р”РѕР±Р°РІСЊ РІРІРµСЂС…Сѓ СЂСЏРґРѕРј СЃ clumsyGhost
+-- Р вЂќР С•Р В±Р В°Р Р†РЎРЉ Р Р†Р Р†Р ВµРЎР‚РЎвЂ¦РЎС“ РЎР‚РЎРЏР Т‘Р С•Р С РЎРѓ clumsyGhost
 clumsyGhostAdornments = {}
 
 function clearClumsyAdornments()
@@ -9894,7 +10237,7 @@ function createClumsyGhost(position)
 			clone.Transparency = 0.6
 			clone.Material = Enum.Material.ForceField
 			clone.Color = Color3.fromRGB(150, 0, 255)
-			-- РЈР±РёСЂР°РµРј РІСЃС‘ Р»РёС€РЅРµРµ РёР· РєР»РѕРЅР°
+			-- Р Р€Р В±Р С‘РЎР‚Р В°Р ВµР С Р Р†РЎРѓРЎвЂ Р В»Р С‘РЎв‚¬Р Р…Р ВµР Вµ Р С‘Р В· Р С”Р В»Р С•Р Р…Р В°
 			for _, child in pairs(clone:GetChildren()) do
 				if not child:IsA("SpecialMesh") and not child:IsA("DataModelMesh") then
 					child:Destroy()
@@ -9904,7 +10247,7 @@ function createClumsyGhost(position)
 		end
 	end
 
-	-- РљРѕРїРёСЂСѓРµРј Р°РєСЃРµСЃСЃСѓР°СЂС‹
+	-- Р С™Р С•Р С—Р С‘РЎР‚РЎС“Р ВµР С Р В°Р С”РЎРѓР ВµРЎРѓРЎРѓРЎС“Р В°РЎР‚РЎвЂ№
 	for _, acc in pairs(char:GetChildren()) do
 		if acc:IsA("Accessory") then
 			local handle = acc:FindFirstChild("Handle")
@@ -9926,7 +10269,7 @@ function createClumsyGhost(position)
 		end
 	end
 
-	-- Р”РѕР±Р°РІР»СЏРµРј Р±РёР»Р±РѕСЂРґ СЃ С‚РµРєСЃС‚РѕРј
+	-- Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµР С Р В±Р С‘Р В»Р В±Р С•РЎР‚Р Т‘ РЎРѓ РЎвЂљР ВµР С”РЎРѓРЎвЂљР С•Р С
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "GhostLabel"
 	billboard.AlwaysOnTop = true
@@ -9944,7 +10287,7 @@ function createClumsyGhost(position)
 	label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	label.Parent = billboard
 
-	-- РџРѕР·РёС†РёРѕРЅРёСЂСѓРµРј С‡Р°СЃС‚Рё РїСЂРёР·СЂР°РєР°
+	-- Р СџР С•Р В·Р С‘РЎвЂ Р С‘Р С•Р Р…Р С‘РЎР‚РЎС“Р ВµР С РЎвЂЎР В°РЎРѓРЎвЂљР С‘ Р С—РЎР‚Р С‘Р В·РЎР‚Р В°Р С”Р В°
 	local charCF = CFrame.new(position)
 	for _, part in pairs(ghost:GetChildren()) do
 		if part:IsA("BasePart") then
@@ -9956,14 +10299,14 @@ function createClumsyGhost(position)
 		end
 	end
 
-	-- Р‘РёР»Р±РѕСЂРґ РЅР° РіРѕР»РѕРІСѓ РїСЂРёР·СЂР°РєР°
+	-- Р вЂР С‘Р В»Р В±Р С•РЎР‚Р Т‘ Р Р…Р В° Р С–Р С•Р В»Р С•Р Р†РЎС“ Р С—РЎР‚Р С‘Р В·РЎР‚Р В°Р С”Р В°
 	local ghostHead = ghost:FindFirstChild("Head")
 	if ghostHead then
 		billboard.Adornee = ghostHead
 		billboard.Parent = ghostHead
 	end
 
-	-- Highlight С‡С‚РѕР±С‹ Р±С‹Р»Рѕ РІРёРґРЅРѕ С‡РµСЂРµР· СЃС‚РµРЅС‹
+	-- Highlight РЎвЂЎРЎвЂљР С•Р В±РЎвЂ№ Р В±РЎвЂ№Р В»Р С• Р Р†Р С‘Р Т‘Р Р…Р С• РЎвЂЎР ВµРЎР‚Р ВµР В· РЎРѓРЎвЂљР ВµР Р…РЎвЂ№
 	local ghostHighlight = Instance.new("Highlight")
 ghostHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 ghostHighlight.FillTransparency = 0
@@ -10022,7 +10365,7 @@ clumsyButton.MouseButton1Click:Connect(function()
 		task.wait()
 		Seat.CFrame = savedpos
 
-		-- РЎРѕР·РґР°С‘Рј РїСЂРёР·СЂР°Рє РЅР° СЃРµСЂРІРµСЂРЅРѕР№ РїРѕР·РёС†РёРё
+		-- Р РЋР С•Р В·Р Т‘Р В°РЎвЂР С Р С—РЎР‚Р С‘Р В·РЎР‚Р В°Р С” Р Р…Р В° РЎРѓР ВµРЎР‚Р Р†Р ВµРЎР‚Р Р…Р С•Р в„– Р С—Р С•Р В·Р С‘РЎвЂ Р С‘Р С‘
 		createClumsyGhost(savedpos.Position)
 
 		game.StarterGui:SetCore("SendNotification", {Title = "Clumsy On"; Duration = 1; Text = "";})
@@ -10079,7 +10422,7 @@ function fling()
 	local lp = Players.LocalPlayer
 	local downVel = Vector3.new(0, -100000, 0)
 	while hiddenfling do
-		-- Heartbeat fires AFTER physics — velocity is replicated but doesn't
+		-- Heartbeat fires AFTER physics вЂ” velocity is replicated but doesn't
 		-- move the character locally (physics already ran this frame).
 		RunService.Heartbeat:Wait()
 		local c = lp.Character
@@ -10092,7 +10435,7 @@ function fling()
 			if vy ~= vy then vy = 0 end
 			if vz ~= vz then vz = 0 end
 			local cleanVel = Vector3.new(vx, vy, vz)
-			-- Pure DOWNWARD velocity — no CFrame shift = no camera jitter
+			-- Pure DOWNWARD velocity вЂ” no CFrame shift = no camera jitter
 			hrp.Velocity = downVel
 			hrp.AssemblyLinearVelocity = downVel
 			-- Restore before render so the character stays in place visually
@@ -10335,7 +10678,7 @@ do
 end
 
 -- ============================================
--- SECTION 5: Multi Fling (LayoutOrder 500-599) - РџР Р•Р”РџРћРЎР›Р•Р”РќРР™
+-- SECTION 5: Multi Fling (LayoutOrder 500-599) - Р СџР  Р вЂўР вЂќР СџР С›Р РЋР вЂєР вЂўР вЂќР СњР ВР в„ў
 -- ============================================
 currentCategory = "Utilities"
 createSection("Utilities", 114.5)
@@ -10983,7 +11326,7 @@ function refreshExploiterList()
 			local checkmark = Instance.new("TextLabel")
 			checkmark.Size = UDim2.new(1, 0, 1, 0)
 			checkmark.BackgroundTransparency = 1
-			checkmark.Text = "✓"
+			checkmark.Text = "вњ“"
 			checkmark.TextColor3 = Color3.fromRGB(255, 80, 80)
 			checkmark.Font = Enum.Font.GothamBold
 			checkmark.TextSize = 20
@@ -12057,7 +12400,7 @@ function refreshScammerList()
 			local checkmark = Instance.new("TextLabel")
 			checkmark.Size = UDim2.new(1, 0, 1, 0)
 			checkmark.BackgroundTransparency = 1
-			checkmark.Text = "✓"
+			checkmark.Text = "вњ“"
 			checkmark.TextColor3 = Color3.fromRGB(180, 50, 50)
 			checkmark.Font = Enum.Font.GothamBold
 			checkmark.TextSize = 20
@@ -12400,6 +12743,1479 @@ task.spawn(function()
 	end
 end)
 
+-- ============================================
+-- Autofarm tab (MM2 coin autofarm)
+-- ============================================
+-- Flies through walls, lying on the back (face up, looking at the ceiling) so
+-- you're a harder target. Movement is ALWAYS smooth (speed-capped per frame,
+-- never a teleport snap вЂ” that's what got players anti-cheat kicked before).
+-- Whenever a floor exists below the coin the route goes UNDER the floor and the
+-- coin is collected from BELOW; without a floor it approaches the coin directly.
+-- Always chases the CLOSEST uncollected coin вЂ” the target is re-evaluated every
+-- frame, and coins that were already collected (even if their model lingers in
+-- the container invisible) are permanently blacklisted and never revisited.
+-- Stops at the bag limit (40 coins, or 50 with the Elite gamepass) and then runs
+-- the per-role end-of-farm behavior (auto reset / kill all / shoot murderer).
+currentCategory = "Autofarm"
+createSection("Autofarm", 300)
+
+-- Stats display: coins, coins/hr, farming time
+autofarmStatsFrame = Instance.new("Frame")
+autofarmStatsFrame.Name = "AutofarmStatsFrame"
+autofarmStatsFrame.Size = UDim2.new(1, 0, 0, 28)
+autofarmStatsFrame.BackgroundTransparency = 1
+autofarmStatsFrame.LayoutOrder = 300.1
+autofarmStatsFrame.Parent = categoryFrames["Autofarm"]
+
+autofarmStatsLabel = Instance.new("TextLabel")
+autofarmStatsLabel.Name = "AutofarmStatsLabel"
+autofarmStatsLabel.Size = UDim2.new(1, 0, 1, 0)
+autofarmStatsLabel.BackgroundTransparency = 1
+autofarmStatsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+autofarmStatsLabel.Text = "Coins: 0 | Coins/hr: 0 | Time: 0s"
+autofarmStatsLabel.Font = Enum.Font.SourceSansBold
+autofarmStatsLabel.TextSize = 13
+autofarmStatsLabel.TextXAlignment = Enum.TextXAlignment.Center
+autofarmStatsLabel.Parent = autofarmStatsFrame
+
+task.spawn(function()
+	-- Fast refresh (0.1s): with quick pickups the counter used to visibly skip
+	-- values (e.g. 177 -> 179) because coins were collected faster than the
+	-- label was redrawn. 10 updates/sec keeps the display in step with pickups.
+	while task.wait(0.1) do
+		local coins = autofarmSessionCoins or 0
+		local cph = autofarmCoinsPerHour and autofarmCoinsPerHour() or 0
+		local elapsed = autofarmSessionStart and (os.clock() - autofarmSessionStart) or 0
+		autofarmStatsLabel.Text = "Coins: " .. coins .. " | Coins/hr: " .. cph .. " | Time: " .. autofarmFormatDuration(elapsed)
+	end
+end)
+
+autofarmEnabled = false
+autofarmTargetCoins = 40
+autofarmCollected = 0
+autofarmActiveContainer = nil
+autofarmRoundFinished = false
+autofarmSpeed = 110                -- flight speed, studs per second
+autofarmPickupRange = 6
+-- Lying on the back: pitch +90В° -> LookVector points straight UP (face to ceiling, back down)
+autofarmLieCF = CFrame.Angles(math.rad(90), 0, 0)
+-- Under-floor flight: whenever a floor exists below the coin we travel BENEATH it
+-- (much harder to be killed), staying as close to the coins as possible while
+-- never rising up onto them вЂ” Coin Aura pulls them in as we pass by.
+autofarmUnderFloorDepth = 1.25     -- how far below the floor surface we fly (studs) вЂ” hugs the floor, closer to the coins
+autofarmAscendDist = 1             -- horizontal distance at which we start rising to the coin
+autofarmAscentMultiplier = 3       -- vertical speed multiplier when ascending to a coin
+-- Coins currently being pulled in by Coin Aura: [coin] = os.clock() when we flew
+-- past it. These are SKIPPED as movement targets so the farm flies straight on
+-- to the next coin without ever stopping or bobbing up to collect.
+autofarmAuraPending = {}
+-- Anti-kick: dt is clamped so one laggy frame can NEVER become a giant
+-- teleport-like step (those instant jumps were what the anti-cheat kicked for).
+autofarmMaxStepDt = 1 / 30
+autofarmSpentCoins = {}            -- [coin] = true вЂ” permanently done (collected/blacklisted), NEVER retargeted
+autofarmCoinVisiblePart = {}       -- [coin] = cached visible visual part (to detect collected-but-not-removed coins)
+autofarmCoinVisCheckedAt = {}      -- [coin] = os.clock() of the last visible-part descendant scan (throttles rescans)
+autofarmTouchedAt = {}             -- [coin] = os.clock() when we first started touching this coin
+autofarmFullTouchAt = {}           -- [coin] = os.clock() of the last FULL-body touch volley (throttled, HRP still fires every frame)
+autofarmFloorRayParams = RaycastParams.new()
+autofarmFloorRayParams.FilterType = Enum.RaycastFilterType.Blacklist
+-- [perf] Micro-freeze fixes: these caches remove ALL per-frame recursive scans
+-- from the flight loop (they were the "couple of ms" hitches during flight):
+--   1. Workspace:FindFirstChild("CoinContainer", true) ran EVERY heartbeat вЂ” a
+--      recursive scan of the whole Workspace, worst offender by far.
+--   2. autofarmGetBagCount() re-found + re-scanned the CoinBag GUI descendants
+--      EVERY heartbeat.
+--   3. char:GetDescendants() ran 2-3x per frame (CanCollide loop + touch volley).
+autofarmContainerCache = nil       -- cached CoinContainer instance
+autofarmContainerCheckedAt = 0     -- last time the recursive scan actually ran
+autofarmBagLabelCache = nil        -- cached "12/40" TextLabel inside the coin-bag GUI
+autofarmBagCountCache = nil        -- last parsed bag count
+autofarmBagCountAt = 0             -- when the bag count was last refreshed
+autofarmCharParts = {}             -- cached list of the character's BaseParts
+autofarmCharPartsChar = nil        -- character the cache belongs to
+autofarmCharPartsAt = 0            -- when the cache was last rebuilt
+
+-- End-of-farm toggles (each role has its own independent function)
+autofarmResetInnocentEnabled = false
+autofarmResetSheriffEnabled = false   -- Sheriff/Hero: shoot murderer if you HAVE the gun, otherwise just die
+autofarmResetMurdererEnabled = false
+autofarmKillAllEnabled = false        -- Murderer: kill everyone at the end of the autofarm
+autofarmShootPiercerEnabled = false   -- End of farm: auto shot at the murderer with forced Piercer Bullet (if you picked up the gun)
+autofarmCoinWatched = {}              -- [coin] = true (counting connection attached, only ever once per coin)
+autofarmCoinRetries = {}              -- [coin] = failed-touch retry count
+autofarmRoleCache = nil               -- cached invokePlayerData result (refreshed every second, not every frame)
+autofarmRoleCacheAt = 0
+
+-- Auto teleport BEFORE the farm (toggle + location selector, same destinations)
+autofarmPreTpEnabled = false
+autofarmPreTpModeIndex = 1
+
+-- Auto teleport after the farm (same places as the Teleports tab, minus role TPs)
+autofarmTpModeIndex = 1               -- UI-declared later, default here for config save
+
+-- Discord webhook reporting (coins farmed this session + farming duration)
+-- The URL is editable in the UI and persisted in the config file.
+AUTOFARM_WEBHOOK_URL_DEFAULT = "https://discord.com/api/webhooks/1522371515042103306/3REmm9at2PuM3pROtr_EYH2m217GkCjMlI2Ru6p8Y0MzQoRh1IJElR1j1Pcc_7fmNfP1"
+AUTOFARM_WEBHOOK_URL = (loadedConfig.values and loadedConfig.values.autofarmWebhookUrl) or AUTOFARM_WEBHOOK_URL_DEFAULT
+autofarmWebhookEnabled = false
+autofarmWebhookIntervalMin = 10    -- minutes between reports (configurable in the UI)
+autofarmSessionCoins = 0           -- total coins collected since the farm was first enabled
+autofarmSessionStart = nil         -- os.clock() when the farming session started
+
+-- Auto server hop: when you're the only player left the script saves the config,
+-- queues itself via queue_on_teleport (using the Script URL below) and teleports
+-- to another public server вЂ” where the config restore re-enables everything.
+TeleportService = game:GetService("TeleportService")
+autofarmServerHopEnabled = false
+AUTOFARM_SCRIPT_URL = (loadedConfig.values and loadedConfig.values.autofarmScriptUrl) or ""
+
+function autofarmGetPlayerData()
+	if autofarmRoleCache and (os.clock() - autofarmRoleCacheAt) < 1 then
+		return autofarmRoleCache
+	end
+	local ok, result = pcall(function()
+		return invokePlayerData()
+	end)
+	if ok and result then
+		autofarmRoleCache = result
+		autofarmRoleCacheAt = os.clock()
+		return result
+	end
+	return nil
+end
+
+function autofarmGetMyRole()
+	local result = autofarmGetPlayerData()
+	if result then
+		local me = result[player.Name]
+		if me then return me.Role end
+	end
+	return nil
+end
+
+function autofarmFindMurdererPlayer()
+	local result = autofarmGetPlayerData()
+	if result then
+		for name, data in pairs(result) do
+			if data.Role == "Murderer" and name ~= player.Name then
+				return Players:FindFirstChild(name)
+			end
+		end
+	end
+	return nil
+end
+
+-- Only farm while we are ALIVE and IN THE ROUND (not dead, not in the lobby
+-- waiting for the round). FAIL-OPEN: we only block the farm when we POSITIVELY
+-- know we're dead/out of round. If the Alive attribute is missing and player
+-- data can't be fetched, we allow farming вЂ” otherwise the farm silently never
+-- starts (that was the bug: the old check returned false on unknown state).
+function autofarmIsAliveInRound()
+	local char = player.Character
+	if not char then return false end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return false end
+	local attr = char:GetAttribute("Alive")
+	if attr ~= nil then return attr == true end
+	local result = autofarmGetPlayerData()
+	if result then
+		local me = result[player.Name]
+		if me and (me.Killed or me.Dead) then return false end
+	end
+	-- Unknown state -> assume alive (health > 0 already verified above)
+	return true
+end
+
+function autofarmHasGun()
+	local char = player.Character
+	if char and char:FindFirstChild("Gun") then return true end
+	local bp = player:FindFirstChild("Backpack")
+	if bp and bp:FindFirstChild("Gun") then return true end
+	return false
+end
+
+-- Read the REAL coin count from the MM2 coin-bag GUI (the "12/40" label).
+-- This is the exact number the server has accepted into the bag, so the
+-- 40/50 end-of-farm reset fires at the true limit even if a local count
+-- drifts (missed removal event, coin collected by walking over it, etc).
+-- Returns nil when the label can't be found (fallback: local counter).
+function autofarmGetBagCount()
+	-- [perf] Throttled + label cached. This used to re-find the CoinBag GUI and
+	-- scan ALL its descendants EVERY heartbeat вЂ” one of the mid-flight stutter
+	-- sources. Now the "12/40" label is found once and only re-read every 0.25s.
+	local now = os.clock()
+	if (now - autofarmBagCountAt) < 0.25 then
+		return autofarmBagCountCache
+	end
+	autofarmBagCountAt = now
+	local ok, count = pcall(function()
+		-- Fast path: re-read the cached label directly (no descendant scan at all)
+		local lbl = autofarmBagLabelCache
+		if lbl and lbl.Parent then
+			local cur = tostring(lbl.Text):match("^%s*(%d+)%s*/%s*%d+%s*$")
+			if cur then return tonumber(cur) end
+		end
+		-- Slow path (runs only until the label is found, then never again)
+		autofarmBagLabelCache = nil
+		local mainGui = playerGui:FindFirstChild("MainGUI")
+		local gameGui = mainGui and mainGui:FindFirstChild("Game")
+		local bags = gameGui and (gameGui:FindFirstChild("CoinBags") or gameGui:FindFirstChild("CoinBag", true))
+		if not bags then return nil end
+		for _, d in ipairs(bags:GetDescendants()) do
+			if d:IsA("TextLabel") or d:IsA("TextButton") then
+				local cur = tostring(d.Text):match("^%s*(%d+)%s*/%s*%d+%s*$")
+				if cur then
+					autofarmBagLabelCache = d
+					return tonumber(cur)
+				end
+			end
+		end
+		return nil
+	end)
+	if ok then autofarmBagCountCache = count end
+	return autofarmBagCountCache
+end
+
+function autofarmFindCoinContainer()
+	-- MM2 keeps coins in <MapModel>.CoinContainer during the round. The container
+	-- is searched RECURSIVELY: on some maps/updates the map model is nested inside
+	-- a folder (or the container sits deeper than one level).
+	-- [perf] The recursive Workspace scan used to run EVERY heartbeat вЂ” scanning
+	-- the entire map every frame was THE main cause of the small mid-flight
+	-- freezes. The container is now cached; the expensive recursive scan only
+	-- reruns when the cached one is gone (round/map change), at most every 0.5s.
+	local cc = autofarmContainerCache
+	if cc and cc.Parent then return cc end
+	local now = os.clock()
+	if (now - autofarmContainerCheckedAt) < 0.5 then return nil end
+	autofarmContainerCheckedAt = now
+	autofarmContainerCache = Workspace:FindFirstChild("CoinContainer", true)
+	return autofarmContainerCache
+end
+
+function autofarmGetCoinPart(coin)
+	if coin:IsA("BasePart") then return coin end
+	local p = coin:FindFirstChild("Coin")
+	if p and p:IsA("BasePart") then return p end
+	return coin:FindFirstChildWhichIsA("BasePart")
+end
+
+-- The coin's hitbox BasePart is always transparent in current MM2 вЂ” the VISIBLE
+-- spinning coin is a child visual/mesh. Cache that visible part once per coin so
+-- we can detect "collected but not yet removed" coins cheaply every frame.
+function autofarmGetCoinVisiblePart(coin)
+	local cached = autofarmCoinVisiblePart[coin]
+	if cached and cached.Parent then return cached end
+	-- [perf] Hitbox-only coins never have a visible part, so this descendant scan
+	-- used to rerun for them EVERY frame. Throttle rescans to every 0.5s per coin
+	-- (visuals that stream in late are still picked up within half a second).
+	local now = os.clock()
+	local last = autofarmCoinVisCheckedAt[coin]
+	if last and (now - last) < 0.5 then return nil end
+	autofarmCoinVisCheckedAt[coin] = now
+	for _, d in ipairs(coin:GetDescendants()) do
+		if d:IsA("BasePart") and d.Transparency < 0.95 then
+			autofarmCoinVisiblePart[coin] = d
+			return d
+		end
+	end
+	return nil
+end
+
+-- [perf] Cached list of the character's BaseParts. The flight loop used to call
+-- char:GetDescendants() 2-3 times per frame (CanCollide loop + full-body touch
+-- volley); now the list is rebuilt only when the character changes or every 1s.
+function autofarmGetCharParts(char)
+	local now = os.clock()
+	if char ~= autofarmCharPartsChar or (now - autofarmCharPartsAt) > 1 then
+		autofarmCharPartsChar = char
+		autofarmCharPartsAt = now
+		autofarmCharParts = {}
+		for _, p in ipairs(char:GetDescendants()) do
+			if p:IsA("BasePart") then
+				table.insert(autofarmCharParts, p)
+			end
+		end
+	end
+	return autofarmCharParts
+end
+
+-- Is this coin already gone / already collected?
+-- A collected coin sometimes STAYS in the container with its visual hidden вЂ”
+-- that's exactly why the farm kept flying back to long-gone coins. So besides
+-- Parent == nil we also treat a coin as gone when its previously-VISIBLE visual
+-- part disappeared or turned invisible. Spent coins are permanently blacklisted.
+function autofarmCoinIsGone(coin)
+	if autofarmSpentCoins[coin] then return true end
+	if coin.Parent == nil then return true end
+	local part = autofarmGetCoinPart(coin)
+	if not part then return true end
+	local vis = autofarmCoinVisiblePart[coin]
+	if vis then
+		if not vis.Parent or vis.Transparency >= 0.95 then
+			autofarmSpentCoins[coin] = true
+			return true
+		end
+	else
+		-- Cache the visible part the first time we see this coin (may legitimately
+		-- be nil for hitbox-only coins вЂ” those are handled via removal instead)
+		autofarmGetCoinVisiblePart(coin)
+	end
+	return false
+end
+
+-- Closest coin that isn't gone yet: keeps targeting the same coin every frame
+-- until it disappears (no more 'touch once and move on' вЂ” that was why the farm
+-- flew past coins without collecting them). Coins touched for > 3 s without
+-- collection are blacklisted so we never get stuck on a bugged coin.
+function autofarmNearestCoin(container, fromPos)
+	local bestCoin, bestPart, bestDist = nil, nil, math.huge
+	for _, coin in ipairs(container:GetChildren()) do
+		if not autofarmCoinIsGone(coin) then
+			local touchStart = autofarmTouchedAt[coin]
+			if touchStart and (os.clock() - touchStart) > 3 then
+				autofarmSpentCoins[coin] = true
+			end
+			-- Coins already inside the Coin Aura pull are not movement targets:
+			-- the aura collects them while we fly straight on to the next coin.
+			-- If the aura somehow fails, the coin becomes targetable again after 2s.
+			local pendingAt = autofarmAuraPending[coin]
+			if pendingAt and (os.clock() - pendingAt) >= 2 then
+				autofarmAuraPending[coin] = nil
+				pendingAt = nil
+			end
+			if not autofarmSpentCoins[coin] and not pendingAt then
+				local part = autofarmGetCoinPart(coin)
+				if part then
+					local d = (part.Position - fromPos).Magnitude
+					if d < bestDist then
+						bestDist = d
+						bestCoin = coin
+						bestPart = part
+					end
+				end
+			end
+		end
+	end
+	return bestCoin, bestPart, bestDist
+end
+
+function autofarmWatchCoin(coin)
+	if autofarmCoinWatched[coin] then return end
+	autofarmCoinWatched[coin] = true
+	coin.AncestryChanged:Connect(function(_, parent)
+		if parent == nil and autofarmEnabled and autofarmCoinWatched[coin] then
+			autofarmCoinWatched[coin] = nil
+			autofarmSpentCoins[coin] = true
+			autofarmCollected += 1
+			autofarmSessionCoins += 1
+		end
+	end)
+end
+
+-- [perf] autofarmClaimCoin is called EVERY frame while touching a coin; without
+-- this guard each call scheduled a brand-new task.delay(1.2) closure (dozens of
+-- pending tasks per coin = garbage-collector churn = micro-stutters).
+autofarmClaimPending = {}
+function autofarmClaimCoin(coin)
+	-- Count the coin only when the server actually removes it (= really collected).
+	-- The counting connection is attached ONCE per coin, even if the coin is
+	-- unclaimed and retried later вЂ” so a coin can never be counted twice.
+	autofarmWatchCoin(coin)
+	-- Only ONE delayed verification per coin at a time; the flag clears when the
+	-- check runs, so the retry logic keeps working exactly as before.
+	if autofarmClaimPending[coin] then return end
+	autofarmClaimPending[coin] = true
+	-- Remember whether the coin's VISUAL part was visible at touch time: if it
+	-- turns invisible afterwards the coin was collected (fallback count in case
+	-- the removal event was missed). Hitbox-only coins count only via removal.
+	local visAtClaim = autofarmGetCoinVisiblePart(coin)
+	task.delay(1.2, function()
+		autofarmClaimPending[coin] = nil
+		local part = autofarmGetCoinPart(coin)
+		local removed = (coin.Parent == nil) or (not part)
+		local turnedInvisible = visAtClaim and (not visAtClaim.Parent or visAtClaim.Transparency >= 0.95)
+		if removed or turnedInvisible then
+			-- Collected: permanently blacklist + make sure it gets counted even if
+			-- AncestryChanged missed (double count impossible вЂ” the watched flag is
+			-- cleared exactly once)
+			autofarmSpentCoins[coin] = true
+			if turnedInvisible and autofarmCoinWatched[coin] and autofarmEnabled then
+				autofarmCoinWatched[coin] = nil
+				autofarmCollected += 1
+				autofarmSessionCoins += 1
+			end
+		else
+			-- Coin is STILL there after a moment вЂ” the touch failed (e.g. lag).
+			-- Allow up to 3 retries, then permanently blacklist it.
+			local tries = (autofarmCoinRetries[coin] or 0) + 1
+			autofarmCoinRetries[coin] = tries
+			if tries > 3 then
+				autofarmSpentCoins[coin] = true
+			end
+		end
+	end)
+end
+
+function autofarmResetSelf()
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then pcall(function() hum.Health = 0 end) end
+	if char then pcall(function() char:BreakJoints() end) end
+end
+
+-- Innocent: just reset after the farm
+function autofarmFinishInnocent()
+	if autofarmResetInnocentEnabled then
+		autofarmResetSelf()
+	end
+end
+
+-- Shoot the murderer until they (or we) die, or the timeout runs out.
+-- forcePiercer = true temporarily forces the Piercer Bullet (wallbang) mode
+-- so the shot goes through walls, then restores the previous setting.
+function autofarmShootMurderer(forcePiercer)
+	if not autofarmHasGun() then return false end
+	local startedAt = os.clock()
+	while os.clock() - startedAt < 8 do
+		local m = autofarmFindMurdererPlayer()
+		if not (m and m.Character) then break end
+		local mh = m.Character:FindFirstChildOfClass("Humanoid")
+		if not mh or mh.Health <= 0 then break end
+		-- Our own death also ends the attempt
+		local myChar = player.Character
+		local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+		if not myHum or myHum.Health <= 0 then return false end
+		if forcePiercer then
+			local wasWallbang = aimWallbangEnabled
+			aimWallbangEnabled = true
+			pcall(aimFireGunAt, m)
+			aimWallbangEnabled = wasWallbang
+		else
+			pcall(aimFireGunAt, m)
+		end
+		task.wait(0.15)
+	end
+	return true
+end
+
+-- Sheriff/Hero: always shoot the murderer if you have the gun (piercer toggle
+-- controls wallbang mode, not whether we shoot). Reset only if the toggle is on.
+function autofarmFinishSheriff()
+	autofarmShootMurderer(autofarmShootPiercerEnabled)
+	if autofarmResetSheriffEnabled then
+		autofarmResetSelf()
+	end
+end
+
+-- Auto teleport after the farm to the selected Teleports-tab place
+function autofarmDoEndTeleport()
+	if not autofarmTpEnabled then return end
+	local mode = autofarmTpModes[autofarmTpModeIndex]
+	if mode == "OFF" then return end
+	local myChar = player.Character
+	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	if not myHrp then return end
+	if mode == "Lobby" then
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(23, 505, -34))
+	elseif mode == "VoteMap" then
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(14, 507, 35))
+	elseif mode == "Map" then
+		pcall(tpToMap)
+	elseif mode == "Above Map" then
+		pcall(tpAboveMap)
+	elseif mode == "Void" then
+		pcall(createVoidBaseplate)
+		pcall(function()
+			voidTpPreviousPos = myHrp.CFrame
+			myHrp.CFrame = CFrame.new(voidBaseplatePos.X, voidBaseplatePos.Y + 1, voidBaseplatePos.Z)
+		end)
+	end
+	notify("Autofarm", "Auto TP: " .. mode, 2)
+end
+
+-- Murderer: kill everyone at the end of the farm, then reset
+function autofarmFinishMurderer()
+	if autofarmKillAllEnabled then
+		for _ = 1, 3 do
+			local alive = 0
+			for _, plr in ipairs(Players:GetPlayers()) do
+				if plr ~= player and plr.Character then
+					local h = plr.Character:FindFirstChildOfClass("Humanoid")
+					if h and h.Health > 0 then alive += 1 end
+				end
+			end
+			if alive == 0 then break end
+			pcall(doKillEveryone, false)
+			task.wait(0.3)
+		end
+	end
+	if autofarmResetMurdererEnabled then
+		autofarmResetSelf()
+	end
+end
+
+function autofarmFinishRound()
+	task.spawn(function()
+		-- Auto TP runs FIRST (before any reset kills the character); the kill-all
+		-- remote and the predicted piercer shot both work from any position.
+		autofarmDoEndTeleport()
+		local role = autofarmGetMyRole()
+		if role == "Murderer" then
+			autofarmFinishMurderer()
+		elseif role == "Sheriff" or role == "Hero" then
+			autofarmFinishSheriff()
+		else
+			-- Innocent: if we picked up the gun, shoot the murderer (piercer toggle
+			-- controls wallbang mode only). Then reset if the toggle is on.
+			if autofarmHasGun() then
+				autofarmShootMurderer(autofarmShootPiercerEnabled)
+			end
+			autofarmFinishInnocent()
+		end
+	end)
+end
+
+function autofarmStopFlight()
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then pcall(function() hum.PlatformStand = false end) end
+end
+
+function startAutofarm()
+	task.spawn(function()
+		while autofarmEnabled do
+			local dt = RunService.Heartbeat:Wait()
+			local char = player.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+			-- Farm ONLY while alive and in the round: no collecting after death,
+			-- in the lobby, or before the round starts. Also pause while the
+			-- pre-farm TP is being applied so the flight can't fight it.
+			if autofarmPreTpHold or not (char and hum and hrp and hum.Health > 0) or not autofarmIsAliveInRound() then
+				autofarmStopFlight()
+				task.wait()
+			else
+				local container = autofarmFindCoinContainer()
+				-- New round / new map -> reset the per-round state
+				if container ~= autofarmActiveContainer then
+					autofarmActiveContainer = container
+					autofarmCollected = 0
+					autofarmCoinWatched = {}
+					autofarmCoinRetries = {}
+					autofarmSpentCoins = {}
+					autofarmCoinVisiblePart = {}
+					autofarmCoinVisCheckedAt = {}
+					autofarmTouchedAt = {}
+					autofarmFullTouchAt = {}
+					autofarmClaimPending = {}
+					autofarmAuraPending = {}
+					autofarmBagLabelCache = nil -- new round = the bag GUI may be rebuilt
+					autofarmRoundFinished = false
+				end
+
+				-- Effective count = the max of the local counter and the REAL
+				-- server-accepted bag count from the GUI. The reset always fires
+				-- exactly at the selected farm limit (40 normal / 50 Elite).
+				local bagCount = autofarmGetBagCount()
+				local effectiveCollected = math.max(autofarmCollected, bagCount or 0)
+
+				if not container or autofarmRoundFinished then
+					autofarmStopFlight()
+				elseif effectiveCollected >= autofarmTargetCoins then
+					autofarmRoundFinished = true
+					autofarmStopFlight()
+					notify("Autofarm", "Collected " .. effectiveCollected .. "/" .. autofarmTargetCoins .. " coins!", 2)
+					autofarmFinishRound()
+				else
+					local coin, part, dist = autofarmNearestCoin(container, hrp.Position)
+					-- Are any coins still being pulled in by the Coin Aura? If so, the
+					-- round is NOT over even when no targetable coin is left.
+					local auraStillPulling = false
+					if coinAuraEnabled then
+						for c, t in pairs(autofarmAuraPending) do
+							if (os.clock() - t) < 2 and not autofarmCoinIsGone(c) then
+								auraStillPulling = true
+								break
+							end
+						end
+					end
+					if not coin and auraStillPulling then
+						-- Last remaining coins are inside the aura pull вЂ” just glide and
+						-- let the aura finish collecting them.
+						task.wait()
+					elseif not coin then
+						-- No coin found: if we collected at least one, assume the round
+						-- is over and finish (fixes getting stuck at 39/40 when the last
+						-- coin's removal event was missed). Otherwise just wait.
+						if effectiveCollected > 0 then
+							autofarmRoundFinished = true
+							autofarmStopFlight()
+							notify("Autofarm", "No more coins вЂ” finishing round (" .. effectiveCollected .. "/" .. autofarmTargetCoins .. ")", 2)
+							autofarmFinishRound()
+						else
+							autofarmStopFlight()
+							task.wait()
+						end
+					else
+						-- Fly: through walls, lying on the back (face up).
+						-- NO teleport snaps anywhere вЂ” instant position jumps are exactly
+						-- what the anti-cheat kicked for. Every frame the character moves
+						-- at most autofarmSpeed studs/sec toward the target, and dt is
+						-- clamped so a lag spike can never become one huge step either.
+						pcall(function() hum.PlatformStand = true end)
+						-- [perf] Cached part list + write CanCollide only when it actually
+						-- changed (property writes on every part every frame are not free)
+						for _, p in ipairs(autofarmGetCharParts(char)) do
+							if p.CanCollide then p.CanCollide = false end
+						end
+
+						-- Keep touching the coin EVERY frame while in range (not just once).
+						-- The coin stays targetable until it disappears, so we keep hitting
+						-- it until the server accepts the touch вЂ” no more flying past coins.
+						-- [perf] HRP touch still fires EVERY frame (that's the one that
+						-- collects), but the full-body volley over all ~15 parts is now
+						-- throttled to every 0.15s per coin вЂ” the old every-frame volley
+						-- was 30+ firetouchinterest pcalls per frame, another hitch source.
+						if dist <= autofarmPickupRange then
+							safeFireTouch(part, hrp)
+							local lastFull = autofarmFullTouchAt[coin]
+							if not lastFull or (os.clock() - lastFull) >= 0.15 then
+								autofarmFullTouchAt[coin] = os.clock()
+								for _, bp in ipairs(autofarmGetCharParts(char)) do
+									if bp ~= hrp then
+										safeFireTouch(part, bp)
+									end
+								end
+							end
+							if not autofarmTouchedAt[coin] then
+								autofarmTouchedAt[coin] = os.clock()
+							end
+							autofarmClaimCoin(coin)
+						end
+
+						-- Coin Aura fly-through: the aura pulls coins in from up to
+						-- coinAuraRadius studs away, so there is NO reason to stop at
+						-- (or rise onto) this coin. Claim it, mark it pending and
+						-- immediately retarget the NEXT coin вЂ” the flight continues
+						-- without any pause while the aura finishes the pickup.
+						if coinAuraEnabled and dist <= coinAuraRadius then
+							safeFireTouch(part, hrp)
+							if not autofarmTouchedAt[coin] then
+								autofarmTouchedAt[coin] = os.clock()
+							end
+							autofarmClaimCoin(coin)
+							autofarmAuraPending[coin] = os.clock()
+							local nextCoin, nextPart, nextDist = autofarmNearestCoin(container, hrp.Position)
+							if nextCoin then
+								coin, part, dist = nextCoin, nextPart, nextDist
+							end
+						end
+
+						-- Route: fly UNDER the floor whenever one exists below the coin
+						-- (harder to be killed), stay directly beneath the coin.
+						-- When Coin Aura is enabled, stay under the floor and let it
+						-- pull coins to you. When Coin Aura is off, rise to collect.
+						local target
+						autofarmFloorRayParams.FilterDescendantsInstances = {char, container}
+						local floorHit = Workspace:Raycast(
+							part.Position - Vector3.new(0, 0.5, 0),
+							Vector3.new(0, -60, 0),
+							autofarmFloorRayParams
+						)
+						if floorHit then
+							-- Always stay beneath the floor, close to the coin's XZ position
+							target = Vector3.new(part.Position.X, floorHit.Position.Y - autofarmUnderFloorDepth, part.Position.Z)
+						else
+							-- No floor below: approach from slightly below
+							target = part.Position - Vector3.new(0, 2, 0)
+						end
+
+						local delta = target - hrp.Position
+						local hDelta = Vector3.new(delta.X, 0, delta.Z)
+						local hMag = hDelta.Magnitude
+						local vDelta = delta.Y
+						local ascentMult = (vDelta > 0) and autofarmAscentMultiplier or 1
+						local maxStep = autofarmSpeed * math.min(dt, autofarmMaxStepDt)
+						local newPos = hrp.Position
+						if hMag > 0.05 then
+							local hStep = math.min(maxStep, hMag)
+							newPos = newPos + hDelta.Unit * hStep
+						end
+						if math.abs(vDelta) > 0.05 then
+							local vStep = math.min(maxStep * ascentMult, math.abs(vDelta))
+							newPos = newPos + Vector3.new(0, (vDelta > 0 and 1 or -1) * vStep, 0)
+						end
+						pcall(function()
+							hrp.CFrame = CFrame.new(newPos) * autofarmLieCF
+						end)
+						pcall(function()
+							hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+							hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+						end)
+					end
+				end
+			end
+		end
+		autofarmStopFlight()
+	end)
+end
+
+function setAutofarmEnabled(state, target)
+	autofarmEnabled = state
+	if state then
+		autofarmTargetCoins = target or autofarmTargetCoins
+		autofarmActiveContainer = nil -- force per-round state refresh
+		if not autofarmSessionStart then
+			autofarmSessionStart = os.clock()
+		end
+		-- Pre-farm teleport is handled by the round-start watcher below:
+		-- it fires exactly ONCE per round (when the sheriff+murderer roles
+		-- appear вЂ” same moment the round-start notification shows), waits
+		-- 3 seconds, then teleports reliably. Re-arm it so that enabling
+		-- the farm mid-round also teleports once for the current round.
+		autofarmPreTpLastRound = ""
+		startAutofarm()
+	else
+		autofarmStopFlight()
+		-- Every disable resets the session stats вЂ” timer and coin counter
+		-- start from zero on the next enable.
+		autofarmSessionCoins = 0
+		autofarmSessionStart = nil
+		saveConfig() -- persist the zeroed stats immediately (not 30s later)
+		local char = player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			pcall(doInstantTp, hrp, char, CFrame.new(23, 505, -34))
+		end
+	end
+end
+
+-- ============================================
+-- Pre-farm TP: ONE reliable trigger per round
+-- ============================================
+-- Round start is detected exactly the way the sheriff/murderer notification
+-- works: the moment BOTH roles appear in the player data a new round has
+-- begun. We then wait 3 seconds and teleport ONCE вЂ” re-applying the CFrame
+-- for several frames so the teleport is guaranteed to stick even if the game
+-- (or the farm flight itself) tries to move the character back.
+autofarmPreTpLastRound = ""
+autofarmPreTpHold = false -- pauses the farm flight while the TP is being applied
+
+function autofarmDoPreTp()
+	local mode = autofarmPreTpModes[autofarmPreTpModeIndex]
+	local myChar = player.Character
+	local hrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	autofarmPreTpHold = true
+	local fixedCF = nil
+	if mode == "Lobby" then
+		fixedCF = CFrame.new(23, 505, -34)
+	elseif mode == "VoteMap" then
+		fixedCF = CFrame.new(14, 507, 35)
+	elseif mode == "Map" then
+		pcall(tpToMap)
+	elseif mode == "Above Map" then
+		pcall(tpAboveMap)
+	elseif mode == "Void" then
+		pcall(createVoidBaseplate)
+		if voidBaseplatePos then
+			voidTpPreviousPos = hrp.CFrame
+			fixedCF = CFrame.new(voidBaseplatePos.X, voidBaseplatePos.Y + 1, voidBaseplatePos.Z)
+		end
+	end
+	if fixedCF then
+		pcall(doInstantTp, hrp, myChar, fixedCF)
+		-- Guarantee the teleport STUCK: re-apply for up to 15 frames while
+		-- zeroing velocity, until the character is actually at the target.
+		for _ = 1, 15 do
+			task.wait()
+			local c = player.Character
+			local r = c and c:FindFirstChild("HumanoidRootPart")
+			if not r then break end
+			if (r.Position - fixedCF.Position).Magnitude > 8 then
+				pcall(function()
+					r.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+					r.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+					r.CFrame = fixedCF
+				end)
+			else
+				break
+			end
+		end
+	end
+	autofarmPreTpHold = false
+	notify("Autofarm", "Pre-farm TP: " .. mode, 2)
+end
+
+task.spawn(function()
+	while task.wait(0.4) do
+		if autofarmEnabled and autofarmPreTpEnabled then
+			local result = autofarmGetPlayerData()
+			if result then
+				local murderer, sheriff = nil, nil
+				for name, data in pairs(result) do
+					if data.Role == "Murderer" then
+						murderer = name
+					elseif data.Role == "Sheriff" then
+						sheriff = name
+					end
+				end
+				-- Both roles assigned = the round just started (this is the same
+				-- moment the "Murderer/Sheriff" notification appears)
+				if murderer and sheriff then
+					local roundKey = murderer .. "_" .. sheriff
+					if roundKey ~= autofarmPreTpLastRound then
+						autofarmPreTpLastRound = roundKey
+						-- Single trigger per round: wait 3 seconds, then TP for sure
+						task.wait(3)
+						if autofarmEnabled and autofarmPreTpEnabled then
+							pcall(autofarmDoPreTp)
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
+-- ===== Discord webhook: coins farmed + how long you've been farming =====
+function autofarmFormatDuration(sec)
+	sec = math.floor(sec)
+	local d = math.floor(sec / 86400)
+	local h = math.floor((sec % 86400) / 3600)
+	local m = math.floor((sec % 3600) / 60)
+	local s = sec % 60
+	return string.format("%dd %dh %dm %ds", d, h, m, s)
+end
+
+-- Projected coins per hour, computed from how long you've been farming and how
+-- many coins you've already collected this session.
+function autofarmCoinsPerHour()
+	local elapsed = autofarmSessionStart and (os.clock() - autofarmSessionStart) or 0
+	if elapsed < 1 then return 0 end
+	return math.floor(autofarmSessionCoins / (elapsed / 3600) + 0.5)
+end
+
+function autofarmSendWebhook()
+	local elapsed = autofarmSessionStart and (os.clock() - autofarmSessionStart) or 0
+	local payload = game:GetService("HttpService"):JSONEncode({
+		embeds = {{
+			title = "Adrenalin.win вЂ” Autofarm",
+			color = 8421504,
+			fields = {
+				{ name = "Player", value = string.format("%s (%d)", player.Name, player.UserId), inline = true },
+				{ name = "Coins farmed (session)", value = tostring(autofarmSessionCoins), inline = true },
+				{ name = "Farming time", value = autofarmFormatDuration(elapsed), inline = true },
+				{ name = "Coins per hour", value = tostring(autofarmCoinsPerHour()), inline = true },
+			},
+		}},
+	})
+	local requestFn = (syn and syn.request) or http_request or (_G and _G.request) or request
+	local ok = pcall(function()
+		requestFn({
+			Url = AUTOFARM_WEBHOOK_URL,
+			Method = "POST",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body = payload,
+		})
+	end)
+	if ok then
+		notify("Autofarm", "Webhook notification sent (" .. autofarmSessionCoins .. " coins)", 2)
+	else
+		notify("Autofarm", "Webhook send failed", 2)
+	end
+end
+
+-- Background reporter: sends a report every N minutes while enabled
+task.spawn(function()
+	local lastSentAt = 0
+	while task.wait(5) do
+		if autofarmWebhookEnabled and autofarmSessionStart then
+			if (os.clock() - lastSentAt) >= autofarmWebhookIntervalMin * 60 then
+				lastSentAt = os.clock()
+				autofarmSendWebhook()
+			end
+		else
+			-- Reset timer so the first report fires one full interval after enabling
+			lastSentAt = os.clock()
+		end
+	end
+end)
+
+-- Autofarm buttons (mutually exclusive: 40 = normal bag, 50 = Elite gamepass bag)
+autofarm40Btn = createButton("Autofarm40Button", "Autofarm 40 Coins: OFF", 301)
+autofarm50Btn = createButton("Autofarm50Button", "Autofarm 50 Coins (Elite): OFF", 302)
+
+function refreshAutofarmButtons()
+	local is40 = autofarmEnabled and autofarmTargetCoins == 40
+	local is50 = autofarmEnabled and autofarmTargetCoins == 50
+	setToggleState(autofarm40Btn, is40, "Autofarm 40 Coins: ON", "Autofarm 40 Coins: OFF")
+	setToggleState(autofarm50Btn, is50, "Autofarm 50 Coins (Elite): ON", "Autofarm 50 Coins (Elite): OFF")
+end
+
+autofarm40Btn.MouseButton1Click:Connect(function()
+	if autofarmEnabled and autofarmTargetCoins == 40 then
+		setAutofarmEnabled(false)
+	else
+		setAutofarmEnabled(false)
+		task.wait()
+		setAutofarmEnabled(true, 40)
+	end
+	refreshAutofarmButtons()
+end)
+
+autofarm50Btn.MouseButton1Click:Connect(function()
+	if autofarmEnabled and autofarmTargetCoins == 50 then
+		setAutofarmEnabled(false)
+	else
+		setAutofarmEnabled(false)
+		task.wait()
+		setAutofarmEnabled(true, 50)
+	end
+	refreshAutofarmButtons()
+end)
+
+-- Farm speed row: label + input box (studs per second, 10-500)
+autofarmSpeedRow = Instance.new("Frame")
+autofarmSpeedRow.Name = "AutofarmSpeedRow"
+autofarmSpeedRow.Size = UDim2.new(1, 0, 0, 42)
+autofarmSpeedRow.BackgroundTransparency = 1
+autofarmSpeedRow.LayoutOrder = 302.5
+autofarmSpeedRow.Parent = categoryFrames["Autofarm"]
+
+autofarmSpeedLabel = Instance.new("TextLabel")
+autofarmSpeedLabel.Name = "AutofarmSpeedLabel"
+autofarmSpeedLabel.Size = UDim2.new(1, -80, 1, 0)
+autofarmSpeedLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmSpeedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmSpeedLabel.Text = "Farm Speed (1-40)"
+autofarmSpeedLabel.Font = Enum.Font.SourceSansBold
+autofarmSpeedLabel.TextSize = 14
+autofarmSpeedLabel.Parent = autofarmSpeedRow
+
+autofarmSpeedLabelCorner = Instance.new("UICorner")
+autofarmSpeedLabelCorner.CornerRadius = UDim.new(0, 6)
+autofarmSpeedLabelCorner.Parent = autofarmSpeedLabel
+
+autofarmSpeedBox = Instance.new("TextBox")
+autofarmSpeedBox.Name = "AutofarmSpeedInput"
+autofarmSpeedBox.Size = UDim2.new(0, 74, 1, 0)
+autofarmSpeedBox.Position = UDim2.new(1, -74, 0, 0)
+autofarmSpeedBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmSpeedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmSpeedBox.Text = tostring(autofarmSpeed)
+autofarmSpeedBox.PlaceholderText = "Speed"
+autofarmSpeedBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+autofarmSpeedBox.Font = Enum.Font.SourceSansBold
+autofarmSpeedBox.TextSize = 14
+autofarmSpeedBox.ClearTextOnFocus = false
+autofarmSpeedBox.Parent = autofarmSpeedRow
+
+autofarmSpeedBoxCorner = Instance.new("UICorner")
+autofarmSpeedBoxCorner.CornerRadius = UDim.new(0, 6)
+autofarmSpeedBoxCorner.Parent = autofarmSpeedBox
+
+autofarmSpeedBox.FocusLost:Connect(function()
+	local n = tonumber(autofarmSpeedBox.Text)
+	if n then
+		autofarmSpeed = math.clamp(n, 1, 40)
+	end
+	autofarmSpeedBox.Text = tostring(autofarmSpeed)
+end)
+
+createSection("After Autofarm", 303)
+
+autofarmResetInnocentBtn = createButton("AutofarmResetInnocentButton", "Auto Reset (Innocent): OFF", 304)
+autofarmResetInnocentBtn.MouseButton1Click:Connect(function()
+	autofarmResetInnocentEnabled = not autofarmResetInnocentEnabled
+	setToggleState(autofarmResetInnocentBtn, autofarmResetInnocentEnabled, "Auto Reset (Innocent): ON", "Auto Reset (Innocent): OFF")
+end)
+
+autofarmResetSheriffBtn = createButton("AutofarmResetSheriffButton", "Auto Reset (Sheriff/Hero): OFF", 305)
+autofarmResetSheriffBtn.MouseButton1Click:Connect(function()
+	autofarmResetSheriffEnabled = not autofarmResetSheriffEnabled
+	setToggleState(autofarmResetSheriffBtn, autofarmResetSheriffEnabled, "Auto Reset (Sheriff/Hero): ON", "Auto Reset (Sheriff/Hero): OFF")
+end)
+
+autofarmResetMurdererBtn = createButton("AutofarmResetMurdererButton", "Auto Reset (Murderer): OFF", 306)
+autofarmResetMurdererBtn.MouseButton1Click:Connect(function()
+	autofarmResetMurdererEnabled = not autofarmResetMurdererEnabled
+	setToggleState(autofarmResetMurdererBtn, autofarmResetMurdererEnabled, "Auto Reset (Murderer): ON", "Auto Reset (Murderer): OFF")
+end)
+
+-- Auto shot at the murderer with FORCED Piercer Bullet at the end of the farm
+-- (works for anyone holding the gun: sheriff, hero, or innocent who picked it up)
+autofarmPiercerBtn = createButton("AutofarmPiercerButton", "Shoot Murderer (Piercer, Sheriff/Hero): OFF", 307)
+autofarmPiercerBtn.MouseButton1Click:Connect(function()
+	autofarmShootPiercerEnabled = not autofarmShootPiercerEnabled
+	setToggleState(autofarmPiercerBtn, autofarmShootPiercerEnabled, "Shoot Murderer (Piercer, Sheriff/Hero): ON", "Shoot Murderer (Piercer, Sheriff/Hero): OFF")
+end)
+
+autofarmKillAllBtn = createButton("AutofarmKillAllButton", "Kill Everyone (Murderer): OFF", 308)
+autofarmKillAllBtn.MouseButton1Click:Connect(function()
+	autofarmKillAllEnabled = not autofarmKillAllEnabled
+	setToggleState(autofarmKillAllBtn, autofarmKillAllEnabled, "Kill Everyone (Murderer): ON", "Kill Everyone (Murderer): OFF")
+end)
+
+-- ===== Pre-farm TP: toggle + location dropdown on the same row =====
+autofarmPreTpModes = {"Lobby", "VoteMap", "Map", "Above Map", "Void"}
+autofarmPreTpRow = Instance.new("Frame")
+autofarmPreTpRow.Name = "AutofarmPreTpRow"
+autofarmPreTpRow.Size = UDim2.new(1, 0, 0, 42)
+autofarmPreTpRow.BackgroundTransparency = 1
+autofarmPreTpRow.LayoutOrder = 308.5
+autofarmPreTpRow.Parent = categoryFrames["Autofarm"]
+
+autofarmPreTpBtn = Instance.new("TextButton")
+autofarmPreTpBtn.Name = "AutofarmPreTpButton"
+autofarmPreTpBtn.Size = UDim2.new(0.5, -2, 1, 0)
+autofarmPreTpBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmPreTpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmPreTpBtn.Text = "Auto TP Before Farm: OFF"
+autofarmPreTpBtn.Font = Enum.Font.SourceSansBold
+autofarmPreTpBtn.TextSize = 14
+autofarmPreTpBtn.Parent = autofarmPreTpRow
+Instance.new("UICorner", autofarmPreTpBtn).CornerRadius = UDim.new(0, 6)
+autofarmPreTpBtn.MouseButton1Click:Connect(function()
+	autofarmPreTpEnabled = not autofarmPreTpEnabled
+	setToggleState(autofarmPreTpBtn, autofarmPreTpEnabled, "Auto TP Before Farm: ON", "Auto TP Before Farm: OFF")
+	saveConfig()
+end)
+
+autofarmPreTpSelect = Instance.new("TextButton")
+autofarmPreTpSelect.Size = UDim2.new(0.5, -2, 1, 0)
+autofarmPreTpSelect.Position = UDim2.new(0.5, 2, 0, 0)
+autofarmPreTpSelect.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmPreTpSelect.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmPreTpSelect.Text = "Lobby в–ј"
+autofarmPreTpSelect.Font = Enum.Font.SourceSansBold
+autofarmPreTpSelect.TextSize = 14
+autofarmPreTpSelect.AutoButtonColor = false
+autofarmPreTpSelect.Parent = autofarmPreTpRow
+Instance.new("UICorner", autofarmPreTpSelect).CornerRadius = UDim.new(0, 6)
+
+autofarmPreTpDropdownFrame = Instance.new("Frame")
+autofarmPreTpDropdownFrame.Size = UDim2.new(0.5, -2, 0, math.min(#autofarmPreTpModes * 30, 180))
+autofarmPreTpDropdownFrame.Position = UDim2.new(0.5, 2, 0, 42)
+autofarmPreTpDropdownFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmPreTpDropdownFrame.BorderSizePixel = 0
+autofarmPreTpDropdownFrame.Visible = false
+autofarmPreTpDropdownFrame.ZIndex = 10
+autofarmPreTpDropdownFrame.Parent = autofarmPreTpRow
+
+autofarmPreTpDropdownList = Instance.new("ScrollingFrame")
+autofarmPreTpDropdownList.Size = UDim2.new(1, 0, 1, 0)
+autofarmPreTpDropdownList.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmPreTpDropdownList.BorderSizePixel = 0
+autofarmPreTpDropdownList.ScrollBarThickness = 4
+autofarmPreTpDropdownList.CanvasSize = UDim2.new(0, 0, 0, #autofarmPreTpModes * 30)
+autofarmPreTpDropdownList.ZIndex = 10
+autofarmPreTpDropdownList.Parent = autofarmPreTpDropdownFrame
+Instance.new("UICorner", autofarmPreTpDropdownList).CornerRadius = UDim.new(0, 6)
+
+for i, modeName in ipairs(autofarmPreTpModes) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 0, 30)
+	btn.Position = UDim2.new(0, 0, 0, (i-1)*30)
+	btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = modeName
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 14
+	btn.AutoButtonColor = false
+	btn.ZIndex = 10
+	btn.Parent = autofarmPreTpDropdownList
+	btn.MouseButton1Click:Connect(function()
+		autofarmPreTpModeIndex = i
+		autofarmPreTpSelect.Text = modeName .. " в–ј"
+		autofarmPreTpDropdownFrame.Visible = false
+	end)
+	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60) end)
+	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0) end)
+end
+autofarmPreTpSelect.MouseButton1Click:Connect(function()
+	autofarmPreTpDropdownFrame.Visible = not autofarmPreTpDropdownFrame.Visible
+end)
+
+-- ===== Post-farm TP: toggle button + location dropdown =====
+autofarmTpEnabled = false
+autofarmTpModes = {"OFF", "Lobby", "VoteMap", "Map", "Above Map", "Void"}
+autofarmTpModeIndex = 1
+
+autofarmTpRow = Instance.new("Frame")
+autofarmTpRow.Name = "AutofarmTpRow"
+autofarmTpRow.Size = UDim2.new(1, 0, 0, 42)
+autofarmTpRow.BackgroundTransparency = 1
+autofarmTpRow.LayoutOrder = 308.8
+autofarmTpRow.Parent = categoryFrames["Autofarm"]
+
+autofarmTpBtn = Instance.new("TextButton")
+autofarmTpBtn.Name = "AutofarmTpButton"
+autofarmTpBtn.Size = UDim2.new(0.5, -2, 1, 0)
+autofarmTpBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmTpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmTpBtn.Text = "Auto TP After Farm: OFF"
+autofarmTpBtn.Font = Enum.Font.SourceSansBold
+autofarmTpBtn.TextSize = 14
+autofarmTpBtn.Parent = autofarmTpRow
+Instance.new("UICorner", autofarmTpBtn).CornerRadius = UDim.new(0, 6)
+autofarmTpBtn.MouseButton1Click:Connect(function()
+	autofarmTpEnabled = not autofarmTpEnabled
+	setToggleState(autofarmTpBtn, autofarmTpEnabled, "Auto TP After Farm: ON", "Auto TP After Farm: OFF")
+	saveConfig()
+end)
+
+autofarmTpSelect = Instance.new("TextButton")
+autofarmTpSelect.Size = UDim2.new(0.5, -2, 1, 0)
+autofarmTpSelect.Position = UDim2.new(0.5, 2, 0, 0)
+autofarmTpSelect.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmTpSelect.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmTpSelect.Text = "Lobby в–ј"
+autofarmTpSelect.Font = Enum.Font.SourceSansBold
+autofarmTpSelect.TextSize = 14
+autofarmTpSelect.AutoButtonColor = false
+autofarmTpSelect.Parent = autofarmTpRow
+Instance.new("UICorner", autofarmTpSelect).CornerRadius = UDim.new(0, 6)
+
+autofarmTpDropdownFrame = Instance.new("Frame")
+autofarmTpDropdownFrame.Size = UDim2.new(0.5, -2, 0, math.min(#autofarmTpModes * 30, 180))
+autofarmTpDropdownFrame.Position = UDim2.new(0.5, 2, 0, 42)
+autofarmTpDropdownFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmTpDropdownFrame.BorderSizePixel = 0
+autofarmTpDropdownFrame.Visible = false
+autofarmTpDropdownFrame.ZIndex = 10
+autofarmTpDropdownFrame.Parent = autofarmTpRow
+
+autofarmTpDropdownList = Instance.new("ScrollingFrame")
+autofarmTpDropdownList.Size = UDim2.new(1, 0, 1, 0)
+autofarmTpDropdownList.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmTpDropdownList.BorderSizePixel = 0
+autofarmTpDropdownList.ScrollBarThickness = 4
+autofarmTpDropdownList.CanvasSize = UDim2.new(0, 0, 0, #autofarmTpModes * 30)
+autofarmTpDropdownList.ZIndex = 10
+autofarmTpDropdownList.Parent = autofarmTpDropdownFrame
+Instance.new("UICorner", autofarmTpDropdownList).CornerRadius = UDim.new(0, 6)
+
+for i, modeName in ipairs(autofarmTpModes) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 0, 30)
+	btn.Position = UDim2.new(0, 0, 0, (i-1)*30)
+	btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = modeName
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 14
+	btn.AutoButtonColor = false
+	btn.ZIndex = 10
+	btn.Parent = autofarmTpDropdownList
+	btn.MouseButton1Click:Connect(function()
+		autofarmTpModeIndex = i
+		autofarmTpSelect.Text = modeName .. " в–ј"
+		autofarmTpDropdownFrame.Visible = false
+	end)
+	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60) end)
+	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0) end)
+end
+autofarmTpSelect.MouseButton1Click:Connect(function()
+	autofarmTpDropdownFrame.Visible = not autofarmTpDropdownFrame.Visible
+end)
+
+-- Reset Murderer On Death: LAST button in this category
+autofarmResetDeathEnabled = false
+autofarmResetDeathBtn = createButton("AutofarmResetDeathButton", "Reset Murderer On Death: OFF", 309)
+autofarmResetDeathBtn.MouseButton1Click:Connect(function()
+	autofarmResetDeathEnabled = not autofarmResetDeathEnabled
+	setToggleState(autofarmResetDeathBtn, autofarmResetDeathEnabled, "Reset Murderer On Death: ON", "Reset Murderer On Death: OFF")
+	saveConfig()
+end)
+
+-- Monitor player death -> wait 5s -> Touch Fling ON -> Reset Murderer -> Touch Fling OFF.
+-- The 5-second wait starts AT DEATH (the old version waited for a respawn first,
+-- and its blocking repeat-loops silently hung вЂ” that's why the feature "stopped
+-- working"). Death is also detected when the character/humanoid is REMOVED
+-- (common in MM2), which the old `hum and hum.Health <= 0` check missed entirely.
+autofarmResetDeathBusy = false
+task.spawn(function()
+	local wasAlive = false
+	while task.wait(0.2) do
+		if autofarmResetDeathEnabled then
+			local char = player.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local isAlive = (hum ~= nil) and hum.Health > 0
+			if wasAlive and not isAlive and not autofarmResetDeathBusy then
+				-- We just died вЂ” run the sequence in its own thread so the
+				-- detector keeps polling and NEVER misses the next death.
+				autofarmResetDeathBusy = true
+				task.spawn(function()
+					-- 1) Wait 5 seconds after death
+					task.wait(5)
+					-- Make sure we have a live character to fling with (wait up to
+					-- 10 extra seconds for the respawn if it hasn't happened yet)
+					local t0 = os.clock()
+					while os.clock() - t0 < 10 do
+						local c = player.Character
+						local h = c and c:FindFirstChildOfClass("Humanoid")
+						if c and h and h.Health > 0 and c:FindFirstChild("HumanoidRootPart") then break end
+						task.wait(0.2)
+					end
+					-- 2) Touch Fling ON
+					hiddenfling = true
+					setToggleState(touchFlingButton, true, "Touch Fling: ON", "Touch Fling: OFF")
+					setExtractedBtnState("Touch Fling", true)
+					flingThread = coroutine.create(fling)
+					coroutine.resume(flingThread)
+					-- 3) Reset Murderer
+					pcall(executeNanFlingByRole, "Murderer")
+					-- 4) Touch Fling OFF
+					task.wait(1.5)
+					hiddenfling = false
+					setToggleState(touchFlingButton, false, "Touch Fling: ON", "Touch Fling: OFF")
+					setExtractedBtnState("Touch Fling", false)
+					autofarmResetDeathBusy = false
+				end)
+			end
+			wasAlive = isAlive
+		else
+			wasAlive = false
+		end
+	end
+end)
+
+-- ===== Discord webhook UI =====
+createSection("Webhook", 310)
+
+autofarmWebhookBtn = createButton("AutofarmWebhookButton", "Discord Webhook Notification: OFF", 311)
+autofarmWebhookBtn.MouseButton1Click:Connect(function()
+	autofarmWebhookEnabled = not autofarmWebhookEnabled
+	setToggleState(autofarmWebhookBtn, autofarmWebhookEnabled, "Discord Webhook Notification: ON", "Discord Webhook Notification: OFF")
+end)
+
+-- Webhook URL row: label + full-width input box (editable, saved to config)
+autofarmWebhookUrlRow = Instance.new("Frame")
+autofarmWebhookUrlRow.Name = "AutofarmWebhookUrlRow"
+autofarmWebhookUrlRow.Size = UDim2.new(1, 0, 0, 64)
+autofarmWebhookUrlRow.BackgroundTransparency = 1
+autofarmWebhookUrlRow.LayoutOrder = 311.5
+autofarmWebhookUrlRow.Parent = categoryFrames["Autofarm"]
+
+autofarmWebhookUrlLabel = Instance.new("TextLabel")
+autofarmWebhookUrlLabel.Size = UDim2.new(1, 0, 0, 18)
+autofarmWebhookUrlLabel.BackgroundTransparency = 1
+autofarmWebhookUrlLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmWebhookUrlLabel.Text = "Webhook URL"
+autofarmWebhookUrlLabel.Font = Enum.Font.SourceSansBold
+autofarmWebhookUrlLabel.TextSize = 14
+autofarmWebhookUrlLabel.TextXAlignment = Enum.TextXAlignment.Left
+autofarmWebhookUrlLabel.Parent = autofarmWebhookUrlRow
+
+autofarmWebhookUrlBox = Instance.new("TextBox")
+autofarmWebhookUrlBox.Name = "AutofarmWebhookUrlInput"
+autofarmWebhookUrlBox.Size = UDim2.new(1, 0, 0, 42)
+autofarmWebhookUrlBox.Position = UDim2.new(0, 0, 0, 20)
+autofarmWebhookUrlBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmWebhookUrlBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmWebhookUrlBox.Text = AUTOFARM_WEBHOOK_URL
+autofarmWebhookUrlBox.PlaceholderText = "https://discord.com/api/webhooks/..."
+autofarmWebhookUrlBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+autofarmWebhookUrlBox.Font = Enum.Font.SourceSansBold
+autofarmWebhookUrlBox.TextSize = 12
+autofarmWebhookUrlBox.TextXAlignment = Enum.TextXAlignment.Left
+autofarmWebhookUrlBox.TextTruncate = Enum.TextTruncate.AtEnd
+autofarmWebhookUrlBox.ClearTextOnFocus = false
+autofarmWebhookUrlBox.Parent = autofarmWebhookUrlRow
+Instance.new("UICorner", autofarmWebhookUrlBox).CornerRadius = UDim.new(0, 6)
+
+autofarmWebhookUrlBox.FocusLost:Connect(function()
+	local url = tostring(autofarmWebhookUrlBox.Text or "")
+	-- Trim spaces; accept anything that looks like a Discord webhook URL
+	url = url:gsub("^%s+", ""):gsub("%s+$", "")
+	if url ~= "" and url:match("^https://") and url:find("discord") and url:find("/api/webhooks/") then
+		AUTOFARM_WEBHOOK_URL = url
+		notify("Autofarm", "Webhook URL updated", 2)
+		saveConfig()
+	elseif url == "" then
+		-- Empty -> restore the current URL in the box, keep the old one active
+		autofarmWebhookUrlBox.Text = AUTOFARM_WEBHOOK_URL
+	else
+		notify("Autofarm", "Invalid webhook URL (must be a Discord webhook)", 3)
+		autofarmWebhookUrlBox.Text = AUTOFARM_WEBHOOK_URL
+	end
+end)
+
+-- Interval row: label + input box (minutes between reports, 1-1440)
+autofarmWebhookRow = Instance.new("Frame")
+autofarmWebhookRow.Name = "AutofarmWebhookRow"
+autofarmWebhookRow.Size = UDim2.new(1, 0, 0, 42)
+autofarmWebhookRow.BackgroundTransparency = 1
+autofarmWebhookRow.LayoutOrder = 312
+autofarmWebhookRow.Parent = categoryFrames["Autofarm"]
+
+autofarmWebhookLabel = Instance.new("TextLabel")
+autofarmWebhookLabel.Size = UDim2.new(1, -80, 1, 0)
+autofarmWebhookLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmWebhookLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmWebhookLabel.Text = "Notification Interval (minutes)"
+autofarmWebhookLabel.Font = Enum.Font.SourceSansBold
+autofarmWebhookLabel.TextSize = 14
+autofarmWebhookLabel.Parent = autofarmWebhookRow
+Instance.new("UICorner", autofarmWebhookLabel).CornerRadius = UDim.new(0, 6)
+
+autofarmWebhookBox = Instance.new("TextBox")
+autofarmWebhookBox.Name = "AutofarmWebhookInput"
+autofarmWebhookBox.Size = UDim2.new(0, 74, 1, 0)
+autofarmWebhookBox.Position = UDim2.new(1, -74, 0, 0)
+autofarmWebhookBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmWebhookBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmWebhookBox.Text = tostring(autofarmWebhookIntervalMin)
+autofarmWebhookBox.PlaceholderText = "Min"
+autofarmWebhookBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+autofarmWebhookBox.Font = Enum.Font.SourceSansBold
+autofarmWebhookBox.TextSize = 14
+autofarmWebhookBox.ClearTextOnFocus = false
+autofarmWebhookBox.Parent = autofarmWebhookRow
+Instance.new("UICorner", autofarmWebhookBox).CornerRadius = UDim.new(0, 6)
+
+autofarmWebhookBox.FocusLost:Connect(function()
+	local n = tonumber(autofarmWebhookBox.Text)
+	if n then
+		autofarmWebhookIntervalMin = math.clamp(n, 1, 1440)
+	end
+	autofarmWebhookBox.Text = tostring(autofarmWebhookIntervalMin)
+end)
+
+-- Manual "send now" button for instant reports
+autofarmWebhookSendBtn = createButton("AutofarmWebhookSendButton", "Send Notification Now (Test)", 313)
+autofarmWebhookSendBtn.MouseButton1Click:Connect(function()
+	task.spawn(autofarmSendWebhook)
+end)
+
+-- ===== Auto server hop when you're the only player left =====
+createSection("Server Hop", 314)
+
+-- Queue the script for re-execution after the teleport so it auto-loads on the
+-- new server and the config restore re-enables everything that was turned on.
+-- REQUIRES: the 'Script URL' box filled with a raw link to THIS script
+-- (e.g. https://raw.githubusercontent.com/your-user/your-repo/main/script.lua)
+function autofarmQueueRejoin()
+	local url = tostring(AUTOFARM_SCRIPT_URL or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if url == "" then return false end
+	local q = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
+	if not q then return false end
+	local ok = pcall(q, string.format('task.wait(3) loadstring(game:HttpGet(%q))()', url))
+	return ok
+end
+
+function autofarmServerHop()
+	-- Persist the current toggles FIRST: autofarm state, speed, webhook etc are
+	-- restored straight from the saved config after the rejoin.
+	pcall(saveConfig)
+	if not autofarmQueueRejoin() then
+		notify("Server Hop", "Fill Script URL box to auto-load after hop (or your executor lacks queue_on_teleport)", 5)
+	end
+	local hopped = false
+	pcall(function()
+		local raw = game:HttpGet(string.format(
+			"https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&excludeFullGames=true&limit=100",
+			game.PlaceId))
+		local data = game:GetService("HttpService"):JSONDecode(raw)
+		local candidates = {}
+		for _, srv in ipairs((data and data.data) or {}) do
+			if srv.id and srv.id ~= game.JobId and type(srv.playing) == "number" and srv.playing < (srv.maxPlayers or 12) then
+				table.insert(candidates, srv.id)
+			end
+		end
+		if #candidates > 0 then
+			TeleportService:TeleportToPlaceInstance(game.PlaceId, candidates[math.random(1, #candidates)], player)
+			hopped = true
+		end
+	end)
+	if not hopped then
+		-- Fallback: plain re-teleport into the place (Roblox picks the server)
+		pcall(function() TeleportService:Teleport(game.PlaceId, player) end)
+	end
+end
+
+-- Monitor: hop after being alone on the server for ~10 seconds straight
+task.spawn(function()
+	local aloneSince = nil
+	local hopInProgress = false
+	while task.wait(2) do
+		if autofarmServerHopEnabled and not hopInProgress then
+			if #Players:GetPlayers() <= 1 then
+				aloneSince = aloneSince or os.clock()
+				if (os.clock() - aloneSince) >= 10 then
+					hopInProgress = true
+					notify("Server Hop", "Alone on the server вЂ” hopping to another one...", 3)
+					autofarmServerHop()
+					task.wait(30) -- teleport failed/throttled -> allow a retry
+					hopInProgress = false
+					aloneSince = nil
+				end
+			else
+				aloneSince = nil
+			end
+		end
+	end
+end)
+
+autofarmServerHopBtn = createButton("AutofarmServerHopButton", "Server Hop When Alone: OFF", 315)
+autofarmServerHopBtn.MouseButton1Click:Connect(function()
+	autofarmServerHopEnabled = not autofarmServerHopEnabled
+	setToggleState(autofarmServerHopBtn, autofarmServerHopEnabled, "Server Hop When Alone: ON", "Server Hop When Alone: OFF")
+	saveConfig()
+end)
+
+-- Script URL row: raw URL of THIS script, used by queue_on_teleport to auto-load
+-- it after the hop (saved to config)
+autofarmScriptUrlRow = Instance.new("Frame")
+autofarmScriptUrlRow.Name = "AutofarmScriptUrlRow"
+autofarmScriptUrlRow.Size = UDim2.new(1, 0, 0, 64)
+autofarmScriptUrlRow.BackgroundTransparency = 1
+autofarmScriptUrlRow.LayoutOrder = 316
+autofarmScriptUrlRow.Parent = categoryFrames["Autofarm"]
+
+autofarmScriptUrlLabel = Instance.new("TextLabel")
+autofarmScriptUrlLabel.Size = UDim2.new(1, 0, 0, 18)
+autofarmScriptUrlLabel.BackgroundTransparency = 1
+autofarmScriptUrlLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmScriptUrlLabel.Text = "Script URL (auto-load after hop)"
+autofarmScriptUrlLabel.Font = Enum.Font.SourceSansBold
+autofarmScriptUrlLabel.TextSize = 14
+autofarmScriptUrlLabel.TextXAlignment = Enum.TextXAlignment.Left
+autofarmScriptUrlLabel.Parent = autofarmScriptUrlRow
+
+autofarmScriptUrlBox = Instance.new("TextBox")
+autofarmScriptUrlBox.Name = "AutofarmScriptUrlInput"
+autofarmScriptUrlBox.Size = UDim2.new(1, 0, 0, 42)
+autofarmScriptUrlBox.Position = UDim2.new(0, 0, 0, 20)
+autofarmScriptUrlBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmScriptUrlBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmScriptUrlBox.Text = AUTOFARM_SCRIPT_URL
+autofarmScriptUrlBox.PlaceholderText = "Upload script to pastebin/github and paste raw URL here"
+autofarmScriptUrlBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+autofarmScriptUrlBox.Font = Enum.Font.SourceSansBold
+autofarmScriptUrlBox.TextSize = 12
+autofarmScriptUrlBox.TextXAlignment = Enum.TextXAlignment.Left
+autofarmScriptUrlBox.TextTruncate = Enum.TextTruncate.AtEnd
+autofarmScriptUrlBox.ClearTextOnFocus = false
+autofarmScriptUrlBox.Parent = autofarmScriptUrlRow
+Instance.new("UICorner", autofarmScriptUrlBox).CornerRadius = UDim.new(0, 6)
+
+autofarmScriptUrlBox.FocusLost:Connect(function()
+	local url = tostring(autofarmScriptUrlBox.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if url == "" or url:match("^https?://") then
+		AUTOFARM_SCRIPT_URL = url
+		saveConfig()
+		if url ~= "" then notify("Server Hop", "Script URL saved", 2) end
+	else
+		notify("Server Hop", "Invalid URL (must start with http:// or https://)", 3)
+		autofarmScriptUrlBox.Text = AUTOFARM_SCRIPT_URL
+	end
+end)
+
+
 currentCategory = "Animations"
 createSection("Animations", 400)
 
@@ -12471,7 +14287,7 @@ for index = 1, #animationButtons, 2 do
 	animationPopOut.Position = UDim2.new(1, -114, 0, 0)
 	animationPopOut.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	animationPopOut.TextColor3 = Color3.fromRGB(255, 255, 255)
-	animationPopOut.Text = isEmoteDetached(animationId) and "★" or "☆"
+	animationPopOut.Text = isEmoteDetached(animationId) and "в…" or "в†"
 	animationPopOut.Font = Enum.Font.SourceSansBold
 	animationPopOut.TextSize = 16
 	animationPopOut.Parent = animationRow
@@ -12491,10 +14307,10 @@ for index = 1, #animationButtons, 2 do
 	animationPopOut.MouseButton1Click:Connect(function()
 		if isEmoteDetached(animationId) then
 			removeDetachedEmote(animationId)
-			animationPopOut.Text = "☆"
+			animationPopOut.Text = "в†"
 		else
 			createDetachedEmote(animationId, animationName)
-			animationPopOut.Text = "★"
+			animationPopOut.Text = "в…"
 		end
 	end)
 
@@ -13244,7 +15060,7 @@ function skyboxParseId(text)
 	return "rbxassetid://" .. digits
 end
 
--- Apply skybox from a table { Up=url, Dn=url, ... } — only sets faces that are non-nil
+-- Apply skybox from a table { Up=url, Dn=url, ... } вЂ” only sets faces that are non-nil
 function skyboxApplyFaces(faceTable)
 	skyboxSaveOriginal()
 	local lighting = game:GetService("Lighting")
@@ -13365,7 +15181,7 @@ function createSkyboxRow(rowName, labelText, placeholder, startValue, order)
 	return btn, box
 end
 
--- ===== "All Faces" shortcut row — sets all 6 inputs at once =====
+-- ===== "All Faces" shortcut row вЂ” sets all 6 inputs at once =====
 do
 	local allBtn, allBox = createSkyboxRow("SkyboxAll", "All Faces", "Asset ID for all faces", "", 401)
 	skyboxAllInput = allBox
@@ -13606,7 +15422,7 @@ do
 				notify("Skybox", "Applied preset: " .. nm, 2)
 			end
 		else
-			-- No preset selected — apply from input fields
+			-- No preset selected вЂ” apply from input fields
 			local faces, count = skyboxCollectInputs()
 			if count == 0 then
 				notify("Skybox", "Fill in at least one face ID", 2)
@@ -14493,7 +16309,7 @@ function createTeamerPlayerButton(plr)
 		local exactAgeLine = addInfoLine("Current Age: N/A")
 		local positionLine = addInfoLine("Player Position: N/A")
 
-		-- Р–РёРІС‹Рµ Р»РµР№Р±Р»С‹ СЃРєРѕСЂРѕСЃС‚Рё/РїСЂС‹Р¶РєР°
+		-- Р вЂ“Р С‘Р Р†РЎвЂ№Р Вµ Р В»Р ВµР в„–Р В±Р В»РЎвЂ№ РЎРѓР С”Р С•РЎР‚Р С•РЎРѓРЎвЂљР С‘/Р С—РЎР‚РЎвЂ№Р В¶Р С”Р В°
 		local speedLine  = addInfoLine("Walk Speed: N/A")
 		local jumpLine   = addInfoLine("Jump Power: N/A")
 		local healthLine = addInfoLine("Health: N/A")
@@ -15073,7 +16889,7 @@ function refreshTeamerList()
 			local checkmark = Instance.new("TextLabel")
 			checkmark.Size = UDim2.new(1, 0, 1, 0)
 			checkmark.BackgroundTransparency = 1
-			checkmark.Text = "✓"
+			checkmark.Text = "вњ“"
 			checkmark.TextColor3 = Color3.fromRGB(255, 170, 0)
 			checkmark.Font = Enum.Font.GothamBold
 			checkmark.TextSize = 20
@@ -15405,7 +17221,7 @@ createSection("Main", 700)
 
 mainProfileFrame = Instance.new("Frame")
 mainProfileFrame.Name = "MainProfileFrame"
-mainProfileFrame.Size = UDim2.new(1, 0, 0, 360)
+mainProfileFrame.Size = UDim2.new(1, 0, 0, 382)
 mainProfileFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 mainProfileFrame.BorderSizePixel = 0
 mainProfileFrame.LayoutOrder = 701
@@ -15458,13 +17274,14 @@ end)()
 createProfileLabel("Discord: Verified", 32)
 createProfileLabel("Subscription: WIN-X Premium & Star+", 76)
 scriptActivationLabel = createProfileLabel("Script Activations: " .. scriptActivationCount, 98)
+serverTimeLabel = createProfileLabel("Server Time: 0d 0h 0m 0s", 120)
 createProfileLabel("Roles: Owner & Developer", 54)
 
-createProfileLabel("Display Name: " .. player.DisplayName, 120)
-createProfileLabel("Username: " .. player.Name, 142)
-createProfileLabel("User ID: " .. player.UserId, 164)
+createProfileLabel("Display Name: " .. player.DisplayName, 142)
+createProfileLabel("Username: " .. player.Name, 164)
+createProfileLabel("User ID: " .. player.UserId, 186)
 
-regDateLabel = createProfileLabel("Registered: Loading...", 186)
+regDateLabel = createProfileLabel("Registered: Loading...", 208)
 mainCreationTime = os.time() - player.AccountAge * 86400
 coroutine.wrap(function()
 	local function calcRegDate(accountAge)
@@ -15531,14 +17348,28 @@ ageText = player.AccountAge .. " days"
 if years > 0 or months > 0 or days > 0 then
 	ageText = ageText .. " (" .. years .. "y, " .. months .. "m, " .. days .. "d)"
 end
-createProfileLabel("Account Age: " .. ageText, 208)
+createProfileLabel("Account Age: " .. ageText, 230)
 
-exactAgeLabel = createProfileLabel("Current Age: N/A", 230)
-positionLabel = createProfileLabel("Player Position: N/A", 252)
-speedLabel = createProfileLabel("Walk Speed: N/A", 274)
-jumpPowerLabel = createProfileLabel("Jump Power: N/A", 296)
-healthLabel = createProfileLabel("Health: N/A", 318)
-gravityLabel = createProfileLabel("Gravity: N/A", 340)
+exactAgeLabel = createProfileLabel("Current Age: N/A", 252)
+positionLabel = createProfileLabel("Player Position: N/A", 274)
+speedLabel = createProfileLabel("Walk Speed: N/A", 296)
+jumpPowerLabel = createProfileLabel("Jump Power: N/A", 318)
+healthLabel = createProfileLabel("Health: N/A", 340)
+gravityLabel = createProfileLabel("Gravity: N/A", 362)
+
+-- Server time updater
+coroutine.wrap(function()
+	while serverTimeLabel and serverTimeLabel.Parent do
+		local elapsed = os.clock() - serverJoinTime
+		local totalSeconds = math.floor(elapsed)
+		local d = math.floor(totalSeconds / 86400)
+		local h = math.floor((totalSeconds % 86400) / 3600)
+		local m = math.floor((totalSeconds % 3600) / 60)
+		local s = totalSeconds % 60
+		serverTimeLabel.Text = "Server Time: " .. d .. "d " .. h .. "h " .. m .. "m " .. s .. "s"
+		task.wait(1)
+	end
+end)()
 
 function updatePlayerStats()
 	local char = player.Character
@@ -15568,7 +17399,7 @@ player.CharacterAdded:Connect(function()
 	updatePlayerStats()
 end)
 
--- JumpPower: GetPropertyChangedSignal -- СЂРµР°Р»СЊРЅС‹Рµ РёР·РјРµРЅРµРЅРёСЏ Р±РµР· РёР·РјРµСЂРµРЅРёР№ СЃРєРѕСЂРѕСЃС‚Рё
+-- JumpPower: GetPropertyChangedSignal -- РЎР‚Р ВµР В°Р В»РЎРЉР Р…РЎвЂ№Р Вµ Р С‘Р В·Р СР ВµР Р…Р ВµР Р…Р С‘РЎРЏ Р В±Р ВµР В· Р С‘Р В·Р СР ВµРЎР‚Р ВµР Р…Р С‘Р в„– РЎРѓР С”Р С•РЎР‚Р С•РЎРѓРЎвЂљР С‘
 mainJumpConn = nil
 
 function attachMainStats(char)
@@ -15676,7 +17507,7 @@ RunService.RenderStepped:Connect(function()
 	displayedFPS = displayedFPS + (fps - displayedFPS) * 0.1
 
 	_fpsFrame = _fpsFrame + 1
-	-- РћР±РЅРѕРІР»СЏРµРј РїРёРЅРі Рё РјРµС‚РєРё С‚РѕР»СЊРєРѕ СЂР°Р· РІ 3 РєР°РґСЂР° (~20fps РїСЂРё 60fps)
+	-- Р С›Р В±Р Р…Р С•Р Р†Р В»РЎРЏР ВµР С Р С—Р С‘Р Р…Р С– Р С‘ Р СР ВµРЎвЂљР С”Р С‘ РЎвЂљР С•Р В»РЎРЉР С”Р С• РЎР‚Р В°Р В· Р Р† 3 Р С”Р В°Р Т‘РЎР‚Р В° (~20fps Р С—РЎР‚Р С‘ 60fps)
 	if _fpsFrame % 3 ~= 0 then return end
 
 	local ping = player:GetNetworkPing() * 1000
@@ -16567,11 +18398,261 @@ styleArrowL.MouseButton1Click:Connect(function()
 	clampStyleOffset()
 end)
 
-styleArrowR.MouseButton1Click:Connect(function()
-	clampStyleOffset()
-	styleOffset = styleOffset + styleBtnW + styleBtnGap
-	updateStylePositions()
-	clampStyleOffset()
+	styleArrowR.MouseButton1Click:Connect(function()
+		clampStyleOffset()
+		styleOffset = styleOffset + styleBtnW + styleBtnGap
+		updateStylePositions()
+		clampStyleOffset()
+	end)
+
+-- ============== Loading Animation Style ==============
+loadingAnimStyleRow = Instance.new("Frame")
+loadingAnimStyleRow.Size = UDim2.new(1, 0, 0, 42)
+loadingAnimStyleRow.BackgroundTransparency = 1
+loadingAnimStyleRow.LayoutOrder = 715.5
+loadingAnimStyleRow.Parent = categoryFrames["Settings"]
+
+loadingAnimStyleLabel = Instance.new("TextLabel")
+loadingAnimStyleLabel.Size = UDim2.new(0, 90, 1, 0)
+loadingAnimStyleLabel.BackgroundTransparency = 1
+loadingAnimStyleLabel.Text = "Loading:"
+loadingAnimStyleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+loadingAnimStyleLabel.Font = Enum.Font.SourceSansBold
+loadingAnimStyleLabel.TextSize = 16
+loadingAnimStyleLabel.TextXAlignment = Enum.TextXAlignment.Left
+loadingAnimStyleLabel.Parent = loadingAnimStyleRow
+
+local loadingStyleClip = Instance.new("Frame")
+loadingStyleClip.Size = UDim2.new(1, -175, 1, 0)
+loadingStyleClip.Position = UDim2.new(0, 95, 0, 0)
+loadingStyleClip.BackgroundTransparency = 1
+loadingStyleClip.ClipsDescendants = true
+loadingStyleClip.Parent = loadingAnimStyleRow
+
+local loadingStyleOffset = 0
+local loadingStyleBtnW = 95
+local loadingStyleBtnGap = 6
+
+loadingAnimStyleBtns = {}
+local function updateLoadingStylePositions()
+	for i, btn in ipairs(loadingAnimStyleBtns) do
+		btn.Position = UDim2.new(0, (i - 1) * (loadingStyleBtnW + loadingStyleBtnGap) - loadingStyleOffset, 0.5, -14)
+	end
+end
+
+local function updateLoadingStyleHighlight()
+	for i, btn in ipairs(loadingAnimStyleBtns) do
+		if i == loadingAnimStyle then
+			btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			btn.TextColor3 = Color3.fromRGB(0, 0, 0)
+		else
+			btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
+end
+
+local function clampLoadingStyleOffset()
+	local totalW = #loadingAnimStyles * (loadingStyleBtnW + loadingStyleBtnGap) - loadingStyleBtnGap
+	local visible = loadingStyleClip.AbsoluteSize.X
+	local maxOff = math.max(0, totalW - visible)
+	loadingStyleOffset = math.clamp(loadingStyleOffset, 0, maxOff)
+end
+
+for i, styleName in ipairs(loadingAnimStyles) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, loadingStyleBtnW, 0, 28)
+	btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = styleName
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 11
+	btn.BorderSizePixel = 0
+	btn.Parent = loadingStyleClip
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 4)
+	btnCorner.Parent = btn
+
+	btn.MouseButton1Click:Connect(function()
+		loadingAnimStyle = i
+		updateLoadingStyleHighlight()
+		saveConfig()
+	end)
+	table.insert(loadingAnimStyleBtns, btn)
+end
+updateLoadingStylePositions()
+updateLoadingStyleHighlight()
+
+local loadingStyleArrowL = Instance.new("TextButton")
+loadingStyleArrowL.Size = UDim2.new(0, 28, 0, 28)
+loadingStyleArrowL.Position = UDim2.new(1, -68, 0.5, -14)
+loadingStyleArrowL.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+loadingStyleArrowL.TextColor3 = Color3.fromRGB(255, 255, 255)
+loadingStyleArrowL.Text = "<"
+loadingStyleArrowL.Font = Enum.Font.SourceSansBold
+loadingStyleArrowL.TextSize = 18
+loadingStyleArrowL.BorderSizePixel = 1
+loadingStyleArrowL.BorderColor3 = Color3.fromRGB(80, 80, 80)
+loadingStyleArrowL.Parent = loadingAnimStyleRow
+
+local loadingStyleArrowLcr = Instance.new("UICorner")
+loadingStyleArrowLcr.CornerRadius = UDim.new(0, 4)
+loadingStyleArrowLcr.Parent = loadingStyleArrowL
+
+local loadingStyleArrowR = Instance.new("TextButton")
+loadingStyleArrowR.Size = UDim2.new(0, 28, 0, 28)
+loadingStyleArrowR.Position = UDim2.new(1, -34, 0.5, -14)
+loadingStyleArrowR.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+loadingStyleArrowR.TextColor3 = Color3.fromRGB(255, 255, 255)
+loadingStyleArrowR.Text = ">"
+loadingStyleArrowR.Font = Enum.Font.SourceSansBold
+loadingStyleArrowR.TextSize = 18
+loadingStyleArrowR.BorderSizePixel = 1
+loadingStyleArrowR.BorderColor3 = Color3.fromRGB(80, 80, 80)
+loadingStyleArrowR.Parent = loadingAnimStyleRow
+
+local loadingStyleArrowRcr = Instance.new("UICorner")
+loadingStyleArrowRcr.CornerRadius = UDim.new(0, 4)
+loadingStyleArrowRcr.Parent = loadingStyleArrowR
+
+loadingStyleArrowL.MouseButton1Click:Connect(function()
+	clampLoadingStyleOffset()
+	loadingStyleOffset = math.max(0, loadingStyleOffset - loadingStyleBtnW - loadingStyleBtnGap)
+	updateLoadingStylePositions()
+	clampLoadingStyleOffset()
+end)
+
+loadingStyleArrowR.MouseButton1Click:Connect(function()
+	clampLoadingStyleOffset()
+	loadingStyleOffset = loadingStyleOffset + loadingStyleBtnW + loadingStyleBtnGap
+	updateLoadingStylePositions()
+	clampLoadingStyleOffset()
+end)
+
+-- ============== Menu Appear Animation Style ==============
+menuAppearStyleRow = Instance.new("Frame")
+menuAppearStyleRow.Size = UDim2.new(1, 0, 0, 42)
+menuAppearStyleRow.BackgroundTransparency = 1
+menuAppearStyleRow.LayoutOrder = 715.6
+menuAppearStyleRow.Parent = categoryFrames["Settings"]
+
+menuAppearStyleLabel = Instance.new("TextLabel")
+menuAppearStyleLabel.Size = UDim2.new(0, 90, 1, 0)
+menuAppearStyleLabel.BackgroundTransparency = 1
+menuAppearStyleLabel.Text = "Menu Appear:"
+menuAppearStyleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+menuAppearStyleLabel.Font = Enum.Font.SourceSansBold
+menuAppearStyleLabel.TextSize = 16
+menuAppearStyleLabel.TextXAlignment = Enum.TextXAlignment.Left
+menuAppearStyleLabel.Parent = menuAppearStyleRow
+
+local menuAppearClip = Instance.new("Frame")
+menuAppearClip.Size = UDim2.new(1, -175, 1, 0)
+menuAppearClip.Position = UDim2.new(0, 95, 0, 0)
+menuAppearClip.BackgroundTransparency = 1
+menuAppearClip.ClipsDescendants = true
+menuAppearClip.Parent = menuAppearStyleRow
+
+local menuAppearOffset = 0
+local menuAppearBtnW = 95
+local menuAppearBtnGap = 6
+
+menuAppearStyleBtns = {}
+local function updateMenuAppearPositions()
+	for i, btn in ipairs(menuAppearStyleBtns) do
+		btn.Position = UDim2.new(0, (i - 1) * (menuAppearBtnW + menuAppearBtnGap) - menuAppearOffset, 0.5, -14)
+	end
+end
+
+local function updateMenuAppearHighlight()
+	for i, btn in ipairs(menuAppearStyleBtns) do
+		if i == menuAppearStyle then
+			btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			btn.TextColor3 = Color3.fromRGB(0, 0, 0)
+		else
+			btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
+end
+
+local function clampMenuAppearOffset()
+	local totalW = #menuAppearStyles * (menuAppearBtnW + menuAppearBtnGap) - menuAppearBtnGap
+	local visible = menuAppearClip.AbsoluteSize.X
+	local maxOff = math.max(0, totalW - visible)
+	menuAppearOffset = math.clamp(menuAppearOffset, 0, maxOff)
+end
+
+for i, styleName in ipairs(menuAppearStyles) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, menuAppearBtnW, 0, 28)
+	btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = styleName
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 11
+	btn.BorderSizePixel = 0
+	btn.Parent = menuAppearClip
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 4)
+	btnCorner.Parent = btn
+
+	btn.MouseButton1Click:Connect(function()
+		menuAppearStyle = i
+		updateMenuAppearHighlight()
+		saveConfig()
+	end)
+	table.insert(menuAppearStyleBtns, btn)
+end
+updateMenuAppearPositions()
+updateMenuAppearHighlight()
+
+local menuAppearArrowL = Instance.new("TextButton")
+menuAppearArrowL.Size = UDim2.new(0, 28, 0, 28)
+menuAppearArrowL.Position = UDim2.new(1, -68, 0.5, -14)
+menuAppearArrowL.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+menuAppearArrowL.TextColor3 = Color3.fromRGB(255, 255, 255)
+menuAppearArrowL.Text = "<"
+menuAppearArrowL.Font = Enum.Font.SourceSansBold
+menuAppearArrowL.TextSize = 18
+menuAppearArrowL.BorderSizePixel = 1
+menuAppearArrowL.BorderColor3 = Color3.fromRGB(80, 80, 80)
+menuAppearArrowL.Parent = menuAppearStyleRow
+
+local menuAppearArrowLcr = Instance.new("UICorner")
+menuAppearArrowLcr.CornerRadius = UDim.new(0, 4)
+menuAppearArrowLcr.Parent = menuAppearArrowL
+
+local menuAppearArrowR = Instance.new("TextButton")
+menuAppearArrowR.Size = UDim2.new(0, 28, 0, 28)
+menuAppearArrowR.Position = UDim2.new(1, -34, 0.5, -14)
+menuAppearArrowR.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+menuAppearArrowR.TextColor3 = Color3.fromRGB(255, 255, 255)
+menuAppearArrowR.Text = ">"
+menuAppearArrowR.Font = Enum.Font.SourceSansBold
+menuAppearArrowR.TextSize = 18
+menuAppearArrowR.BorderSizePixel = 1
+menuAppearArrowR.BorderColor3 = Color3.fromRGB(80, 80, 80)
+menuAppearArrowR.Parent = menuAppearStyleRow
+
+local menuAppearArrowRcr = Instance.new("UICorner")
+menuAppearArrowRcr.CornerRadius = UDim.new(0, 4)
+menuAppearArrowRcr.Parent = menuAppearArrowR
+
+menuAppearArrowL.MouseButton1Click:Connect(function()
+	clampMenuAppearOffset()
+	menuAppearOffset = math.max(0, menuAppearOffset - menuAppearBtnW - menuAppearBtnGap)
+	updateMenuAppearPositions()
+	clampMenuAppearOffset()
+end)
+
+menuAppearArrowR.MouseButton1Click:Connect(function()
+	clampMenuAppearOffset()
+	menuAppearOffset = menuAppearOffset + menuAppearBtnW + menuAppearBtnGap
+	updateMenuAppearPositions()
+	clampMenuAppearOffset()
 end)
 
 -- ============== Background Image ==============
@@ -18592,7 +20673,7 @@ end
 hookDescendants(mainGui)
 -- popupBtnGui buttons are hooked individually in extraction code
 
--- Р Р°Р·СЂРµС€Р°РµРј СЃРєСЂРѕР»Р» РїРѕСЃР»Рµ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё
+-- Р  Р В°Р В·РЎР‚Р ВµРЎв‚¬Р В°Р ВµР С РЎРѓР С”РЎР‚Р С•Р В»Р В» Р С—Р С•РЎРѓР В»Р Вµ Р С‘Р Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р В°РЎвЂ Р С‘Р С‘
 task.wait(0.1)
 canScroll = true
 
@@ -18611,7 +20692,7 @@ local function toggleMinimize()
 	contentArea.Visible = contentVisible
 	leftSidebar.Visible = contentVisible
 	mainFrame.Size = contentVisible and UDim2.new(0, mainMenuWidth, 0, mainMenuHeight) or UDim2.new(0, mainMenuWidth, 0, 28)
-	minimizeButton.Text = contentVisible and "—" or "+"
+	minimizeButton.Text = contentVisible and "вЂ”" or "+"
 end
 minimizeButton.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then toggleMinimize() end
@@ -18645,9 +20726,73 @@ local function closeMenu()
 	if voidReturnConn then voidReturnConn:Disconnect() voidReturnConn = nil end
 	getgenv().AdrenalinWinLoaded = nil
 end
-closeButton.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then closeMenu() end
-end)
+	closeButton.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then closeMenu() end
+	end)
+
+-- Menu appear animation (after loading screen, all GUI elements built)
+do
+	local maStyle = menuAppearStyles[menuAppearStyle] or "None"
+	if maStyle ~= "None" then
+		local savedSize = mainFrame.Size
+		local savedPos = mainFrame.Position
+		local childrenData = {}
+		for _, child in ipairs(mainFrame:GetChildren()) do
+			if child:IsA("GuiObject") then
+				child.Visible = false
+				table.insert(childrenData, child)
+			end
+		end
+		mainFrame.BackgroundTransparency = 1
+		for _, lbl in ipairs(mainFrame:GetDescendants()) do
+			if lbl:IsA("TextLabel") or lbl:IsA("TextButton") then
+				if lbl.TextTransparency ~= nil then
+					table.insert(childrenData, lbl)
+				end
+			end
+		end
+		if maStyle == "Fade In" then
+			for _, c in ipairs(childrenData) do
+				if c:IsA("GuiObject") then c.BackgroundTransparency = 1 end
+				if (c:IsA("TextLabel") or c:IsA("TextButton")) then c.TextTransparency = 1 end
+			end
+			for _, c in ipairs(childrenData) do
+				if c:IsA("GuiObject") then c.Visible = true end
+				if c:IsA("GuiObject") then TweenService:Create(c, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = mainBgTransparency}):Play() end
+				if (c:IsA("TextLabel") or c:IsA("TextButton")) then TweenService:Create(c, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play() end
+			end
+			TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = mainBgTransparency}):Play()
+		elseif maStyle == "Scale Up" then
+			mainFrame.Size = UDim2.new(0, 0, 0, 0)
+			for _, c in ipairs(childrenData) do if c:IsA("GuiObject") then c.Visible = true end end
+			TweenService:Create(mainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = savedSize, BackgroundTransparency = mainBgTransparency}):Play()
+		elseif maStyle == "Slide Down" then
+			local startY = savedPos.Y.Offset - 300
+			mainFrame.Position = UDim2.new(savedPos.X.Scale, savedPos.X.Offset, savedPos.Y.Scale, startY)
+			for _, c in ipairs(childrenData) do if c:IsA("GuiObject") then c.Visible = true end end
+			TweenService:Create(mainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = savedPos, BackgroundTransparency = mainBgTransparency}):Play()
+		elseif maStyle == "Bounce" then
+			mainFrame.Size = UDim2.new(0, 0, 0, 0)
+			for _, c in ipairs(childrenData) do if c:IsA("GuiObject") then c.Visible = true end end
+			TweenService:Create(mainFrame, TweenInfo.new(0.6, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {Size = savedSize, BackgroundTransparency = mainBgTransparency}):Play()
+		elseif maStyle == "Blur Reveal" then
+			local blur = Instance.new("BlurEffect")
+			blur.Size = 60
+			blur.Parent = game:GetService("Lighting")
+			for _, c in ipairs(childrenData) do
+				if c:IsA("GuiObject") then c.BackgroundTransparency = 1; c.Visible = true end
+				if (c:IsA("TextLabel") or c:IsA("TextButton")) then c.TextTransparency = 1 end
+			end
+			TweenService:Create(mainFrame, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = mainBgTransparency}):Play()
+			for _, c in ipairs(childrenData) do
+				if c:IsA("GuiObject") then TweenService:Create(c, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = mainBgTransparency}):Play() end
+				if (c:IsA("TextLabel") or c:IsA("TextButton")) then TweenService:Create(c, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play() end
+			end
+			TweenService:Create(blur, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = 0}):Play()
+			task.delay(1, function() blur:Destroy() end)
+		end
+	end
+end
 
 toggleButton = Instance.new("Frame")
 toggleButton.Name = "ToggleButton"
@@ -18881,15 +21026,15 @@ function removeGlitchProof()
 	end
 end
 
--- РЈРґР°Р»СЏРµРј РїСЂРё Р·Р°РїСѓСЃРєРµ
+-- Р Р€Р Т‘Р В°Р В»РЎРЏР ВµР С Р С—РЎР‚Р С‘ Р В·Р В°Р С—РЎС“РЎРѓР С”Р Вµ
 removeGlitchProof()
 
--- РћС‚СЃР»РµР¶РёРІР°РµРј РїРѕСЏРІР»РµРЅРёРµ Mansion2
+-- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р ВµР С Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘Р Вµ Mansion2
 Workspace.ChildAdded:Connect(function(child)
 	if child.Name == "Mansion2" then
 		task.wait(1)
 		removeGlitchProof()
-		-- РўР°РєР¶Рµ СЃР»РµРґРёРј Р·Р° РїРѕСЏРІР»РµРЅРёРµРј Base РІРЅСѓС‚СЂРё
+		-- Р СћР В°Р С”Р В¶Р Вµ РЎРѓР В»Р ВµР Т‘Р С‘Р С Р В·Р В° Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘Р ВµР С Base Р Р†Р Р…РЎС“РЎвЂљРЎР‚Р С‘
 		child.DescendantAdded:Connect(function(desc)
 			if desc.Name == "GlitchProof" then
 				task.defer(function()
@@ -18902,7 +21047,7 @@ Workspace.ChildAdded:Connect(function(child)
 	end
 end)
 
--- Р•СЃР»Рё Mansion2 СѓР¶Рµ РµСЃС‚СЊ - СЃР»РµРґРёРј Р·Р° РЅРѕРІС‹РјРё GlitchProof
+-- Р вЂўРЎРѓР В»Р С‘ Mansion2 РЎС“Р В¶Р Вµ Р ВµРЎРѓРЎвЂљРЎРЉ - РЎРѓР В»Р ВµР Т‘Р С‘Р С Р В·Р В° Р Р…Р С•Р Р†РЎвЂ№Р СР С‘ GlitchProof
 existingMansion = Workspace:FindFirstChild("Mansion2")
 if existingMansion then
 	existingMansion.DescendantAdded:Connect(function(desc)
@@ -18916,7 +21061,7 @@ if existingMansion then
 	end)
 end
 
--- РџРµСЂРёРѕРґРёС‡РµСЃРєР°СЏ РїСЂРѕРІРµСЂРєР° РЅР° РІСЃСЏРєРёР№ СЃР»СѓС‡Р°Р№
+-- Р СџР ВµРЎР‚Р С‘Р С•Р Т‘Р С‘РЎвЂЎР ВµРЎРѓР С”Р В°РЎРЏ Р С—РЎР‚Р С•Р Р†Р ВµРЎР‚Р С”Р В° Р Р…Р В° Р Р†РЎРѓРЎРЏР С”Р С‘Р в„– РЎРѓР В»РЎС“РЎвЂЎР В°Р в„–
 task.spawn(function()
 	while true do
 		task.wait(10)
@@ -18958,6 +21103,9 @@ function restoreFullConfig()
 	autoDeleteCorpsesEnabled = T.autoDeleteCorpsesEnabled or false
 	hiddenfling = T.hiddenfling or false
 	zombieTryhardEnabled = T.zombieTryhardEnabled or false
+	coinAuraEnabled = T.coinAuraEnabled or false
+	coinAuraRadius = T.coinAuraRadius or 10
+	tryhardAnimEnabled = T.tryhardAnimEnabled or false
 	headlessKorbloxEnabled = T.headlessKorbloxEnabled or false
 	crosshairEnabled = T.crosshairEnabled or false
 	keystrokeEnabled = T.keystrokeEnabled or false
@@ -18976,6 +21124,15 @@ function restoreFullConfig()
 	autoKillEveryoneEnabled = T.autoKillEveryoneEnabled or false
 	autoKillEveryoneNoFriendsEnabled = T.autoKillEveryoneNoFriendsEnabled or false
 	autoKillSheriffEnabled = T.autoKillSheriffEnabled or false
+	autofarmEnabled = T.autofarmEnabled or false
+	autofarmResetInnocentEnabled = T.autofarmResetInnocentEnabled or false
+	autofarmResetSheriffEnabled = T.autofarmResetSheriffEnabled or false
+	autofarmResetMurdererEnabled = T.autofarmResetMurdererEnabled or false
+	autofarmKillAllEnabled = T.autofarmKillAllEnabled or false
+	autofarmShootPiercerEnabled = T.autofarmShootPiercerEnabled or false
+	autofarmWebhookEnabled = T.autofarmWebhookEnabled or false
+	autofarmServerHopEnabled = T.autofarmServerHopEnabled or false
+	autofarmResetDeathEnabled = T.autofarmResetDeathEnabled or false
 
 	-- Restore values
 	if c.values then
@@ -19034,6 +21191,8 @@ function restoreFullConfig()
 		if c.values.animationEnabled ~= nil then animationEnabled = c.values.animationEnabled end
 		if c.values.btnPressAnimationEnabled ~= nil then btnPressAnimationEnabled = c.values.btnPressAnimationEnabled end
 		if c.values.animationStyle ~= nil then animationStyle = c.values.animationStyle end
+		if c.values.loadingAnimStyle ~= nil then loadingAnimStyle = c.values.loadingAnimStyle end
+		if c.values.menuAppearStyle ~= nil then menuAppearStyle = c.values.menuAppearStyle end
 		if c.values.mainBgImageUrl ~= nil then mainBgImageUrl = c.values.mainBgImageUrl end
 		if c.values.clickSoundPath ~= nil then clickSoundPath = c.values.clickSoundPath end
 		if c.values.toggleSoundPath ~= nil then toggleSoundPath = c.values.toggleSoundPath end
@@ -19049,6 +21208,19 @@ function restoreFullConfig()
 		if c.values.markSoundPath ~= nil then markSoundPath = c.values.markSoundPath end
 		if c.values.unmarkSoundPath ~= nil then unmarkSoundPath = c.values.unmarkSoundPath end
 		if c.values.roundStartSoundPath ~= nil then roundStartSoundPath = c.values.roundStartSoundPath end
+		if c.values.autofarmTargetCoins then autofarmTargetCoins = c.values.autofarmTargetCoins end
+		if c.values.autofarmSpeed then autofarmSpeed = c.values.autofarmSpeed end
+		if c.values.autofarmTpModeIndex then autofarmTpModeIndex = c.values.autofarmTpModeIndex end
+		if c.values.autofarmTpEnabled ~= nil then autofarmTpEnabled = c.values.autofarmTpEnabled end
+		if c.values.autofarmPreTpModeIndex then autofarmPreTpModeIndex = c.values.autofarmPreTpModeIndex end
+		if c.values.autofarmPreTpEnabled ~= nil then autofarmPreTpEnabled = c.values.autofarmPreTpEnabled end
+		if c.values.autofarmWebhookIntervalMin then autofarmWebhookIntervalMin = c.values.autofarmWebhookIntervalMin end
+		if c.values.autofarmWebhookUrl then AUTOFARM_WEBHOOK_URL = c.values.autofarmWebhookUrl end
+		if c.values.autofarmScriptUrl then AUTOFARM_SCRIPT_URL = c.values.autofarmScriptUrl end
+		if c.values.autofarmSessionCoins then autofarmSessionCoins = c.values.autofarmSessionCoins end
+		if c.values.autofarmSessionElapsed and c.values.autofarmSessionElapsed > 0 and autofarmSessionCoins > 0 then
+			autofarmSessionStart = os.clock() - c.values.autofarmSessionElapsed
+		end
 	end
 
 	-- Apply restored UI colors
@@ -19166,6 +21338,12 @@ function restoreFullConfig()
 		if animStyleLabel then
 			updateStyleHighlight()
 		end
+		if loadingAnimStyleLabel then
+			updateLoadingStyleHighlight()
+		end
+		if menuAppearStyleLabel then
+			updateMenuAppearHighlight()
+		end
 		-- Apply background image
 		if mainBgImage then
 			applyBgImage(mainBgImageUrl)
@@ -19224,7 +21402,7 @@ function restoreFullConfig()
 		toggleButton.BackgroundColor3 = toggleBtnColor
 	end
 
-	-- Apply extracted buttons OFF colors (buttons are freshly created — always OFF initially)
+	-- Apply extracted buttons OFF colors (buttons are freshly created вЂ” always OFF initially)
 	for name, data in pairs(extractedButtons) do
 		data.state = false
 		if data.popupBtn then
@@ -19457,6 +21635,14 @@ function restoreFullConfig()
 		zombieTryhardEnabled = false; enableZombieTryhard()
 		if btn.zombieBtn then setToggleState(btn.zombieBtn, true, "Zombie Tryhard: ON", "Zombie Tryhard: OFF") end
 	end
+	if T.coinAuraEnabled then
+		coinAuraEnabled = false; enableCoinAura()
+		if btn.coinAura then setToggleState(btn.coinAura, true, "Coin Aura: ON", "Coin Aura: OFF") end
+	end
+	if T.tryhardAnimEnabled then
+		tryhardAnimEnabled = false; enableTryhardAnim()
+		if btn.tryhardAnimBtn then setToggleState(btn.tryhardAnimBtn, true, "Tryhard Anim: ON", "Tryhard Anim: OFF") end
+	end
 	if T.headlessKorbloxEnabled then
 		headlessKorbloxEnabled = false; enableHeadlessKorblox()
 		if btn.headlessBtn then setToggleState(btn.headlessBtn, true, "Headless & Korblox: ON", "Headless & Korblox: OFF") end
@@ -19580,6 +21766,44 @@ function restoreFullConfig()
 		setExtractedBtnState("Auto Kill Sheriff", true)
 		startAutoKillSheriff()
 	end
+	-- Restore autofarm toggle states
+	if T.autofarmResetInnocentEnabled then
+		autofarmResetInnocentEnabled = false
+		if autofarmResetInnocentBtn then setToggleState(autofarmResetInnocentBtn, true, "Auto Reset (Innocent): ON", "Auto Reset (Innocent): OFF") end
+	end
+	if T.autofarmResetSheriffEnabled then
+		autofarmResetSheriffEnabled = false
+		if autofarmResetSheriffBtn then setToggleState(autofarmResetSheriffBtn, true, "Auto Reset (Sheriff/Hero): ON", "Auto Reset (Sheriff/Hero): OFF") end
+	end
+	if T.autofarmResetMurdererEnabled then
+		autofarmResetMurdererEnabled = false
+		if autofarmResetMurdererBtn then setToggleState(autofarmResetMurdererBtn, true, "Auto Reset (Murderer): ON", "Auto Reset (Murderer): OFF") end
+	end
+	if T.autofarmKillAllEnabled then
+		autofarmKillAllEnabled = false
+		if autofarmKillAllBtn then setToggleState(autofarmKillAllBtn, true, "Kill Everyone (Murderer): ON", "Kill Everyone (Murderer): OFF") end
+	end
+	if T.autofarmShootPiercerEnabled then
+		autofarmShootPiercerEnabled = false
+		if autofarmPiercerBtn then setToggleState(autofarmPiercerBtn, true, "Shoot Murderer (Piercer, Sheriff/Hero): ON", "Shoot Murderer (Piercer, Sheriff/Hero): OFF") end
+	end
+	if T.autofarmResetDeathEnabled then
+		autofarmResetDeathEnabled = false
+		if autofarmResetDeathBtn then setToggleState(autofarmResetDeathBtn, true, "Reset Murderer On Death: ON", "Reset Murderer On Death: OFF") end
+	end
+	if T.autofarmWebhookEnabled then
+		autofarmWebhookEnabled = false
+		if autofarmWebhookBtn then setToggleState(autofarmWebhookBtn, true, "Discord Webhook Notification: ON", "Discord Webhook Notification: OFF") end
+	end
+	if T.autofarmServerHopEnabled then
+		autofarmServerHopEnabled = false
+		if autofarmServerHopBtn then setToggleState(autofarmServerHopBtn, true, "Server Hop When Alone: ON", "Server Hop When Alone: OFF") end
+	end
+	if autofarmEnabled then
+		setAutofarmEnabled(true, autofarmTargetCoins)
+		refreshAutofarmButtons()
+	end
+
 	updateAntiAimButtonVisual()
 
 	-- Restore Multi Fling collapse state
@@ -19617,7 +21841,7 @@ function restoreFullConfig()
 	end
 end
 
--- Config restore Р±РµР· Р·Р°РґРµСЂР¶РєРё - UI СѓР¶Рµ РіРѕС‚РѕРІ Рє СЌС‚РѕРјСѓ РјРѕРјРµРЅС‚Сѓ
+-- Config restore Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘ - UI РЎС“Р В¶Р Вµ Р С–Р С•РЎвЂљР С•Р Р† Р С” РЎРЊРЎвЂљР С•Р СРЎС“ Р СР С•Р СР ВµР Р…РЎвЂљРЎС“
 
 -- ============================================
 -- TAB RESTRUCTURE: Re-parent elements to Sheriff, Murderer, Reset tabs
@@ -19783,7 +22007,7 @@ do
 	end
 
 	-- Move Auto Remove Coins, Auto Mute Coins, Auto Delete Corpses to Utilities
-	-- (currently in Movement tab) — place them after Vote Notification (LO 115.05)
+	-- (currently in Movement tab) вЂ” place them after Vote Notification (LO 115.05)
 	local utilFrame2 = categoryFrames["Utilities"]
 	if utilFrame2 then
 		if btn.autoDeleteCoins then btn.autoDeleteCoins.Parent = utilFrame2; btn.autoDeleteCoins.LayoutOrder = 115.06 end
@@ -19863,7 +22087,7 @@ end
 
 task.defer(restoreFullConfig)
 
--- Restore detached emote buttons (выносимые кнопки эмоций) saved in the config.
+-- Restore detached emote buttons (РІС‹РЅРѕСЃРёРјС‹Рµ РєРЅРѕРїРєРё СЌРјРѕС†РёР№) saved in the config.
 task.defer(function()
 	local c = loadedConfig
 	if not c or not c.detachedEmotes then return end
@@ -19873,7 +22097,7 @@ task.defer(function()
 			pcall(function()
 				createDetachedEmote(id, info and info.name, info and info.pos, true, info and info.locked)
 				local ui = animationUiById[id]
-				if ui and ui.PopOut then ui.PopOut.Text = "★" end
+				if ui and ui.PopOut then ui.PopOut.Text = "в…" end
 			end)
 		end
 	end
