@@ -20752,7 +20752,8 @@ toggleClickButton.InputEnded:Connect(function(input)
 			saveConfig()
 		end
 	end
-end)		clumsy_on = false
+	end)
+	clumsy_on = false
 		removeClumsyGhost()
 		if clumsyButton then
 			clumsyButton.Text = "Clumsy: OFF"
@@ -21786,7 +21787,13 @@ task.defer(function()
 			pcall(function()
 				createDetachedEmote(id, info and info.name, info and info.pos, true, info and info.locked)
 				local ui = animationUiById[id]
-				if ui and ui.PopOut then ui.PopOut.Text = "★✓★☆☆★✓✓✓★☆★☆✓tored, warn about any
+				if ui and ui.PopOut then ui.PopOut.Text = "★" end
+			end)
+		end
+	end
+end)
+
+-- After the config (and the notify-on toggles) has been restored, warn about any
 -- teamers / exploiters / scammers that are ALREADY in the server on activation.
 task.defer(function()
 	task.wait(2)
