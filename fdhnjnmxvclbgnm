@@ -168,7 +168,6 @@ function saveConfig()
 	local config = {
 		toggles = {},
 		values = {},
-		binds = {},
 		extractedBtns = {},
 	}
 
@@ -346,12 +345,6 @@ function saveConfig()
 	end
 
 
-	if featureBinds then
-		for name, key in pairs(featureBinds) do
-			config.binds[name] = tostring(key)
-		end
-	end
-
 	if extractedButtons then
 		for name, data in pairs(extractedButtons) do
 			if data and data.btn then
@@ -428,14 +421,7 @@ else
 end
 saveConfig()
 
-function stringToKey(str)
-	if not str then return nil end
-	local kc = str:match("Enum%.KeyCode%.(.+)")
-	if kc then return Enum.KeyCode[kc] end
-	local ut = str:match("Enum%.UserInputType%.(.+)")
-	if ut then return Enum.UserInputType[ut] end
-	return nil
-end
+
 
 -- applyLoadedConfig is not used here - variables get overwritten by original declarations later
 
@@ -3757,7 +3743,7 @@ mainMenuHeight = 230
 -- Loading Screen (Mobile-optimized)
 -- ============================================
 function playLoadingScreen()
-	local LOADING_DURATION = 2.5
+	local LOADING_DURATION = 1.5
 	local style = loadingAnimStyles[loadingAnimStyle] or "Letter by Letter"
 
 	local blur = Instance.new("BlurEffect")
@@ -3793,9 +3779,9 @@ function playLoadingScreen()
 	layout.Padding = UDim.new(0, -2)
 	layout.Parent = textsFrame
 
-	TweenService:Create(blur, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = 50}):Play()
-	TweenService:Create(blackFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.6}):Play()
-	task.wait(0.5)
+	TweenService:Create(blur, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = 50}):Play()
+	TweenService:Create(blackFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.6}):Play()
+	task.wait(0.3)
 
 	local loadText = "Adrenalin.win"
 	local textObjs = {}
@@ -3880,20 +3866,20 @@ function playLoadingScreen()
 
 	task.wait(LOADING_DURATION)
 
-	TweenService:Create(blur, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = 0}):Play()
-	TweenService:Create(blackFrame, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+	TweenService:Create(blur, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = 0}):Play()
+	TweenService:Create(blackFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
 
 	for _, lbl in ipairs(textObjs) do
-		TweenService:Create(lbl, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 1}):Play()
+		TweenService:Create(lbl, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 1}):Play()
 	end
 
 	for _, child in ipairs(textsFrame:GetDescendants()) do
 		if child:IsA("TextLabel") then
-			TweenService:Create(child, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 1}):Play()
+			TweenService:Create(child, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 1}):Play()
 		end
 	end
 
-	task.wait(1.1)
+	task.wait(0.5)
 
 	loaderGui:Destroy()
 	blur:Destroy()
@@ -4482,7 +4468,6 @@ createCategoryScrollFrame("Autofarm")
 createCategoryScrollFrame("Animations")
 createCategoryScrollFrame("Changer")
 createCategoryScrollFrame("Skybox")
-createCategoryScrollFrame("Binds")
 createCategoryScrollFrame("Buttons")
 createCategoryScrollFrame("Settings")
 
@@ -4524,7 +4509,6 @@ function createCategoryButton(shortName, layoutOrder)
 		["Scam"] = "Scammers",
 		["Farm"] = "Autofarm",
 		["Anim"] = "Animations",
-		["Bind"] = "Binds",
 		["Expl"] = "Exploiters",
 		["Main"] = "Main",
 		["Btn"] = "Buttons",
@@ -4605,7 +4589,6 @@ createCategoryButton("Farm", 6.7)
 createCategoryButton("Anim", 7)
 createCategoryButton("Changer", 7.5)
 createCategoryButton("Skybox", 7.6)
-createCategoryButton("Bind", 8)
 createCategoryButton("Btn", 9)
 createCategoryButton("Set", 10)
 
@@ -5123,95 +5106,7 @@ function setToggleState(btn, state, onText, offText)
 	saveConfig()
 end
 
--- Р РЋР С‘РЎРѓРЎвЂљР ВµР СР В° Р В±Р С‘Р Р…Р Т‘Р С‘Р Р…Р С–Р В° Р С”Р В»Р В°Р Р†Р С‘РЎв‚¬
-keyBinds = {}
-featureBinds = {}
 
-keyNameMap = {
-	[Enum.KeyCode.LeftBracket] = "[",
-	[Enum.KeyCode.RightBracket] = "]",
-	[Enum.KeyCode.Quote] = "'",
-	[Enum.KeyCode.Period] = ".",
-	[Enum.KeyCode.Slash] = "/",
-	[Enum.KeyCode.Comma] = ",",
-	[Enum.KeyCode.Semicolon] = ";",
-	[Enum.KeyCode.BackSlash] = "\\",
-	[Enum.KeyCode.Equals] = "=",
-	[Enum.KeyCode.Minus] = "-",
-	[Enum.KeyCode.Backquote] = "`",
-	[Enum.KeyCode.LeftControl] = "L-Ctrl",
-	[Enum.KeyCode.RightControl] = "R-Ctrl",
-	[Enum.KeyCode.LeftAlt] = "L-Alt",
-	[Enum.KeyCode.RightAlt] = "R-Alt",
-	[Enum.KeyCode.LeftShift] = "L-Shift",
-	[Enum.KeyCode.RightShift] = "R-Shift",
-}
-
-function keyCodeToName(keyCode)
-	if keyNameMap[keyCode] then return keyNameMap[keyCode] end
-	local name = tostring(keyCode):gsub("Enum.KeyCode.", "")
-	return name
-end
-
-function bindKeyToName(key)
-	if typeof(key) == "EnumItem" then
-		if key.EnumType == Enum.KeyCode then
-			return keyCodeToName(key)
-		elseif key == Enum.UserInputType.MouseButton1 then
-			return "LMB"
-		elseif key == Enum.UserInputType.MouseButton2 then
-			return "RMB"
-		elseif key == Enum.UserInputType.MouseButton3 then
-			return "MMB"
-		end
-	end
-	return tostring(key)
-end
-
-function registerKeyBind(keyCode, callback, description)
-	if not keyBinds then keyBinds = {} end
-	keyBinds[keyCode] = {callback = callback, description = description}
-end
-
-listeningForBind = false
-listeningTextBox = nil
-listeningFeatureName = nil
-justBoundKey = nil
-lastUIInteract = 0
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if not keyBinds then return end
-	if listeningForBind then return end
-
-	local bindKey
-	if input.UserInputType == Enum.UserInputType.Keyboard then
-		bindKey = input.KeyCode
-	elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-		bindKey = Enum.UserInputType.MouseButton1
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-		bindKey = Enum.UserInputType.MouseButton2
-	elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
-		bindKey = Enum.UserInputType.MouseButton3
-	else
-		return
-	end
-
-	if justBoundKey then
-		if justBoundKey == bindKey then
-			justBoundKey = nil
-			return
-		end
-		justBoundKey = nil
-	end
-	
-	if keyBinds[bindKey] then
-		local bindData = keyBinds[bindKey]
-		if bindData.callback then
-			bindData.callback()
-		end
-	end
-end)
 
 -- ============================================
 
@@ -13220,7 +13115,7 @@ function startAutofarm()
 	end)
 end
 
-function setAutofarmEnabled(state, target)
+function setAutofarmEnabled(state, target, silent)
 	autofarmEnabled = state
 	if state then
 		autofarmTargetCoins = target or autofarmTargetCoins
@@ -13242,10 +13137,12 @@ function setAutofarmEnabled(state, target)
 		autofarmSessionCoins = 0
 		autofarmSessionStart = nil
 		saveConfig() -- persist the zeroed stats immediately (not 30s later)
-		local char = player.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		if hrp then
-			pcall(doInstantTp, hrp, char, CFrame.new(23, 505, -34))
+		if not silent then
+			local char = player.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				pcall(doInstantTp, hrp, char, CFrame.new(23, 505, -34))
+			end
 		end
 	end
 end
@@ -13417,7 +13314,7 @@ autofarm40Btn.MouseButton1Click:Connect(function()
 	if autofarmEnabled and autofarmTargetCoins == 40 then
 		setAutofarmEnabled(false)
 	else
-		setAutofarmEnabled(false)
+		setAutofarmEnabled(false, nil, true)
 		task.wait()
 		setAutofarmEnabled(true, 40)
 	end
@@ -13428,7 +13325,7 @@ autofarm50Btn.MouseButton1Click:Connect(function()
 	if autofarmEnabled and autofarmTargetCoins == 50 then
 		setAutofarmEnabled(false)
 	else
-		setAutofarmEnabled(false)
+		setAutofarmEnabled(false, nil, true)
 		task.wait()
 		setAutofarmEnabled(true, 50)
 	end
@@ -15199,262 +15096,7 @@ do
 end
 
 
--- ============================================
--- SECTION 6: Binds (LayoutOrder 500-599)
--- ============================================
-currentCategory = "Binds"
-createSection("Binds", 500)
 
-bindableFeatures = {
-	{name = "Infinite Jump", defaultKey = nil, callback = function()
-		isEnabled = not isEnabled
-		setToggleState(button1, isEnabled, "Infinite Jump: ON", "Infinite Jump: OFF")
-	end},
-	{name = "Wallhop", defaultKey = nil, callback = function()
-		wallhopToggle = not wallhopToggle
-		setToggleState(button2, wallhopToggle, "Wallhop: ON", "Wallhop: OFF")
-	end},
-	{name = "Jump Boost", defaultKey = nil, callback = function()
-		local char = player.Character
-		if char and char:FindFirstChild("Humanoid") then
-			char.Humanoid.JumpPower = JUMP_BOOST_POWER
-			task.wait(0.7)
-			if char and char:FindFirstChild("Humanoid") then
-				char.Humanoid.JumpPower = 50
-			end
-		end
-	end},
-	{name = "Speed Glitch", defaultKey = nil, callback = function()
-		toggleFakeSpeed()
-		setToggleState(button4, fakeSpeedEnabled, "Speed Glitch: ON", "Speed Glitch: OFF")
-	end},
-	{name = "Invisibility", defaultKey = nil, callback = function()
-		invis_on = not invis_on
-		if invis_on then
-			local savedpos = game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame
-			task.wait()
-			game.Players.LocalPlayer.Character:MoveTo(Vector3.new(-25.95, 84, 3537.55))
-			task.wait(0.15)
-			local Seat = Instance.new("Seat", game.Workspace)
-			Seat.Anchored = false
-			Seat.CanCollide = false
-			Seat.Name = "invischair"
-			Seat.Transparency = 1
-			Seat.Position = Vector3.new(-25.95, 84, 3537.55)
-			local Weld = Instance.new("Weld", Seat)
-			Weld.Part0 = Seat
-			Weld.Part1 = game.Players.LocalPlayer.Character:FindFirstChild("Torso") or game.Players.LocalPlayer.Character.UpperTorso
-			task.wait()
-			Seat.CFrame = savedpos
-			setToggleState(button5, true, "Invisibility: ON", "Invisibility: OFF")
-		else
-			local chair = workspace:FindFirstChild("invischair")
-			if chair then chair:Destroy() end
-			setToggleState(button5, false, "Invisibility: ON", "Invisibility: OFF")
-		end
-	end},
-	{name = "Auto Invisibility", defaultKey = nil, callback = function()
-		toggleAutoInvis()
-	end},
-	{name = "Auto TP", defaultKey = nil, callback = function()
-		toggleAutoTp()
-	end},
-	{name = "Anti-Shoot", defaultKey = nil, callback = function()
-		toggleDesync()
-		setToggleState(desyncButton, PastedSources, "Anti-Shoot: ON", "Anti-Shoot: OFF")
-		setExtractedBtnState("Anti-Shoot", PastedSources)
-	end},
-	{name = "Desync", defaultKey = nil, callback = function()
-		toggleDesyncSpin()
-		setToggleState(desyncSpinButton, DesyncSpinActive, "Desync: ON", "Desync: OFF")
-		setExtractedBtnState("Desync", DesyncSpinActive)
-	end},
-	{name = "Clumsy", defaultKey = nil, callback = function()
-		clumsy_on = not clumsy_on
-		if clumsy_on then
-			local savedpos = player.Character.HumanoidRootPart.CFrame
-			task.wait()
-			player.Character:MoveTo(savedpos.Position)
-			task.wait(0.15)
-			local Seat = Instance.new("Seat", workspace)
-			Seat.Anchored = false; Seat.CanCollide = false; Seat.Name = "clumsychair"; Seat.Transparency = 1
-			Seat.CFrame = savedpos
-			local Weld = Instance.new("Weld", Seat)
-			Weld.Part0 = Seat
-			Weld.Part1 = player.Character:FindFirstChild("Torso") or player.Character.UpperTorso
-			task.wait(); Seat.CFrame = savedpos
-			createClumsyGhost(savedpos.Position)
-			setToggleState(clumsyButton, true, "Clumsy: ON", "Clumsy: OFF")
-		else
-			local chair = workspace:FindFirstChild("clumsychair")
-			if chair then chair:Destroy() end
-			removeClumsyGhost()
-			setToggleState(clumsyButton, false, "Clumsy: ON", "Clumsy: OFF")
-		end
-	end},
-	{name = "Noclip", defaultKey = nil, callback = function()
-		toggleNoclip()
-		setToggleState(noclipButton, noclipEnabled, "Noclip: ON", "Noclip: OFF")
-	end},
-	{name = "KillAura", defaultKey = nil, callback = function()
-		toggleReach()
-		setToggleState(reachButton, reachEnabled, "KillAura: ON", "KillAura: OFF")
-	end},
-	{name = "Fake Duck", defaultKey = nil, callback = function()
-		toggleFakeDuck()
-	end},
-	{name = "LoopSpeed", defaultKey = nil, callback = function()
-		toggleLoopSpeed()
-	end},
-	{name = "Anti-Aim", defaultKey = nil, callback = function()
-		cycleMode()
-	end},
-	{name = "Auto Dodge Knife", defaultKey = nil, callback = function()
-		toggleAutoDodge()
-		setToggleState(autoDodgeButton, autoDodgeEnabled, "Auto Dodge Knife: ON", "Auto Dodge Knife: OFF")
-	end},
-	{name = "Reset Sheriff/Hero", defaultKey = nil, callback = function()
-		executeNanFlingByRole("Sheriff")
-	end},
-	{name = "Reset Murderer", defaultKey = nil, callback = function()
-		executeNanFlingByRole("Murderer")
-	end},
-	{name = "Auto Reset Sheriff/Hero", defaultKey = nil, callback = function()
-		toggleAutoResetSheriff()
-		setToggleState(autoResetSheriffBtn, autoResetSheriffEnabled, "Auto Reset Sheriff/Hero: ON", "Auto Reset Sheriff/Hero: OFF")
-	end},
-	{name = "Auto Reset Murderer", defaultKey = nil, callback = function()
-		toggleAutoResetMurderer()
-		setToggleState(autoResetMurdererBtn, autoResetMurdererEnabled, "Auto Reset Murderer: ON", "Auto Reset Murderer: OFF")
-	end},
-	{name = "Anti-Bang", defaultKey = nil, callback = function()
-		executeAntiBang()
-	end},
-}
-
-bindInputConn = UserInputService.InputBegan:Connect(function(input, gp)
-	if listeningForBind and listeningTextBox and listeningFeatureName then
-		local isMouse = input.UserInputType == Enum.UserInputType.MouseButton1 or
-			input.UserInputType == Enum.UserInputType.MouseButton2 or
-			input.UserInputType == Enum.UserInputType.MouseButton3
-		if isMouse and tick() - lastUIInteract < 0.3 then return end
-		local bindKey
-		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
-			bindKey = input.KeyCode
-		elseif isMouse then
-			bindKey = input.UserInputType
-		else
-			return
-		end
-		local oldKey = featureBinds[listeningFeatureName]
-		if oldKey and keyBinds[oldKey] then
-			keyBinds[oldKey] = nil
-		end
-		featureBinds[listeningFeatureName] = bindKey
-		for _, feat in ipairs(bindableFeatures) do
-			if feat.name == listeningFeatureName then
-				keyBinds[bindKey] = {callback = feat.callback, description = feat.name}
-				break
-			end
-		end
-		listeningTextBox.Text = bindKeyToName(bindKey)
-		justBoundKey = bindKey
-		listeningForBind = false
-		listeningTextBox = nil
-		listeningFeatureName = nil
-		saveConfig()
-	end
-end)
-
--- Register default key binds
-for _, feature in ipairs(bindableFeatures) do
-	if feature.defaultKey then
-		featureBinds[feature.name] = feature.defaultKey
-		keyBinds[feature.defaultKey] = {callback = feature.callback, description = feature.name}
-	end
-end
-
--- Create Binds UI
-for bindOrder, feature in ipairs(bindableFeatures) do
-	local row = Instance.new("Frame")
-	row.Name = "BindRow_" .. feature.name:gsub("%W", "")
-	row.Size = UDim2.new(1, 0, 0, 42)
-	row.BackgroundTransparency = 1
-	row.LayoutOrder = 500 + bindOrder
-	row.Parent = categoryFrames["Binds"]
-
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -164, 1, 0)
-	label.BackgroundTransparency = 1
-	label.Text = feature.name
-	label.TextColor3 = Color3.fromRGB(255, 255, 255)
-	label.Font = Enum.Font.SourceSansBold
-	label.TextSize = 16
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = row
-
-	local bindButton = Instance.new("TextButton")
-	bindButton.Size = UDim2.new(0, 74, 1, 0)
-	bindButton.Position = UDim2.new(1, -156, 0, 0)
-	bindButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	bindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	bindButton.Text = featureBinds[feature.name] and bindKeyToName(featureBinds[feature.name]) or "None"
-	bindButton.Font = Enum.Font.SourceSansBold
-	bindButton.TextSize = 15
-	bindButton.AutoButtonColor = false
-	bindButton.Parent = row
-
-	local buttonCorner = Instance.new("UICorner")
-	buttonCorner.CornerRadius = UDim.new(0, 6)
-	buttonCorner.Parent = bindButton
-
-	local clearButton = Instance.new("TextButton")
-	clearButton.Size = UDim2.new(0, 74, 1, 0)
-	clearButton.Position = UDim2.new(1, -78, 0, 0)
-	clearButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	clearButton.Text = "X"
-	clearButton.Font = Enum.Font.SourceSansBold
-	clearButton.TextSize = 16
-	clearButton.AutoButtonColor = false
-	clearButton.Parent = row
-
-	local clearCorner = Instance.new("UICorner")
-	clearCorner.CornerRadius = UDim.new(0, 6)
-	clearCorner.Parent = clearButton
-
-	bindButton.MouseButton1Click:Connect(function()
-		lastUIInteract = tick()
-		if listeningForBind then
-			listeningForBind = false
-			listeningTextBox = nil
-			listeningFeatureName = nil
-			bindButton.Text = featureBinds[feature.name] and bindKeyToName(featureBinds[feature.name]) or "None"
-			return
-		end
-		listeningForBind = true
-		listeningTextBox = bindButton
-		listeningFeatureName = feature.name
-		bindButton.Text = "..."
-	end)
-
-	clearButton.MouseButton1Click:Connect(function()
-		lastUIInteract = tick()
-		if listeningForBind then
-			listeningForBind = false
-			listeningTextBox = nil
-			listeningFeatureName = nil
-			bindButton.Text = featureBinds[feature.name] and bindKeyToName(featureBinds[feature.name]) or "None"
-		end
-		local oldKey = featureBinds[feature.name]
-		if oldKey and keyBinds[oldKey] then
-			keyBinds[oldKey] = nil
-		end
-		featureBinds[feature.name] = nil
-		bindButton.Text = "None"
-		saveConfig()
-	end)
-end
 
 -- ============================================
 -- Exact timestamp from ISO 8601
@@ -21236,31 +20878,6 @@ function restoreFullConfig()
 		fovInputBox.Text = tostring(c.values.customFov)
 	end
 
-	-- Restore binds UI FIRST (before toggles, so saveConfig sees them)
-	if c.binds then
-		for name, keyStr in pairs(c.binds) do
-			local key = stringToKey(keyStr)
-			if key then
-				featureBinds[name] = key
-				for _, feature in ipairs(bindableFeatures) do
-					if feature.name == name then
-						keyBinds[key] = {callback = feature.callback, description = name}
-						break
-					end
-				end
-			end
-		end
-		for _, feature in ipairs(bindableFeatures) do
-			local row = categoryFrames["Binds"]:FindFirstChild("BindRow_" .. feature.name:gsub("%W", ""))
-			if row then
-				for _, child in ipairs(row:GetChildren()) do
-					if child:IsA("TextButton") and child.Text ~= "X" then
-						child.Text = featureBinds[feature.name] and bindKeyToName(featureBinds[feature.name]) or "None"
-					end
-				end
-			end
-		end
-	end
 
 	-- Restore extracted buttons (before toggles, so saveConfig sees them)
 	if c.extractedBtns then
