@@ -1,4 +1,4 @@
-Й--// Services
+--// Services
 player = game.Players.LocalPlayer
 playerGui = player:WaitForChild("PlayerGui")
 UserInputService = game:GetService("UserInputService")
