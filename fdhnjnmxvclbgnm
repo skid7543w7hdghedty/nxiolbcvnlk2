@@ -293,6 +293,8 @@ function saveConfig()
 	config.values.btnPressAnimationEnabled = btnPressAnimationEnabled
 	config.values.animationStyle = animationStyle
 	config.values.loadingAnimStyle = loadingAnimStyle
+	config.values.loadingScreenTime = loadingScreenTime
+	config.values.gameNotifScale = gameNotifScale
 	config.values.menuAppearStyle = menuAppearStyle
 	config.values.mainBgImageUrl = mainBgImageUrl
 	config.values.clickSoundPath = clickSoundPath
@@ -1327,12 +1329,17 @@ function exploiterNotifSend(title, plr, message)
 
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.new(0, 340, 0, 0)
-	frame.Position = UDim2.new(1, -350, 1, -10 - (slotIndex * 90))
+	frame.Position = UDim2.new(1, -350 * (gameNotifScale or 1), 1, -10 - (slotIndex * 90 * (gameNotifScale or 1)))
 	frame.AnchorPoint = Vector2.new(0, 1)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	frame.BorderSizePixel = 0
 	frame.ClipsDescendants = true
 	frame.Parent = notifGui
+
+	-- Notification Size (Settings): scales the whole card and its contents
+	local notifUiScale = Instance.new("UIScale")
+	notifUiScale.Scale = gameNotifScale or 1
+	notifUiScale.Parent = frame
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
@@ -1433,12 +1440,17 @@ function teamerNotifSend(title, plr, message)
 
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.new(0, 340, 0, 0)
-	frame.Position = UDim2.new(1, -350, 1, -10 - (slotIndex * 90))
+	frame.Position = UDim2.new(1, -350 * (gameNotifScale or 1), 1, -10 - (slotIndex * 90 * (gameNotifScale or 1)))
 	frame.AnchorPoint = Vector2.new(0, 1)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	frame.BorderSizePixel = 0
 	frame.ClipsDescendants = true
 	frame.Parent = notifGui
+
+	-- Notification Size (Settings): scales the whole card and its contents
+	local notifUiScale = Instance.new("UIScale")
+	notifUiScale.Scale = gameNotifScale or 1
+	notifUiScale.Parent = frame
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
@@ -1539,12 +1551,17 @@ function scammerNotifSend(title, plr, message)
 
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.new(0, 340, 0, 0)
-	frame.Position = UDim2.new(1, -350, 1, -10 - (slotIndex * 90))
+	frame.Position = UDim2.new(1, -350 * (gameNotifScale or 1), 1, -10 - (slotIndex * 90 * (gameNotifScale or 1)))
 	frame.AnchorPoint = Vector2.new(0, 1)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	frame.BorderSizePixel = 0
 	frame.ClipsDescendants = true
 	frame.Parent = notifGui
+
+	-- Notification Size (Settings): scales the whole card and its contents
+	local notifUiScale = Instance.new("UIScale")
+	notifUiScale.Scale = gameNotifScale or 1
+	notifUiScale.Parent = frame
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
@@ -3737,6 +3754,7 @@ animationStyle = 1
 animStyles = {"Scale", "Fade Only", "Slide Left", "Slide Right", "Slide Up", "Bounce", "Scale+Fade"}
 loadingAnimStyle = 1
 loadingAnimStyles = {"Letter by Letter", "Fade In", "Scale Up", "Slide Up"}
+loadingScreenTime = 1.5 -- total splash ("Adrenalin.win" preview) duration in seconds (Settings tab)
 menuAppearStyle = 1
 menuAppearStyles = {"None", "Fade In", "Scale Up", "Slide Down", "Bounce", "Blur Reveal"}
 mainBgImageUrl = ""
@@ -3791,7 +3809,13 @@ mainMenuHeight = 230
 -- Loading Screen (Mobile-optimized)
 -- ============================================
 function playLoadingScreen()
-	local LOADING_DURATION = 0.6
+	local LOADING_DURATION = math.max(0.05, (tonumber(loadingScreenTime) or 1.5) - 0.9) -- hold = total - intro(~0.55s) - outro(~0.35s)
+	-- The splash plays BEFORE the config-apply step at the very end of the
+	-- script, so read the saved style/duration straight from the raw config.
+	if loadedConfig and loadedConfig.values then
+		loadingAnimStyle = tonumber(loadedConfig.values.loadingAnimStyle) or loadingAnimStyle
+		loadingScreenTime = tonumber(loadedConfig.values.loadingScreenTime) or loadingScreenTime
+	end
 	local style = loadingAnimStyles[loadingAnimStyle] or "Letter by Letter"
 
 	local blur = Instance.new("BlurEffect")
@@ -6663,19 +6687,16 @@ function executeNanFlingNames(names)
 		if Players:FindFirstChild(name) and not isPlayerWhitelisted(name) then
 			nanFlingTargetName = name
 			executeNanFling()
-			task.wait(1.6)
-			-- MOBILE FIX: on low-FPS devices the fling can need more time than
-			-- on desktop. Wait until the target actually dies (up to 3 extra
-			-- seconds) before starting the next fling, otherwise the next
-			-- executeNanFling() cancels this one mid-air and only the LAST
-			-- selected player ends up killed.
-			local deadline = os.clock() + 3
+			-- Per-target budget: 1.5 seconds flat. Move on to the next target
+			-- EARLIER the moment this one is confirmed dead, so the next fling
+			-- never cancels a fling that is still needed.
+			local deadline = os.clock() + 1.5
 			while os.clock() < deadline do
 				local tp = Players:FindFirstChild(name)
 				local tc = tp and tp.Character
 				local th = tc and tc:FindFirstChildOfClass("Humanoid")
 				if not tp or not th or th.Health <= 0 then break end
-				task.wait(0.1)
+				task.wait(0.05)
 			end
 		end
 	end
@@ -6738,17 +6759,15 @@ function executeNanFlingEveryone()
 	for i, name in ipairs(targets) do
 		nanFlingTargetName = name
 		executeNanFling()
-		-- Wait fling duration only (1.5s). Next executeNanFling call cancels restore via nanFlingCallCounter.
-		task.wait(1.6)
-		-- MOBILE FIX: also wait until the target actually dies (up to 3 extra
-		-- seconds) so the next fling cannot cancel this one on low-FPS devices.
-		local deadline = os.clock() + 3
+		-- Per-target budget: 1.5 seconds flat. Move on to the next target
+		-- EARLIER the moment this one is confirmed dead.
+		local deadline = os.clock() + 1.5
 		while os.clock() < deadline do
 			local tp = Players:FindFirstChild(name)
 			local tc = tp and tp.Character
 			local th = tc and tc:FindFirstChildOfClass("Humanoid")
 			if not tp or not th or th.Health <= 0 then break end
-			task.wait(0.1)
+			task.wait(0.05)
 		end
 	end
 
@@ -8379,7 +8398,7 @@ function showInstantRoleLabel(text, color)
 	lbl.Name = "RoleLabel"
 	lbl.AnchorPoint = Vector2.new(0.5, 0.5)
 	lbl.Position = UDim2.new(instantRolePosXScale, 0, instantRolePosYScale, 0)
-	lbl.Size = UDim2.new(instantRoleSizeXScale, 0, instantRoleSizeYScale, 0)
+	lbl.Size = UDim2.new(instantRoleSizeXScale * (gameNotifScale or 1), 0, instantRoleSizeYScale * (gameNotifScale or 1), 0)
 	lbl.BackgroundTransparency = 1
 	lbl.Text = text
 	lbl.TextColor3 = color
@@ -8806,6 +8825,7 @@ end)
 -- Game Notifications System
 -- ============================================
 gameNotifEnabled = false
+gameNotifScale = 1 -- Notification Size (Settings tab): 1 = 100%
 gameNotifLastRound = ""
 gameNotifPrevRoles = nil
 gameNotifPrevMurdererAlive = true
@@ -8832,12 +8852,17 @@ function gameNotifSend(title, text, color, strokeColor, plr, userId)
 
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.new(0, 340, 0, 0)
-	frame.Position = UDim2.new(1, -350, 1, -10 - (slotIndex * 90))
+	frame.Position = UDim2.new(1, -350 * (gameNotifScale or 1), 1, -10 - (slotIndex * 90 * (gameNotifScale or 1)))
 	frame.AnchorPoint = Vector2.new(0, 1)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	frame.BorderSizePixel = 0
 	frame.ClipsDescendants = true
 	frame.Parent = notifGui
+
+	-- Notification Size (Settings): scales the whole card and its contents
+	local notifUiScale = Instance.new("UIScale")
+	notifUiScale.Scale = gameNotifScale or 1
+	notifUiScale.Parent = frame
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
@@ -8951,12 +8976,17 @@ function gameNotifSendWithUserId(title, text, color, strokeColor, userId)
 
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.new(0, 340, 0, 0)
-	frame.Position = UDim2.new(1, -350, 1, -10 - (slotIndex * 90))
+	frame.Position = UDim2.new(1, -350 * (gameNotifScale or 1), 1, -10 - (slotIndex * 90 * (gameNotifScale or 1)))
 	frame.AnchorPoint = Vector2.new(0, 1)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	frame.BorderSizePixel = 0
 	frame.ClipsDescendants = true
 	frame.Parent = notifGui
+
+	-- Notification Size (Settings): scales the whole card and its contents
+	local notifUiScale = Instance.new("UIScale")
+	notifUiScale.Scale = gameNotifScale or 1
+	notifUiScale.Parent = frame
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
@@ -9043,7 +9073,7 @@ end
 
 function gameNotifRepositionAll()
 	for i, frame in ipairs(gameNotifActiveNotifs) do
-		local targetPos = UDim2.new(1, -350, 1, -10 - ((i - 1) * 90))
+		local targetPos = UDim2.new(1, -350 * (gameNotifScale or 1), 1, -10 - ((i - 1) * 90 * (gameNotifScale or 1)))
 		TweenService:Create(frame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Position = targetPos
 		}):Play()
@@ -9068,12 +9098,17 @@ function gameNotifSendRound(murdererName, sheriffName)
 
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.new(0, 340, 0, 0)
-	frame.Position = UDim2.new(1, -350, 1, -10 - (slotIndex * 90))
+	frame.Position = UDim2.new(1, -350 * (gameNotifScale or 1), 1, -10 - (slotIndex * 90 * (gameNotifScale or 1)))
 	frame.AnchorPoint = Vector2.new(0, 1)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	frame.BorderSizePixel = 0
 	frame.ClipsDescendants = true
 	frame.Parent = notifGui
+
+	-- Notification Size (Settings): scales the whole card and its contents
+	local notifUiScale = Instance.new("UIScale")
+	notifUiScale.Scale = gameNotifScale or 1
+	notifUiScale.Parent = frame
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
@@ -13446,6 +13481,7 @@ autofarmStuckSince = nil          -- os.clock() when we first noticed being stuc
 autofarmStuckLastPos = nil        -- last known position (Vector3)
 autofarmStuckCheckAt = 0          -- os.clock() of last distance check
 autofarmStuckLastBag = nil        -- bag count at the last stuck check (progress = not stuck)
+autofarmLastFlightPos = nil       -- flight position we wrote last frame (dead-reckoned base)
 AUTOFARM_STUCK_TIMEOUT = 5       -- seconds of being stuck before auto TP
 AUTOFARM_STUCK_MIN_DIST = 5      -- studs: if we moved less than this in 1 second, we're stuck
 
@@ -13892,6 +13928,7 @@ function autofarmStopFlight()
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	if hum then pcall(function() hum.PlatformStand = false end) end
+	autofarmLastFlightPos = nil
 end
 
 -- Pause flight between coins WITHOUT dropping the character: zero velocity,
@@ -13902,6 +13939,14 @@ function autofarmPauseFlight()
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if hrp then
 		pcall(function()
+			-- MOBILE FIX: hold the exact hover position. Zeroing the velocity
+			-- alone still lets gravity drag the character down a little every
+			-- frame on low-FPS devices (the visible dip between coins).
+			if autofarmLastFlightPos and (hrp.Position - autofarmLastFlightPos).Magnitude < 4 then
+				hrp.CFrame = CFrame.new(autofarmLastFlightPos) * autofarmLieCF
+			else
+				autofarmLastFlightPos = hrp.Position
+			end
 			hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 		end)
@@ -14208,13 +14253,24 @@ function startAutofarm()
 						-- NEVER more than autofarmSpeed * dt in ANY direction:
 						-- ascents, descents and level changes are all perfectly
 						-- smooth at the same constant speed.
-						local delta = target - hrp.Position
+						-- MOBILE FIX: dead-reckoned flight base. On low-FPS devices
+						-- gravity pulls the character down BETWEEN Heartbeat frames;
+						-- using the sagged hrp.Position as the movement base made
+						-- that sag accumulate (the sinking while collecting coins).
+						-- Fly from the position WE wrote last frame instead, unless
+						-- something external moved the character (> 4 studs).
+						local basePos = hrp.Position
+						if autofarmLastFlightPos and (basePos - autofarmLastFlightPos).Magnitude < 4 then
+							basePos = autofarmLastFlightPos
+						end
+						local delta = target - basePos
 						local dMag = delta.Magnitude
 						local maxStep = autofarmSpeed * math.min(dt, autofarmMaxStepDt)
-						local newPos = hrp.Position
+						local newPos = basePos
 						if dMag > 0.05 then
 							newPos = newPos + delta * (math.min(maxStep, dMag) / dMag)
 						end
+						autofarmLastFlightPos = newPos
 						pcall(function()
 							hrp.CFrame = CFrame.new(newPos) * autofarmLieCF
 						end)
@@ -15189,7 +15245,10 @@ task.spawn(function()
 	local aloneSince = nil
 	local hopInProgress = false
 	while task.wait(2) do
-		if autofarmServerHopEnabled and not hopInProgress then
+		if not autofarmEnabled then
+			-- Autofarm sub-feature: must not act while the farm itself is OFF
+			aloneSince = nil
+		elseif autofarmServerHopEnabled and not hopInProgress then
 			if #Players:GetPlayers() <= 1 then
 				aloneSince = aloneSince or os.clock()
 				if (os.clock() - aloneSince) >= 10 then
@@ -19223,6 +19282,92 @@ end)
 	end)
 
 -- ============== Loading Animation Style ==============
+-- Notification Size (%)
+notifSizeRow = Instance.new("Frame")
+notifSizeRow.Size = UDim2.new(1, 0, 0, 42)
+notifSizeRow.BackgroundTransparency = 1
+notifSizeRow.LayoutOrder = 715.3
+notifSizeRow.Parent = categoryFrames["Settings"]
+
+notifSizeLabel = Instance.new("TextLabel")
+notifSizeLabel.Size = UDim2.new(1, -82, 1, 0)
+notifSizeLabel.BackgroundTransparency = 1
+notifSizeLabel.Text = "Notification Size (%)"
+notifSizeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+notifSizeLabel.Font = Enum.Font.SourceSansBold
+notifSizeLabel.TextSize = 16
+notifSizeLabel.TextXAlignment = Enum.TextXAlignment.Left
+notifSizeLabel.Parent = notifSizeRow
+
+notifSizeInput = Instance.new("TextBox")
+notifSizeInput.Size = UDim2.new(0, 74, 1, 0)
+notifSizeInput.Position = UDim2.new(1, -78, 0, 0)
+notifSizeInput.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+notifSizeInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+notifSizeInput.Text = tostring(math.floor(gameNotifScale * 100 + 0.5))
+notifSizeInput.PlaceholderText = "100"
+notifSizeInput.Font = Enum.Font.SourceSansBold
+notifSizeInput.TextSize = 15
+notifSizeInput.ClearTextOnFocus = false
+notifSizeInput.Parent = notifSizeRow
+
+notifSizeInputCorner = Instance.new("UICorner")
+notifSizeInputCorner.CornerRadius = UDim.new(0, 6)
+notifSizeInputCorner.Parent = notifSizeInput
+
+notifSizeInput.FocusLost:Connect(function()
+	local val = tonumber(notifSizeInput.Text)
+	if val and val >= 30 and val <= 300 then
+		gameNotifScale = val / 100
+	else
+		notifSizeInput.Text = tostring(math.floor(gameNotifScale * 100 + 0.5))
+	end
+	saveConfig()
+end)
+
+-- Loading Screen Time (seconds)
+loadingTimeRow = Instance.new("Frame")
+loadingTimeRow.Size = UDim2.new(1, 0, 0, 42)
+loadingTimeRow.BackgroundTransparency = 1
+loadingTimeRow.LayoutOrder = 715.4
+loadingTimeRow.Parent = categoryFrames["Settings"]
+
+loadingTimeLabel = Instance.new("TextLabel")
+loadingTimeLabel.Size = UDim2.new(1, -82, 1, 0)
+loadingTimeLabel.BackgroundTransparency = 1
+loadingTimeLabel.Text = "Loading Screen Time (s)"
+loadingTimeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+loadingTimeLabel.Font = Enum.Font.SourceSansBold
+loadingTimeLabel.TextSize = 16
+loadingTimeLabel.TextXAlignment = Enum.TextXAlignment.Left
+loadingTimeLabel.Parent = loadingTimeRow
+
+loadingTimeInput = Instance.new("TextBox")
+loadingTimeInput.Size = UDim2.new(0, 74, 1, 0)
+loadingTimeInput.Position = UDim2.new(1, -78, 0, 0)
+loadingTimeInput.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+loadingTimeInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+loadingTimeInput.Text = tostring(loadingScreenTime)
+loadingTimeInput.PlaceholderText = "1.5"
+loadingTimeInput.Font = Enum.Font.SourceSansBold
+loadingTimeInput.TextSize = 15
+loadingTimeInput.ClearTextOnFocus = false
+loadingTimeInput.Parent = loadingTimeRow
+
+loadingTimeInputCorner = Instance.new("UICorner")
+loadingTimeInputCorner.CornerRadius = UDim.new(0, 6)
+loadingTimeInputCorner.Parent = loadingTimeInput
+
+loadingTimeInput.FocusLost:Connect(function()
+	local val = tonumber(loadingTimeInput.Text)
+	if val and val >= 0.5 and val <= 10 then
+		loadingScreenTime = val
+	else
+		loadingTimeInput.Text = tostring(loadingScreenTime)
+	end
+	saveConfig()
+end)
+
 loadingAnimStyleRow = Instance.new("Frame")
 loadingAnimStyleRow.Size = UDim2.new(1, 0, 0, 42)
 loadingAnimStyleRow.BackgroundTransparency = 1
@@ -22065,6 +22210,8 @@ function restoreFullConfig()
 		if c.values.btnPressAnimationEnabled ~= nil then btnPressAnimationEnabled = c.values.btnPressAnimationEnabled end
 		if c.values.animationStyle ~= nil then animationStyle = c.values.animationStyle end
 		if c.values.loadingAnimStyle ~= nil then loadingAnimStyle = c.values.loadingAnimStyle end
+		if c.values.loadingScreenTime ~= nil then loadingScreenTime = c.values.loadingScreenTime end
+		if c.values.gameNotifScale ~= nil then gameNotifScale = c.values.gameNotifScale end
 		if c.values.menuAppearStyle ~= nil then menuAppearStyle = c.values.menuAppearStyle end
 		if c.values.mainBgImageUrl ~= nil then mainBgImageUrl = c.values.mainBgImageUrl end
 		if c.values.clickSoundPath ~= nil then clickSoundPath = c.values.clickSoundPath end
@@ -22358,6 +22505,12 @@ function restoreFullConfig()
 	end
 	if fpsPingHeightInput and c.values and c.values.fpsPingBtnHeight then
 		fpsPingHeightInput.Text = tostring(c.values.fpsPingBtnHeight)
+	end
+	if loadingTimeInput and c.values and c.values.loadingScreenTime then
+		loadingTimeInput.Text = tostring(c.values.loadingScreenTime)
+	end
+	if notifSizeInput and c.values and c.values.gameNotifScale then
+		notifSizeInput.Text = tostring(math.floor(c.values.gameNotifScale * 100 + 0.5))
 	end
 	if fovInputBox and c.values and c.values.customFov then
 		fovInputBox.Text = tostring(c.values.customFov)
