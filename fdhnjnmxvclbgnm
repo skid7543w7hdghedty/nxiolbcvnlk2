@@ -1,4 +1,4 @@
---// Services
+Й--// Services
 player = game.Players.LocalPlayer
 playerGui = player:WaitForChild("PlayerGui")
 UserInputService = game:GetService("UserInputService")
@@ -273,11 +273,9 @@ function saveConfig()
 	config.values.autofarmSessionElapsed = autofarmSessionStart and (os.clock() - autofarmSessionStart) or 0
 	if trollPicker then config.pickerCollapsed.Troll = trollPicker.collapsed end
 
-	if resetPicker then
-		config.pickerCollapsed.Reset = resetPicker.collapsed
-		config.pickerMultiSelect = config.pickerMultiSelect or {}
-		config.pickerMultiSelect.Reset = resetPicker.selectedNames
-	end
+	-- Reset multi-select is intentionally NOT saved: selections must not
+	-- survive a server hop (players from another server would linger).
+	if resetPicker then config.pickerCollapsed.Reset = resetPicker.collapsed end
 	if shootPicker then config.pickerCollapsed.Shoot = shootPicker.collapsed end
 	if killPicker then config.pickerCollapsed.Kill = killPicker.collapsed end
 	if watchMurdererPicker then config.pickerCollapsed.WatchMurderer = watchMurdererPicker.collapsed end
@@ -3793,7 +3791,7 @@ mainMenuHeight = 230
 -- Loading Screen (Mobile-optimized)
 -- ============================================
 function playLoadingScreen()
-	local LOADING_DURATION = 1.5
+	local LOADING_DURATION = 0.6
 	local style = loadingAnimStyles[loadingAnimStyle] or "Letter by Letter"
 
 	local blur = Instance.new("BlurEffect")
@@ -3831,7 +3829,7 @@ function playLoadingScreen()
 
 	TweenService:Create(blur, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = 50}):Play()
 	TweenService:Create(blackFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.6}):Play()
-	task.wait(0.3)
+	task.wait(0.15)
 
 	local loadText = "Adrenalin.win"
 	local textObjs = {}
@@ -3862,7 +3860,7 @@ function playLoadingScreen()
 
 		for i, lbl in ipairs(textObjs) do
 			TweenService:Create(lbl, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
-			task.wait(0.06)
+			task.wait(0.03)
 		end
 
 	elseif style == "Fade In" then
@@ -3929,7 +3927,7 @@ function playLoadingScreen()
 		end
 	end
 
-	task.wait(0.5)
+	task.wait(0.35)
 
 	loaderGui:Destroy()
 	blur:Destroy()
@@ -6636,6 +6634,20 @@ resetSelectedBtn.MouseButton1Click:Connect(function()
 	executeNanFlingNames(names)
 end)
 
+-- Drop players from the Reset selection the moment they leave the server
+Players.PlayerRemoving:Connect(function(plr)
+	if resetPicker and resetPicker.selectedNames then
+		local changed = false
+		for i = #resetPicker.selectedNames, 1, -1 do
+			if resetPicker.selectedNames[i] == plr.Name then
+				table.remove(resetPicker.selectedNames, i)
+				changed = true
+			end
+		end
+		if changed and resetPicker.refresh then pcall(resetPicker.refresh) end
+	end
+end)
+
 function executeNanFlingNames(names)
 	if not names or #names == 0 then return end
 	local char = player.Character
@@ -6647,10 +6659,24 @@ function executeNanFlingNames(names)
 	local originalPlatformStand = hum.PlatformStand
 
 	for _, name in ipairs(names) do
-		if not isPlayerWhitelisted(name) then
+		-- Skip players that are not on this server (stale selections)
+		if Players:FindFirstChild(name) and not isPlayerWhitelisted(name) then
 			nanFlingTargetName = name
 			executeNanFling()
 			task.wait(1.6)
+			-- MOBILE FIX: on low-FPS devices the fling can need more time than
+			-- on desktop. Wait until the target actually dies (up to 3 extra
+			-- seconds) before starting the next fling, otherwise the next
+			-- executeNanFling() cancels this one mid-air and only the LAST
+			-- selected player ends up killed.
+			local deadline = os.clock() + 3
+			while os.clock() < deadline do
+				local tp = Players:FindFirstChild(name)
+				local tc = tp and tp.Character
+				local th = tc and tc:FindFirstChildOfClass("Humanoid")
+				if not tp or not th or th.Health <= 0 then break end
+				task.wait(0.1)
+			end
 		end
 	end
 
@@ -6714,6 +6740,16 @@ function executeNanFlingEveryone()
 		executeNanFling()
 		-- Wait fling duration only (1.5s). Next executeNanFling call cancels restore via nanFlingCallCounter.
 		task.wait(1.6)
+		-- MOBILE FIX: also wait until the target actually dies (up to 3 extra
+		-- seconds) so the next fling cannot cancel this one on low-FPS devices.
+		local deadline = os.clock() + 3
+		while os.clock() < deadline do
+			local tp = Players:FindFirstChild(name)
+			local tc = tp and tp.Character
+			local th = tc and tc:FindFirstChildOfClass("Humanoid")
+			if not tp or not th or th.Health <= 0 then break end
+			task.wait(0.1)
+		end
 	end
 
 	-- Cancel the last fling's restore phase
@@ -13409,6 +13445,7 @@ autofarmAutoKillSheriffEnabled = false
 autofarmStuckSince = nil          -- os.clock() when we first noticed being stuck
 autofarmStuckLastPos = nil        -- last known position (Vector3)
 autofarmStuckCheckAt = 0          -- os.clock() of last distance check
+autofarmStuckLastBag = nil        -- bag count at the last stuck check (progress = not stuck)
 AUTOFARM_STUCK_TIMEOUT = 5       -- seconds of being stuck before auto TP
 AUTOFARM_STUCK_MIN_DIST = 5      -- studs: if we moved less than this in 1 second, we're stuck
 
@@ -13920,6 +13957,11 @@ function startAutofarm()
 	task.spawn(function()
 		while autofarmEnabled do
 			local dt = RunService.Heartbeat:Wait()
+			-- MOBILE FIX: run each farm frame inside pcall - one transient error
+			-- (destroyed coin mid-frame, GUI hiccup, executor quirk) must not
+			-- silently kill the whole farm loop. A dead loop = falling character
+			-- and a stuck protection that never fires.
+			local okFrame = pcall(function()
 			local char = player.Character
 			local hum = char and char:FindFirstChildOfClass("Humanoid")
 			local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -13972,6 +14014,38 @@ function startAutofarm()
 					if bagCount > autofarmCollected then autofarmCollected = bagCount end
 				end
 				local effectiveCollected = math.max(autofarmCollected, bagCount or 0)
+
+				-- MOBILE FIX: independent stuck watchdog. The original detector only
+				-- ran while actively flying to a coin, so a farm frozen in the
+				-- hover/pause states (or by any mobile-specific glitch) was never
+				-- rescued. This one runs on EVERY farming frame: if we are alive in
+				-- the round, the round is not finished, and for AUTOFARM_STUCK_TIMEOUT
+				-- seconds we neither moved more than AUTOFARM_STUCK_MIN_DIST studs per
+				-- second nor collected a single coin - teleport back to the map.
+				if container and not autofarmRoundFinished then
+					local nowW = os.clock()
+					if (nowW - autofarmStuckCheckAt) >= 1 then
+						autofarmStuckCheckAt = nowW
+						local curPosW = hrp.Position
+						local movedW = autofarmStuckLastPos and (curPosW - autofarmStuckLastPos).Magnitude or math.huge
+						local madeProgress = (autofarmStuckLastBag == nil) or (effectiveCollected > autofarmStuckLastBag)
+						if movedW < AUTOFARM_STUCK_MIN_DIST and not madeProgress then
+							if not autofarmStuckSince then
+								autofarmStuckSince = nowW
+							elseif (nowW - autofarmStuckSince) >= AUTOFARM_STUCK_TIMEOUT then
+								autofarmStuckSince = nil
+								autofarmStuckLastPos = nil
+								autofarmStuckLastBag = nil
+								notify("Autofarm", "Stuck detected - teleporting to map...", 2)
+								pcall(tpToMap)
+							end
+						else
+							autofarmStuckSince = nil
+						end
+						autofarmStuckLastPos = curPosW
+						autofarmStuckLastBag = effectiveCollected
+					end
+				end
 
 				if not container or autofarmRoundFinished then
 					autofarmStopFlight()
@@ -14177,6 +14251,7 @@ function startAutofarm()
 					end
 				end
 			end
+			end)
 		end
 		autofarmStopFlight()
 	end)
@@ -22404,6 +22479,8 @@ function restoreFullConfig()
 		coinAuraEnabled = false; enableCoinAura()
 		if btn.coinAura then setToggleState(btn.coinAura, true, "Coin Aura: ON", "Coin Aura: OFF") end
 	end
+	-- Restore the Coin Aura radius input text
+	if ui.coinAuraRadiusInput then ui.coinAuraRadiusInput.Text = tostring(coinAuraRadius) end
 
 	if T.headlessKorbloxEnabled then
 		headlessKorbloxEnabled = false; enableHeadlessKorblox()
@@ -22648,13 +22725,8 @@ function restoreFullConfig()
 			end
 		end
 	end
-	-- Restore picker multi-select states
-	if c and c.pickerMultiSelect then
-		if resetPicker and c.pickerMultiSelect.Reset then
-			resetPicker.selectedNames = c.pickerMultiSelect.Reset
-			if resetPicker.refresh then resetPicker.refresh() end
-		end
-	end
+	-- Reset multi-select is intentionally NOT restored: after a rejoin or a
+	-- server hop the old selection would point at players who are not here.
 end
 
 -- Config restore Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘ - UI РЎС“Р В¶Р Вµ Р С–Р С•РЎвЂљР С•Р Р† Р С” РЎРЊРЎвЂљР С•Р СРЎС“ Р СР С•Р СР ВµР Р…РЎвЂљРЎС“
@@ -22682,6 +22754,10 @@ do
 		if lmbShootButton then lmbShootButton.Parent = sheriffFrame; lmbShootButton.LayoutOrder = 252 end
 		-- Move Piercer Bullet
 		if wallBangButton then wallBangButton.Parent = sheriffFrame; wallBangButton.LayoutOrder = 253 end
+		-- Move Flick Shot (right after Piercer Bullet)
+		if flickShotButton then flickShotButton.Parent = sheriffFrame; flickShotButton.LayoutOrder = 253.1 end
+		-- Move Spin 360
+		if spin360Button then spin360Button.Parent = sheriffFrame; spin360Button.LayoutOrder = 253.2 end
 		-- Move Shoot Picker
 		if shootPicker and shootPicker.statusLabel then
 			local titleBar = shootPicker.statusLabel.Parent
@@ -22754,6 +22830,11 @@ do
 		if autoKillEveryoneNoFriendsBtn then autoKillEveryoneNoFriendsBtn.Parent = murdererFrame; autoKillEveryoneNoFriendsBtn.LayoutOrder = 277 end
 		-- Move Auto Kill Sheriff
 		if autoKillSheriffBtn then autoKillSheriffBtn.Parent = murdererFrame; autoKillSheriffBtn.LayoutOrder = 278 end
+		-- Move Throwing Knife Aura (dual row) right after Auto Kill Sheriff
+		if throwingKnifeAuraButton then
+			local tkaRow = throwingKnifeAuraButton.Parent
+			if tkaRow then tkaRow.Parent = murdererFrame; tkaRow.LayoutOrder = 278.2 end
+		end
 		-- Move KillAura (dual row: reachButton.Parent is a row frame)
 		if reachButton then
 			local row = reachButton.Parent
