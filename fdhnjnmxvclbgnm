@@ -21,6 +21,14 @@ function safeFireTouch(a, b)
 end
 
 _playerDataRemote = nil
+function getPlayerDataRemote()
+	if _playerDataRemote and _playerDataRemote.Parent then
+		return _playerDataRemote
+	end
+	_playerDataRemote = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+	return _playerDataRemote
+end
+
 _roleDataCache = nil
 _roleDataCacheAt = 0
 _roleDataInFlight = false
@@ -253,6 +261,8 @@ function saveConfig()
 	config.values.autofarmWebhookUrl = AUTOFARM_WEBHOOK_URL
 	config.values.autofarmTargetCoins = autofarmTargetCoins
 	config.values.autofarmSpeed = autofarmSpeed
+	config.values.autofarmAvoidMurdererModeIndex = autofarmAvoidMurdererModeIndex
+	config.values.autofarmAvoidMurdererDist = autofarmAvoidMurdererDist
 	config.values.autofarmTpModeIndex = autofarmTpModeIndex
 	config.values.autofarmTpEnabled = autofarmTpEnabled
 	config.values.autofarmPreTpModeIndex = autofarmPreTpModeIndex
@@ -1028,6 +1038,17 @@ reachEnabled = false
 reachConnection = nil
 range = 8
 
+-- Air Strafe variables
+airStrafeEnabled = false
+airStrafeConnection = nil
+airStrafeInputConnection = nil
+airStrafeMultiplier = 1.7
+maxAirSpeed = 20
+strafeInterval = 1.5
+lastKeyTime = 0
+lastKey = nil
+isStrafing = false
+
 -- Reach function
 reachCachePlayers = {}
 function reachBuildCache()
@@ -1037,66 +1058,85 @@ reachBuildCache()
 Players.PlayerAdded:Connect(reachBuildCache)
 Players.PlayerRemoving:Connect(reachBuildCache)
 
-function toggleReach()
-	reachEnabled = not reachEnabled
-	if reachEnabled then
-		reachConnection = RunService.Heartbeat:Connect(function()
-			local myChar = player.Character
-			if not myChar then return end
-			local hrp = myChar:FindFirstChild("HumanoidRootPart")
-			local myHum = myChar:FindFirstChildOfClass("Humanoid")
-			if not (hrp and myHum and myHum.Health > 0) then return end
+-- KillAura: while the knife is IN YOUR HAND, slashing (clicking to cut) kills
+-- every alive player within `range` studs of you. It never pulls anyone toward
+-- you and never auto-kills on its own — the kill only fires the moment you
+-- actually swing the knife. Distance is measured from you to each victim, so a
+-- player you merely walk past (e.g. within 7 studs) is killed when you slash.
+reachActivatedConns = {}
+reachHookConns = {}
+reachHookedTools = {}
 
-			local tool = myChar:FindFirstChildOfClass("Tool")
-			if not (tool and tool:FindFirstChild("Handle")) then return end
-			local handle = tool.Handle
-
-			-- Real position (works with Anti-Shoot / Desync)
-			local realCF = killGetRealCFrame()
-
-			local p = reachCachePlayers
-			local idx = 0
-			for i = 1, #p do
-				local plr = p[i]
-				if plr ~= player then
-					local v = plr.Character
-					if v then
-						local tRoot = v:FindFirstChild("HumanoidRootPart")
-						local tHum = v:FindFirstChildOfClass("Humanoid")
-						if tRoot and tHum and tHum.Health > 0 then
-							local dist = (realCF.Position - tRoot.Position).Magnitude
-							if dist <= range then
-								idx = idx + 1
-								-- Bring target to our real position
-								pcall(function()
-									tRoot.CFrame = realCF * CFrame.new(idx * 0.5, 0, 0)
-								end)
-								-- Strip their weapons
-								pcall(function()
-									local bp = plr:FindFirstChild("Backpack")
-									if bp then bp:ClearAllChildren() end
-									for _, child in pairs(v:GetChildren()) do
-										if child:IsA("Tool") then child:Destroy() end
-									end
-								end)
-								-- Knife: activate + firetouchinterest
-								pcall(function() tool:Activate() end)
-								for _, part in ipairs(v:GetDescendants()) do
-									if part:IsA("BasePart") then
-										safeFireTouch(handle, part)
-									end
-								end
-							end
+function reachDoSlashKill()
+	if not reachEnabled then return end
+	local myChar = player.Character
+	local hrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+	if not (hrp and myHum and myHum.Health > 0) then return end
+	-- Only while the knife is actually equipped in your hand.
+	local tool = myChar:FindFirstChildOfClass("Tool")
+	if not (tool and tool.Name:lower():find("knife") and tool:FindFirstChild("Handle")) then return end
+	local handle = tool.Handle
+	local handleTouched = tkaGetHandleTouched()
+	local origin = killGetRealCFrame().Position
+	local p = reachCachePlayers
+	for i = 1, #p do
+		local plr = p[i]
+		if plr ~= player then
+			local v = plr.Character
+			local tRoot = v and v:FindFirstChild("HumanoidRootPart")
+			local tHum = v and v:FindFirstChildOfClass("Humanoid")
+			if tRoot and tHum and tHum.Health > 0
+				and (origin - tRoot.Position).Magnitude <= range then
+				for _, part in ipairs(v:GetDescendants()) do
+					if part:IsA("BasePart") then
+						if handleTouched then
+							pcall(function() handleTouched:FireServer(part) end)
 						end
+						safeFireTouch(handle, part)
 					end
 				end
 			end
-		end)
-	else
-		if reachConnection then
-			reachConnection:Disconnect()
-			reachConnection = nil
 		end
+	end
+end
+
+-- Hook a knife tool's Activated event so each swing triggers a distance kill.
+-- Guarded so the same tool instance is never hooked twice (avoids double hits).
+function reachHookTool(tool)
+	if not (tool and tool:IsA("Tool")) then return end
+	if not tool.Name:lower():find("knife") then return end
+	if reachHookedTools[tool] then return end
+	reachHookedTools[tool] = true
+	local conn = tool.Activated:Connect(function()
+		reachDoSlashKill()
+	end)
+	table.insert(reachActivatedConns, conn)
+end
+
+function reachWatchChar(char)
+	if not char then return end
+	local tool = char:FindFirstChildOfClass("Tool")
+	if tool then reachHookTool(tool) end
+	table.insert(reachHookConns, char.ChildAdded:Connect(function(ch)
+		if reachEnabled then reachHookTool(ch) end
+	end))
+end
+
+function toggleReach()
+	reachEnabled = not reachEnabled
+	if reachEnabled then
+		reachHookedTools = {}
+		reachWatchChar(player.Character)
+		table.insert(reachHookConns, player.CharacterAdded:Connect(function(newChar)
+			if reachEnabled then reachWatchChar(newChar) end
+		end))
+	else
+		for _, c in ipairs(reachActivatedConns) do pcall(function() c:Disconnect() end) end
+		for _, c in ipairs(reachHookConns) do pcall(function() c:Disconnect() end) end
+		reachActivatedConns = {}
+		reachHookConns = {}
+		reachHookedTools = {}
 	end
 end
 
@@ -2131,14 +2171,22 @@ function espHookGunDrop(gunDrop)
 	if espTrackedGuns[gunDrop] then return end
 	espCreateGunHighlight(gunDrop)
 	local _, distLabel = espCreateGunBillboard(gunDrop)
+	-- [perf] distance text only needs a few updates per second, not one per frame;
+	-- also skip the (expensive on mobile) TextLabel.Text write when unchanged
+	local lastGunDistText = nil
 	local conn = RunService.Heartbeat:Connect(function()
 		if not espEnabled then return end
+		if _espFrameCounter % 10 ~= 0 then return end
 		if not gunDrop or not gunDrop.Parent then return end
 		if distLabel then
 			local pos = espGetGunPosition(gunDrop)
 			if pos then
 				local dist = espGetDistFromPos(pos)
-				distLabel.Text = dist and ("[" .. tostring(dist) .. "m]") or ""
+				local txt = dist and ("[" .. tostring(dist) .. "m]") or ""
+				if txt ~= lastGunDistText then
+					lastGunDistText = txt
+					distLabel.Text = txt
+				end
 			end
 		end
 	end)
@@ -2230,12 +2278,14 @@ end)
 
 function espHookCharacter(plr, character)
 	character:WaitForChild("HumanoidRootPart", 10)
-	local myOffset = math.random(0, 2)
+	-- [perf] stagger players across 10 frames (~6 updates/sec each at 60fps) instead
+	-- of 3 -- role colors / name tags don't need 20 updates per second, and with a
+	-- full lobby this cuts ESP CPU cost by ~70%
+	local myOffset = math.random(0, 9)
 	local conn = RunService.Heartbeat:Connect(function()
 		if not espEnabled then return end
 		if not character.Parent then return end
-		-- Stagger players across 3 frames to reduce per-frame cost
-		if _espFrameCounter % 3 ~= myOffset then return end
+		if _espFrameCounter % 10 ~= myOffset then return end
 		espUpdatePlayer(plr)
 	end)
 	local prev = espTrackedData[plr]
@@ -5876,7 +5926,6 @@ resetWhitelist = {
 	["Erereer454"] = true,
 	["daniellfc09"] = true,
 	["Zero_RuO"] = true,
-	["zix338"] = true,
 }
 
 function isPlayerWhitelisted(name)
@@ -5993,7 +6042,24 @@ function executeNanFling()
 			return
 		end
 
-		hrp.CFrame = targetRoot.CFrame
+		-- [strict-down] Overlap the target from ABOVE (world space, over the head)
+		-- instead of inside their center. The direction a victim flies is decided
+		-- by the depenetration normal on THEIR client: overlapping the center makes
+		-- that normal random (often straight up into the sky), while hammering from
+		-- above forces it to point DOWN — under the map. NaN guard: once the victim
+		-- corrupts, their position turns NaN — keep the old behavior for that frame.
+		-- Offset 1.8: both HRPs are 2 studs tall, so contact needs the centers
+		-- closer than 2.0. Empirically tuned: 2.2 missed standing targets, 1.5
+		-- overlapped too deep (impulse escaped sideways/up), 1.9 was too thin —
+		-- replication jitter kept breaking the top contact, so moving/jumping
+		-- victims entered the hitbox from below and flew INTO THE SKY. 1.8
+		-- (0.2-stud overlap) is the sweet spot: ~9/10 flings go straight down.
+		local tp = targetRoot.Position
+		if tp.X == tp.X and tp.Y == tp.Y and tp.Z == tp.Z then
+			hrp.CFrame = CFrame.new(tp + Vector3.new(0, 1.8, 0))
+		else
+			hrp.CFrame = targetRoot.CFrame
+		end
 		hrp.AssemblyLinearVelocity = nanVector
 		hrp.AssemblyAngularVelocity = nanVector
 		pcall(function()
@@ -8171,6 +8237,354 @@ function disableHeadlessKorblox()
 	if headlessConn then headlessConn:Disconnect() headlessConn = nil end
 end
 
+-- ============================================
+-- Lay & Freeze (from IY) — Utilities tab
+-- ============================================
+layEnabled = false
+freezeEnabled = false
+
+function doLay()
+	local char = player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChildWhichIsA("Humanoid")
+	if not humanoid then return end
+	humanoid.Sit = true
+	task.wait(0.1)
+	if humanoid.RootPart then
+		humanoid.RootPart.CFrame = humanoid.RootPart.CFrame * CFrame.Angles(math.pi * 0.5, 0, 0)
+	end
+	for _, v in ipairs(humanoid:GetPlayingAnimationTracks()) do
+		v:Stop()
+	end
+end
+
+function doFreeze()
+	local char = player.Character
+	if not char then return end
+	for _, x in ipairs(char:GetDescendants()) do
+		if x:IsA("BasePart") and not x.Anchored then
+			x.Anchored = true
+		end
+	end
+end
+
+function doUnfreeze()
+	local char = player.Character
+	if not char then return end
+	for _, x in ipairs(char:GetDescendants()) do
+		if x:IsA("BasePart") and x.Anchored then
+			x.Anchored = false
+		end
+	end
+end
+
+function toggleLay()
+	layEnabled = not layEnabled
+	if layEnabled then
+		doLay()
+	else
+		local char = player.Character
+		if char then
+			local humanoid = char:FindFirstChildWhichIsA("Humanoid")
+			if humanoid then humanoid.Sit = false end
+		end
+	end
+end
+
+function toggleFreeze()
+	freezeEnabled = not freezeEnabled
+	if freezeEnabled then
+		doFreeze()
+	else
+		doUnfreeze()
+	end
+end
+
+currentCategory = "Utilities"
+layButton = createButton("LayButton", "Lay: OFF", 116.2)
+layButton.MouseButton1Click:Connect(function()
+	toggleLay()
+	setToggleState(layButton, layEnabled, "Lay: ON", "Lay: OFF")
+	setExtractedBtnState("Lay", layEnabled)
+end)
+
+freezeButton = createButton("FreezeButton", "Freeze: OFF", 116.3)
+freezeButton.MouseButton1Click:Connect(function()
+	toggleFreeze()
+	setToggleState(freezeButton, freezeEnabled, "Freeze: ON", "Freeze: OFF")
+	setExtractedBtnState("Freeze", freezeEnabled)
+end)
+
+-- ============================================================
+-- Instant Role Notify (Utilities) + Office3 gun/notify reliability fix
+-- ============================================================
+instantRoleNotifyEnabled = false
+-- Position/size stored as scale (0-1) so the label looks the same on phone, tablet and PC
+instantRolePosXScale = 0.5
+instantRolePosYScale = 0.4
+instantRoleSizeXScale = 0.3
+instantRoleSizeYScale = 0.08
+
+function showInstantRoleLabel(text, color)
+	local pg = player:FindFirstChild("PlayerGui")
+	if not pg then return end
+	local gui = pg:FindFirstChild("InstantRoleGui")
+	if not gui then
+		gui = Instance.new("ScreenGui")
+		gui.Name = "InstantRoleGui"
+		gui.ResetOnSpawn = false
+		gui.DisplayOrder = 999999
+		gui.IgnoreGuiInset = true
+		gui.Parent = pg
+	end
+	local old = gui:FindFirstChild("RoleLabel")
+	if old then old:Destroy() end
+	local lbl = Instance.new("TextLabel")
+	lbl.Name = "RoleLabel"
+	lbl.AnchorPoint = Vector2.new(0.5, 0.5)
+	lbl.Position = UDim2.new(instantRolePosXScale, 0, instantRolePosYScale, 0)
+	lbl.Size = UDim2.new(instantRoleSizeXScale, 0, instantRoleSizeYScale, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = text
+	lbl.TextColor3 = color
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextScaled = true
+	lbl.TextStrokeTransparency = 0.35
+	lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	lbl.Parent = gui
+	task.delay(4.5, function()
+		if lbl and lbl.Parent then lbl:Destroy() end
+	end)
+end
+
+-- Round-start detection based on the Murderer/Sheriff assignment (the same signal
+-- used by the round notification). Runs independently of the Notifications toggle.
+task.spawn(function()
+	task.wait(2)
+	local lastRoundKey = nil
+	while true do
+		task.wait(0.4)
+		if not instantRoleNotifyEnabled then continue end
+		local ok, roles = pcall(function()
+			return invokePlayerData()
+		end)
+		if ok and roles then
+			local murderer, sheriff = nil, nil
+			for name, data in pairs(roles) do
+				if data.Role == "Murderer" then murderer = name
+				elseif data.Role == "Sheriff" then sheriff = name end
+			end
+			if murderer and sheriff then
+				local roundKey = murderer .. "_" .. sheriff
+				if roundKey ~= lastRoundKey then
+					lastRoundKey = roundKey
+					local myData = roles[player.Name]
+					local roleText, roleColor
+					if myData and myData.Role == "Murderer" then
+						roleText, roleColor = "Murderer", Color3.fromRGB(255, 0, 0)
+					elseif myData and myData.Role == "Sheriff" then
+						roleText, roleColor = "Sheriff", Color3.fromRGB(0, 0, 255)
+					else
+						roleText, roleColor = "Innocent", Color3.fromRGB(0, 255, 0)
+					end
+					showInstantRoleLabel(roleText, roleColor)
+				end
+			end
+		end
+	end
+end)
+
+-- Utilities tab button
+do
+	local _prevCategory = currentCategory
+	currentCategory = "Utilities"
+	instantRoleNotifyBtn = createButton("InstantRoleNotifyButton", "Instant Role Notify: OFF", 116.5)
+	instantRoleNotifyBtn.MouseButton1Click:Connect(function()
+		instantRoleNotifyEnabled = not instantRoleNotifyEnabled
+		setToggleState(instantRoleNotifyBtn, instantRoleNotifyEnabled, "Instant Role Notify: ON", "Instant Role Notify: OFF")
+	end)
+	currentCategory = _prevCategory
+end
+
+-- ============================================================
+-- Show Round Timer (Utilities): reads Workspace.RoundTimerPart Time (seconds)
+-- and displays it as "Xm YYs" in white, slightly above the role notify label.
+-- ============================================================
+showRoundTimerEnabled = false
+roundTimerPosXScale = 0.5
+roundTimerPosYScale = 0.33
+roundTimerSizeXScale = 0.25
+roundTimerSizeYScale = 0.06
+
+function getRoundTimerSeconds()
+	local part = Workspace:FindFirstChild("RoundTimerPart")
+	if not part then return nil end
+	local t = part:GetAttribute("Time")
+	if t == nil then
+		local tv = part:FindFirstChild("Time")
+		if tv then
+			local ok, val = pcall(function() return tv.Value end)
+			if ok then t = val end
+		end
+	end
+	if type(t) == "string" then t = tonumber(t) end
+	if type(t) ~= "number" then return nil end
+	return t
+end
+
+function ensureRoundTimerLabel()
+	local pg = player:FindFirstChild("PlayerGui")
+	if not pg then return nil end
+	local gui = pg:FindFirstChild("RoundTimerGui")
+	if not gui then
+		gui = Instance.new("ScreenGui")
+		gui.Name = "RoundTimerGui"
+		gui.ResetOnSpawn = false
+		gui.DisplayOrder = 999999
+		gui.IgnoreGuiInset = true
+		gui.Parent = pg
+	end
+	local lbl = gui:FindFirstChild("TimerLabel")
+	if not lbl then
+		lbl = Instance.new("TextLabel")
+		lbl.Name = "TimerLabel"
+		lbl.AnchorPoint = Vector2.new(0.5, 0.5)
+		lbl.BackgroundTransparency = 1
+		lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+		lbl.Font = Enum.Font.GothamBold
+		lbl.TextScaled = true
+		lbl.TextStrokeTransparency = 0.35
+		lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		lbl.Parent = gui
+	end
+	lbl.Position = UDim2.new(roundTimerPosXScale, 0, roundTimerPosYScale, 0)
+	lbl.Size = UDim2.new(roundTimerSizeXScale, 0, roundTimerSizeYScale, 0)
+	return lbl
+end
+
+-- [perf + accuracy] Round timer: polls fast (every ~0.1s) so it appears the
+-- instant you enable it and stays in lock-step with the real countdown, but it
+-- only rewrites the label when the displayed second actually changes (no GUI
+-- churn / no lag). math.ceil matches the game's countdown so the value no longer
+-- trails the real timer by one second. Position/Size are re-applied only when
+-- the configured scales change.
+task.spawn(function()
+	local cachedLbl = nil
+	local lastText = nil
+	local lastPosX, lastPosY, lastSizeX, lastSizeY = nil, nil, nil, nil
+	while true do
+		task.wait(0.1)
+		if not showRoundTimerEnabled then
+			if cachedLbl and cachedLbl.Parent then cachedLbl.Visible = false end
+			cachedLbl = nil
+			lastText = nil
+			continue
+		end
+		if not cachedLbl or not cachedLbl.Parent then
+			cachedLbl = ensureRoundTimerLabel()
+			lastText = nil
+			lastPosX, lastPosY, lastSizeX, lastSizeY = nil, nil, nil, nil
+		end
+		if cachedLbl then
+			if roundTimerPosXScale ~= lastPosX or roundTimerPosYScale ~= lastPosY then
+				cachedLbl.Position = UDim2.new(roundTimerPosXScale, 0, roundTimerPosYScale, 0)
+				lastPosX, lastPosY = roundTimerPosXScale, roundTimerPosYScale
+			end
+			if roundTimerSizeXScale ~= lastSizeX or roundTimerSizeYScale ~= lastSizeY then
+				cachedLbl.Size = UDim2.new(roundTimerSizeXScale, 0, roundTimerSizeYScale, 0)
+				lastSizeX, lastSizeY = roundTimerSizeXScale, roundTimerSizeYScale
+			end
+			local secs = getRoundTimerSeconds()
+			if secs and secs > 0 then
+				local whole = math.ceil(secs)
+				local m = math.floor(whole / 60)
+				local r = whole % 60
+				local txt = string.format("%dm %02ds", m, r)
+				if txt ~= lastText then
+					cachedLbl.Text = txt
+					lastText = txt
+				end
+				if not cachedLbl.Visible then cachedLbl.Visible = true end
+			else
+				if cachedLbl.Visible then cachedLbl.Visible = false end
+			end
+		end
+	end
+end)
+
+-- Utilities tab button (placed right after Instant Role Notify)
+do
+	local _prevCategory = currentCategory
+	currentCategory = "Utilities"
+	showRoundTimerBtn = createButton("ShowRoundTimerButton", "Show Round Timer: OFF", 116.6)
+	showRoundTimerBtn.MouseButton1Click:Connect(function()
+		showRoundTimerEnabled = not showRoundTimerEnabled
+		setToggleState(showRoundTimerBtn, showRoundTimerEnabled, "Show Round Timer: ON", "Show Round Timer: OFF")
+	end)
+	currentCategory = _prevCategory
+end
+
+-- ============================================
+-- Custom Jump Power (Combat) — ported from desktop version
+-- ============================================
+customJumpPowerEnabled = false
+customJumpPowerValue = 50
+customJumpPowerConn = nil
+
+-- Custom Jump Power: continuously forces the Humanoid JumpPower to a value you
+-- choose (decimals like 56.4 allowed).
+function setupCustomJumpPower()
+	if customJumpPowerConn then customJumpPowerConn:Disconnect(); customJumpPowerConn = nil end
+	if not customJumpPowerEnabled then
+		-- Reverting: restore JumpPower to 50.5 when the feature is turned off.
+		local c = player.Character
+		local h = c and c:FindFirstChildOfClass("Humanoid")
+		if h then
+			pcall(function() h.UseJumpPower = true end)
+			h.JumpPower = 50.5
+		end
+		return
+	end
+	local function apply()
+		local c = player.Character
+		local h = c and c:FindFirstChildOfClass("Humanoid")
+		if h and h.Health > 0 then
+			if h.UseJumpPower ~= true then pcall(function() h.UseJumpPower = true end) end
+			if h.JumpPower ~= customJumpPowerValue then h.JumpPower = customJumpPowerValue end
+		end
+	end
+	customJumpPowerConn = RunService.Heartbeat:Connect(apply)
+	apply()
+end
+
+function toggleCustomJumpPower()
+	customJumpPowerEnabled = not customJumpPowerEnabled
+	setupCustomJumpPower()
+end
+
+do
+	local _prevCategory = currentCategory
+	currentCategory = "Combat"
+	customJumpPowerButton, customJumpPowerInput = createDualRow("CustomJumpPowerButton", "Jump Power: OFF", "Pwr", customJumpPowerValue, 216.5)
+	currentCategory = _prevCategory
+	customJumpPowerButton.MouseButton1Click:Connect(function()
+		toggleCustomJumpPower()
+		setToggleState(customJumpPowerButton, customJumpPowerEnabled, "Jump Power: ON", "Jump Power: OFF")
+		setExtractedBtnState("Jump Power", customJumpPowerEnabled)
+	end)
+	customJumpPowerInput.FocusLost:Connect(function()
+		local v = tonumber(customJumpPowerInput.Text)
+		if v and v > 0 then
+			customJumpPowerValue = v
+			if customJumpPowerEnabled then setupCustomJumpPower() end
+			saveConfig()
+		else
+			customJumpPowerInput.Text = tostring(customJumpPowerValue)
+		end
+	end)
+end
+
+
 btn.headlessBtn = createButton("HeadlessButton", "Headless & Korblox: OFF", 117)
 btn.headlessBtn.MouseButton1Click:Connect(function()
 	if headlessKorbloxEnabled then disableHeadlessKorblox() else enableHeadlessKorblox() end
@@ -9047,24 +9461,36 @@ local AimStats = game:GetService("Stats")
 aimWallbangEnabled = false
 aimAutoShotEnabled = false
 aimLmbShootEnabled = false
+flickShotEnabled = false
+flickShotDuration = 0.5
+spin360Enabled = false
+spin360Duration = 0.5
 aimTargetDot = nil
 
 AIM_CONFIG = {
 	pingScale          = 1.0,
-	extraLeadSec       = 0.01,
+	extraLeadSec       = 0.015,
 	renderDelta        = 1/60,
-	maxLeadSec         = 0.40,
+	maxLeadSec         = 0.45,
 	aimPart            = "Torso",          -- center mass for bigger hitbox
 	rolePollRate       = 0.15,
 	gravityComp        = true,
-	shotsPerClick      = 6,                -- 6 shots per click for maximum hit chance
+	shotsPerClick      = 1,                -- the gun fires ONE real bullet per shot; extra FireServer calls never spawn more bullets
 	shotSpacing        = 0.0,
-	wallbangOriginDist = 0.8,              -- very close origin = almost guaranteed piercer hit
-	autoShotCooldown   = 0.0,              -- fire every heartbeat for instant response
-	scatterRadius      = 0.2,              -- tight scatter only on moving targets
-	scatterShots       = 2,                -- fewer scatter = more center shots
+	wallbangOriginDist = 0.6,              -- very close origin = almost guaranteed piercer hit
+	autoShotCooldown   = 0.35,             -- min seconds between Auto Shot bursts (0.0 spammed 300+ remotes/sec and lagged the game)
+	autoShotBurst      = 1,                -- one real bullet per auto attempt too
+	scatterRadius      = 0.35,             -- scatter radius around the full-lead point (covers strafe direction changes)
+	scatterShots       = 2,
 	jumpAimYBoost      = 1.5,              -- higher Y offset for jumping targets
 	alwaysPierceOrigin = true,             -- always place origin next to target (bypass desync/invis)
+	velTrackAlpha      = 0.7,              -- smoothing for the measured-velocity tracker (higher = reacts faster to direction changes)
+	pathFanFracs       = {0, -0.4, 0.35, 0.7, 1.0, 1.4}, -- lead fractions covered by one burst (negative = behind current pos: covers strafe reversals)
+	pathSegHalf        = 2.4,              -- (legacy, kept for config compatibility)
+	sweepBackFrac      = -0.6,             -- single-bullet path ray: starts this far BEHIND the current position (in lead fractions)
+	sweepAheadFrac     = 1.3,              -- ...and ends this far PAST the full ping-lead point
+	stableWaitMax      = 0.25,             -- max seconds to wait for a stable velocity read before firing anyway
+	stableAngleDeg     = 25,               -- per-frame direction change below which the target counts as moving steadily
 }
 
 -- Our own role cache (used only when the ESP cache espRoles is not available)
@@ -9072,11 +9498,16 @@ aimRoleCache = nil
 
 function aimRefreshRoleNow()
 	local ok, result = pcall(function()
-		local remote = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+		-- aim needs the freshest possible data on gun pickup, so it bypasses the
+		-- shared 0.35s cache but still reuses the cached remote reference
+		local remote = getPlayerDataRemote()
 		return remote and remote:InvokeServer()
 	end)
 	if ok and type(result) == "table" then
 		aimRoleCache = result
+		-- feed the shared cache so other pollers skip their own InvokeServer
+		_roleDataCache = result
+		_roleDataCacheAt = os.clock()
 		return result
 	end
 	return aimRoleCache
@@ -9121,7 +9552,83 @@ local function aimIsAirborne(character)
 	return st == Enum.HumanoidStateType.Freefall or st == Enum.HumanoidStateType.Jumping
 end
 
-local function aimPredictTorso(character)
+-- Measured-velocity tracker: AssemblyLinearVelocity is often WRONG for other
+-- players (spoofed by their own desync, zeroed while the physics assembly
+-- sleeps, or stale under lag) — that was a major source of misses on moving
+-- targets. We measure the REAL replicated motion from position deltas and
+-- smooth it, then use whichever velocity (reported vs measured) is more
+-- trustworthy. Weak keys so dead characters get garbage-collected.
+local aimVelTrack = setmetatable({}, {__mode = "k"})
+local function aimTrackVelocity(character)
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then return Vector3.new(0, 0, 0) end
+	local now = os.clock()
+	local rec = aimVelTrack[character]
+	local p = root.Position
+	if not rec then
+		rec = {pos = p, t = now, vel = root.AssemblyLinearVelocity}
+		aimVelTrack[character] = rec
+		return rec.vel
+	end
+	local dt = now - rec.t
+	if dt >= 1 / 120 then
+		local measured = (p - rec.pos) / dt
+		-- Teleport-like jump (respawn/desync snap): don't poison the tracker
+		if measured.Magnitude > 90 then
+			measured = root.AssemblyLinearVelocity
+		end
+		local a = AIM_CONFIG.velTrackAlpha or 0.4
+		rec.vel = rec.vel + (measured - rec.vel) * a
+		rec.pos, rec.t = p, now
+	end
+	return rec.vel
+end
+
+-- [flick/spin accuracy] After a turn animation (Flick Shot / Spin 360) or any
+-- idle gap, the measured-velocity tracker is stale, so the first prediction is
+-- averaged over the whole delay and misses. Priming discards the stale record
+-- and takes fresh short-dt samples so the shot predicts the target's CURRENT
+-- motion. Called before every Shoot Murderer shot. aimVelTrack is an upvalue
+-- from the enclosing chunk, so this global can reset it.
+function aimPrimeVelocity(character)
+	if not character then return end
+	pcall(function()
+		aimVelTrack[character] = nil
+		aimTrackVelocity(character)
+		RunService.Heartbeat:Wait()
+		aimTrackVelocity(character)
+		RunService.Heartbeat:Wait()
+		aimTrackVelocity(character)
+	end)
+end
+
+-- Best-guess velocity for prediction: blend of reported and measured, capped at
+-- a plausible run speed so a knockback/physics spike can't fling the aim point.
+local function aimGetTargetVelocity(character)
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then return Vector3.new(0, 0, 0) end
+	local reported = root.AssemblyLinearVelocity
+	local measured = aimTrackVelocity(character)
+	local repH = math.sqrt(reported.X * reported.X + reported.Z * reported.Z)
+	local mesH = math.sqrt(measured.X * measured.X + measured.Z * measured.Z)
+	-- Reported says "standing" but the target is visibly moving -> trust measured
+	local v = (mesH > repH + 2) and measured or reported
+	-- Cap horizontal speed at a plausible sprint so spikes don't overshoot the aim
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	local maxH = math.max((hum and hum.WalkSpeed or 16) * 1.6, 30)
+	local hV = Vector3.new(v.X, 0, v.Z)
+	if hV.Magnitude > maxH then
+		hV = hV.Unit * maxH
+		v = Vector3.new(hV.X, v.Y, hV.Z)
+	end
+	return v
+end
+
+-- leadFrac lets one burst fan its shots ALONG the predicted path (0 = current
+-- position, 1 = full ping-lead position, >1 = slightly past it). Previously all
+-- shots went to ONE identical point, so a small prediction error missed with
+-- every bullet at once.
+local function aimPredictTorso(character, leadFrac)
 	if not character then return nil end
 	local root = character:FindFirstChild("HumanoidRootPart")
 	local aimPart = character:FindFirstChild(AIM_CONFIG.aimPart)
@@ -9129,16 +9636,15 @@ local function aimPredictTorso(character)
 		or character:FindFirstChild("UpperTorso")
 		or root
 	if not aimPart then return nil end
-	local velPart = root or aimPart
-	local v = velPart.AssemblyLinearVelocity
+	local v = aimGetTargetVelocity(character)
 	local p = aimPart.Position
-	-- Check horizontal speed вЂ” if target barely moves, aim directly (no prediction error)
+	local t = aimGetLeadTime() * (leadFrac == nil and 1 or leadFrac)
+	-- Check horizontal speed — if target barely moves, aim directly (no prediction error)
 	local hSpeed = math.sqrt(v.X * v.X + v.Z * v.Z)
 	if hSpeed < 2 then
 		-- Standing or nearly standing: aim at exact current position
 		local airborne = AIM_CONFIG.gravityComp and aimIsAirborne(character)
 		if airborne then
-			local t = aimGetLeadTime()
 			local g = workspace.Gravity
 			local py = p.Y + v.Y * t - 0.5 * g * t * t
 			local boost = AIM_CONFIG.jumpAimYBoost or 0
@@ -9149,7 +9655,6 @@ local function aimPredictTorso(character)
 		return p
 	end
 	-- Moving target: full velocity prediction
-	local t = aimGetLeadTime()
 	local px = p.X + v.X * t
 	local pz = p.Z + v.Z * t
 	local py
@@ -9267,45 +9772,229 @@ local function aimGetShootOrigin(target)
 	return myPos
 end
 
-local function aimFireOnce(shoot, target)
-	local origin = aimGetShootOrigin(target)
+-- originOverride lets path-sweep shots place the ray origin themselves (behind
+-- the target on its movement path) instead of the default near-target origin.
+local function aimFireOnce(shoot, target, originOverride)
+	local origin = originOverride or aimGetShootOrigin(target)
 	return pcall(function() shoot:FireServer(CFrame.new(origin), CFrame.new(target)) end)
 end
 
-function aimFireGunAt(murderer)
-	local shoot = aimGetShootRemote()
-	if not shoot then return false end
-	local shots = math.max(1, AIM_CONFIG.shotsPerClick)
-	local hitAny = false
-	-- Check if target is moving to decide scatter strategy
-	local useScatter = false
-	pcall(function()
-		local root = murderer.Character:FindFirstChild("HumanoidRootPart")
-		if root then
-			local v = root.AssemblyLinearVelocity
-			local hSpeed = math.sqrt(v.X * v.X + v.Z * v.Z)
-			useScatter = hSpeed > 4 -- only scatter for moving targets
+-- burstOverride lets the Auto Shot loop fire smaller bursts than a manual click.
+--
+-- ACCURACY OVERHAUL — why the old version missed:
+--   1. The whole burst fired on ONE stale snapshot of position/velocity: every
+--      bullet inherited the same prediction error.
+--   2. Every bullet was a POINT shot at a guessed future position — with any
+--      lead error (variable ping, strafe change) ALL bullets missed together.
+-- New approach:
+--   * Every bullet against a moving target is a PATH-SWEEP ray: the origin is
+--     placed BEHIND the aim point along the target's movement direction and the
+--     endpoint AHEAD of it, so the server-side ray passes through a whole
+--     segment of the target's path. Wherever on that segment the target really
+--     is on the server, the ray crosses its hitbox — lead error no longer
+--     causes a clean miss.
+--   * One extra "full-path" sweep covers current position -> past full lead in
+--     a single ray, guaranteeing coverage even if the lead estimate is way off.
+--   * The burst is spread across frames (Heartbeat between shots) and position,
+--     velocity and lead are re-read for EVERY bullet, so later bullets self-
+--     correct instead of repeating the first bullet's error.
+--   * Vertical bracket shots cover jumping / crouching / FakeDuck hitbox shifts
+--     for both standing AND moving targets.
+
+-- Flick Shot: rotates the character to face the target before shooting, then
+-- rotates back. Designed for first-person / shift-lock where character rotation
+-- = camera rotation. The rotation takes flickShotDuration seconds so other
+-- players can see the turn.
+function doFlickToTarget(targetPlayer, callback)
+	if not flickShotEnabled then callback() return end
+	local char = player.Character
+	if not char then callback() return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not (hrp and hum) then callback() return end
+	local targetChar = targetPlayer.Character
+	if not targetChar then callback() return end
+	local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+	if not targetRoot then callback() return end
+
+	-- [movement-safe] We never freeze your position: each frame we read your
+	-- LIVE position (which keeps updating as you walk) and only override the
+	-- facing/yaw, blended toward the target so the turn is still visible to
+	-- others. AutoRotate is disabled only for the brief aim window and the shot
+	-- fires immediately after — there is no forced "rotate back" phase that used
+	-- to lock you in place next to the murderer.
+	local startCF = hrp.CFrame
+	local wasAutoRotate = hum.AutoRotate
+	hum.AutoRotate = false
+
+	local steps = math.max(2, math.floor(flickShotDuration * 60))
+	for i = 1, steps do
+		local curPos = hrp.Position
+		local dir = (targetRoot.Position - curPos) * Vector3.new(1, 0, 1)
+		if dir.Magnitude >= 0.1 then
+			local aimCF = CFrame.lookAt(curPos, curPos + dir.Unit)
+			local blended = startCF:Lerp(aimCF, i / steps)
+			hrp.CFrame = CFrame.new(curPos) * (blended - blended.Position)
 		end
-	end)
-	for i = 1, shots do
-		if not aimMurdererAlive(murderer) then break end
-		local center = aimPredictTorso(murderer.Character)
-		if center then
-			-- Direct center shot always fires first
-			local ok = aimFireOnce(shoot, center)
-			hitAny = hitAny or ok
-			-- Additional scatter only for moving targets
-			if useScatter then
-				local extras = aimScatterPositions(center)
-				for j = 2, #extras do
-					ok = aimFireOnce(shoot, extras[j])
-					hitAny = hitAny or ok
-				end
+		RunService.Heartbeat:Wait()
+	end
+
+	callback()
+
+	-- Restore normal control instantly; the humanoid re-orients to your movement
+	-- on its own, so you can keep walking right away.
+	hum.AutoRotate = wasAutoRotate
+end
+
+-- Spin 360: performs a full 360-degree spin in place over spin360Duration seconds.
+function doSpin360(callback)
+	if not spin360Enabled then callback() return end
+	local char = player.Character
+	if not char then callback() return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not (hrp and hum) then callback() return end
+
+	-- [faster + movement-safe] Spins over spin360Duration (now 0.5s: quick but
+	-- still long enough for other players to actually SEE the spin), keeps your
+	-- live position each frame so you are not frozen, and fires the shot the
+	-- instant the spin completes instead of after extra waits.
+	local wasAutoRotate = hum.AutoRotate
+	hum.AutoRotate = false
+
+	local startYaw = math.atan2(-hrp.CFrame.LookVector.X, -hrp.CFrame.LookVector.Z)
+	local totalAngle = math.rad(360)
+	local steps = math.max(2, math.floor(spin360Duration * 60))
+	for i = 1, steps do
+		local curPos = hrp.Position
+		local currentAngle = startYaw + totalAngle * (i / steps)
+		local dir = Vector3.new(math.sin(currentAngle), 0, math.cos(currentAngle))
+		hrp.CFrame = CFrame.lookAt(curPos, curPos + dir)
+		RunService.Heartbeat:Wait()
+	end
+
+	callback()
+
+	hum.AutoRotate = wasAutoRotate
+end
+
+-- [single-bullet accuracy] With exactly ONE bullet per shot, firing during an
+-- erratic moment (mid-turn / mid-direction-change) wastes the whole shot. This
+-- briefly holds the trigger until the target's measured velocity direction has
+-- been steady for two consecutive frames (standing targets pass instantly), and
+-- fires unconditionally once stableWaitMax runs out so the shot is never lost.
+function aimWaitForStableVelocity(character)
+	local maxWait = AIM_CONFIG.stableWaitMax or 0.25
+	local cosMin = math.cos(math.rad(AIM_CONFIG.stableAngleDeg or 25))
+	local deadline = os.clock() + maxWait
+	local prev = nil
+	local stableStreak = 0
+	while os.clock() < deadline do
+		local ok = pcall(function()
+			local v = aimGetTargetVelocity(character)
+			local h = Vector3.new(v.X, 0, v.Z)
+			if h.Magnitude < 2 then
+				stableStreak = 2
+				return
+			end
+			local u = h.Unit
+			if prev and u:Dot(prev) >= cosMin then
+				stableStreak = stableStreak + 1
+			else
+				stableStreak = 0
+			end
+			prev = u
+		end)
+		if not ok then return end
+		if stableStreak >= 2 then return end
+		RunService.Heartbeat:Wait()
+	end
+end
+
+function aimFireGunAt(murderer, burstOverride)
+	-- Prime a fresh velocity read immediately before pulling the trigger so the
+	-- prediction is accurate whether we fired instantly or after a Flick / Spin,
+	-- then hold briefly for a stable read: the ONE bullet must not be wasted.
+	local function fire()
+		if murderer and murderer.Character then
+			aimPrimeVelocity(murderer.Character)
+			aimWaitForStableVelocity(murderer.Character)
+		end
+		return aimFireGunAtOriginal(murderer, burstOverride)
+	end
+	if flickShotEnabled and murderer then
+		local result = false
+		local function afterFlick()
+			if spin360Enabled then
+				doSpin360(function()
+					result = fire()
+				end)
+			else
+				result = fire()
 			end
 		end
-		-- No spacing between shots for maximum speed
+		doFlickToTarget(murderer, afterFlick)
+		return result
 	end
-	return hitAny
+	if spin360Enabled then
+		local result = false
+		doSpin360(function()
+			result = fire()
+		end)
+		return result
+	end
+	return fire()
+end
+
+function aimFireGunAtOriginal(murderer, burstOverride)
+	local shoot = aimGetShootRemote()
+	if not shoot then return false end
+	if not (murderer and murderer.Character) then return false end
+	if not aimMurdererAlive(murderer) then return false end
+	local char = murderer.Character
+	-- SINGLE-BULLET STRATEGY: the gun fires exactly ONE real bullet per shot, so
+	-- instead of spraying many rays (only the first ever mattered) we place one
+	-- ray as smartly as possible with the freshest data available.
+	local v = aimGetTargetVelocity(char)
+	local hSpeed = math.sqrt(v.X * v.X + v.Z * v.Z)
+	if hSpeed < 2 then
+		-- Standing / nearly standing: point-blank pierce shot at the exact torso
+		-- (aimPredictTorso already handles airborne gravity compensation).
+		local center = aimPredictTorso(char, 0)
+		if not center then return false end
+		return aimFireOnce(shoot, center)
+	end
+	-- Moving: lay the ONE bullet ray ALONG the target's movement path. The origin
+	-- sits BEHIND the current position and the endpoint PAST the full ping-lead
+	-- point, so wherever on that segment the target really is on the server
+	-- (running early, late, or even just after a strafe reversal), the bullet
+	-- crosses its hitbox. The single bullet becomes forgiving to lead error
+	-- instead of betting everything on one predicted point.
+	local back = aimPredictTorso(char, AIM_CONFIG.sweepBackFrac or -0.6)
+	local ahead = aimPredictTorso(char, AIM_CONFIG.sweepAheadFrac or 1.3)
+	local cur = aimPredictTorso(char, 0)
+	if not (back and ahead and cur) then return false end
+	-- Keep the ray clear of world geometry: if a wall sits between the back point
+	-- and the target (corner-hugging targets), a bullet from behind would hit the
+	-- wall first — fall back to a pierce origin right next to the target instead.
+	local origin = back
+	local ok, blocked = pcall(function()
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		local list = {char}
+		if player.Character then table.insert(list, player.Character) end
+		params.FilterDescendantsInstances = list
+		params.IgnoreWater = true
+		local dir = cur - back
+		if dir.Magnitude < 1e-3 then return false end
+		return Workspace:Raycast(back, dir, params) ~= nil
+	end)
+	if ok and blocked then
+		local dir = cur - ahead
+		local unit = dir.Magnitude > 1e-3 and dir.Unit or Vector3.new(0, 1, 0)
+		origin = cur + unit * (AIM_CONFIG.wallbangOriginDist or 0.6)
+	end
+	return aimFireOnce(shoot, ahead, origin)
 end
 
 -- Red dot on the current murderer (same aim indicator as the standalone script)
@@ -9394,11 +10083,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	pcall(function()
 		if gameProcessed then return end
 		if not aimLmbShootEnabled then return end
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 		local char = player.Character
 		local bp = player:FindFirstChild("Backpack")
 		local hasGun = char and (char:FindFirstChild("Gun") or (bp and bp:FindFirstChild("Gun")))
 		if not hasGun then return end
+		local equippedTool = char:FindFirstChildOfClass("Tool")
+		if equippedTool and equippedTool.Name ~= "Gun" then return end
 		local murderer = aimFindMurderer() or aimFindNearestPlayer()
 		if murderer and murderer.Character and aimMurdererAlive(murderer) then
 			aimFireGunAt(murderer)
@@ -9407,10 +10098,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end)
 end)
 
--- Auto Shot loop: fires every single heartbeat for instant response.
--- On gun pickup: immediate burst of shots before the first frame.
+-- Auto Shot loop: on gun pickup fires ONE instant full burst, then keeps firing
+-- rate-limited bursts (autoShotCooldown between them, autoShotBurst shots each).
+-- The old version fired a full 6-shot burst EVERY heartbeat (~300-400 FireServer
+-- calls per second) which flooded the network queue and lagged the whole game.
 local aimHadGunLast = false
 local aimLastRoleRefresh = 0
+local aimLastAutoShotAt = 0
 task.spawn(function()
 	while true do
 		RunService.Heartbeat:Wait()
@@ -9420,17 +10114,20 @@ task.spawn(function()
 			local bp = player:FindFirstChild("Backpack")
 			local hasGun = (char and (char:FindFirstChild("Gun") or (bp and bp:FindFirstChild("Gun")))) and true or false
 			if hasGun and not aimHadGunLast then
-				-- Gun just appeared: instant burst fire (no waiting for next heartbeat)
+				-- Gun just appeared: instant FULL burst fire (no waiting for cooldown)
 				aimRefreshRoleNow()
 				local m = aimFindMurderer()
 				if m and m ~= player and aimMurdererAlive(m) then
+					aimLastAutoShotAt = os.clock()
 					aimFireGunAt(m)
 				end
 			end
 			aimHadGunLast = hasGun
 			if not hasGun then return end
-			-- Every heartbeat: find and fire
 			local now = os.clock()
+			-- Rate limit: skip this heartbeat entirely while on cooldown (also skips
+			-- the murderer lookup, keeping the loop nearly free between bursts)
+			if (now - aimLastAutoShotAt) < (AIM_CONFIG.autoShotCooldown or 0.35) then return end
 			local murderer = aimFindMurderer()
 			if not murderer and (now - aimLastRoleRefresh) > 0.08 then
 				aimLastRoleRefresh = now
@@ -9438,7 +10135,8 @@ task.spawn(function()
 				murderer = aimFindMurderer()
 			end
 			if murderer and murderer ~= player and aimMurdererAlive(murderer) then
-				aimFireGunAt(murderer)
+				aimLastAutoShotAt = now
+				aimFireGunAt(murderer, AIM_CONFIG.autoShotBurst)
 			end
 		end)
 	end
@@ -9474,7 +10172,7 @@ desyncOffsetInput.FocusLost:Connect(function()
 	end
 end)
 
--- Shoot Murderer / Wall Bang / Auto Shot (ported from Aim.lua) вЂ” right after Anti-Shoot
+-- Shoot Murderer / Wall Bang / Auto Shot (ported from Aim.lua) — right after Anti-Shoot
 shootMurdererButton = createButton("ShootMurdererButton", "Shoot Murderer", 203.1)
 shootMurdererButton.MouseButton1Click:Connect(function()
 	doShootMurderer()
@@ -9485,6 +10183,20 @@ lmbShootButton.MouseButton1Click:Connect(function()
 	aimLmbShootEnabled = not aimLmbShootEnabled
 	setToggleState(lmbShootButton, aimLmbShootEnabled, "LMB Shoot: ON", "LMB Shoot: OFF")
 	setExtractedBtnState("LMB Shoot", aimLmbShootEnabled)
+end)
+
+flickShotButton = createButton("FlickShotButton", "Flick Shot: OFF", 203.16)
+flickShotButton.MouseButton1Click:Connect(function()
+	flickShotEnabled = not flickShotEnabled
+	setToggleState(flickShotButton, flickShotEnabled, "Flick Shot: ON", "Flick Shot: OFF")
+	setExtractedBtnState("Flick Shot", flickShotEnabled)
+end)
+
+spin360Button = createButton("Spin360Button", "Spin 360: OFF", 203.17)
+spin360Button.MouseButton1Click:Connect(function()
+	spin360Enabled = not spin360Enabled
+	setToggleState(spin360Button, spin360Enabled, "Spin 360: ON", "Spin 360: OFF")
+	setExtractedBtnState("Spin 360", spin360Enabled)
 end)
 
 wallBangButton = createButton("WallBangButton", "Piercer Bullet: OFF", 203.2)
@@ -9541,7 +10253,7 @@ autoShotButton.MouseButton1Click:Connect(function()
 end)
 
 -- ============================================================
--- Kill functions: knife touch-kill (no teleport) вЂ” only works while you
+-- Kill functions: knife touch-kill (no teleport) — only works while you
 -- hold the Murderer's knife. Kills from where you are via firetouchinterest.
 -- ============================================================
 function killGetKnife()
@@ -9567,6 +10279,8 @@ function killIsAlive(char)
 	return hum ~= nil and hum.Health > 0
 end
 
+-- [fix] Animation stopping removed entirely — it interfered with the knife's
+-- own client scripts and served no purpose for the kill itself.
 function killKnifeTouch(targetChar, knife)
 	if not (targetChar and knife and knife:FindFirstChild("Handle")) then return false end
 	local handle = knife.Handle
@@ -9630,53 +10344,51 @@ function killGetRealCFrame()
 	return r and r.CFrame or CFrame.new()
 end
 
--- Kill a list of players: BRING them to us + auto-knife (no teleporting ourselves)
-function killBatch(targets, knife)
+-- No-equip knife lookup: returns the Knife tool whether it is in your hand or
+-- still sitting in the Backpack, WITHOUT equipping it, so kills never pull it out.
+function killGetKnifeNoEquip()
 	local char = player.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not (hrp and hum and knife and knife:FindFirstChild("Handle")) then return 0 end
+	local tool = char and char:FindFirstChild("Knife")
+	if tool then return tool end
+	local bp = player:FindFirstChild("Backpack")
+	return bp and bp:FindFirstChild("Knife")
+end
 
-	local handle = knife.Handle
-
-	-- Bring all targets to us and auto-knife for 30 frames
-	for frame = 1, 30 do
-		local bringCF = killGetRealCFrame()
-		local allDead = true
-
-		for idx, plr in ipairs(targets) do
-			if plr and plr.Character and killIsAlive(plr.Character) then
-				allDead = false
-				local tChar = plr.Character
-				local tRoot = tChar:FindFirstChild("HumanoidRootPart")
-				if tRoot then
-					-- Bring target to our real position (small offset per player)
-					pcall(function()
-						tRoot.CFrame = bringCF * CFrame.new(idx * 0.5, 0, 0)
-					end)
-					-- Strip their weapons so they can't fight back
-					pcall(function()
-						local bp = plr:FindFirstChild("Backpack")
-						if bp then bp:ClearAllChildren() end
-						for _, child in pairs(tChar:GetChildren()) do
-							if child:IsA("Tool") then child:Destroy() end
-						end
-					end)
-					-- Knife: activate + firetouchinterest on all parts
-					pcall(function() knife:Activate() end)
-					for _, part in ipairs(tChar:GetDescendants()) do
-						if part:IsA("BasePart") then
-							safeFireTouch(handle, part)
-						end
-					end
-				end
+-- Distance kill: register a hit on a target through the knife's own
+-- Events.HandleTouched remote (plus a firetouchinterest fallback when a Handle
+-- is available). Never teleports the target and never requires the knife to be
+-- equipped.
+function killTargetAtDistance(tChar, handleTouched, handle)
+	if not tChar then return end
+	handleTouched = handleTouched or tkaGetHandleTouched()
+	for _, part in ipairs(tChar:GetDescendants()) do
+		if part:IsA("BasePart") then
+			if handleTouched then
+				pcall(function() handleTouched:FireServer(part) end)
+			end
+			if handle then
+				safeFireTouch(handle, part)
 			end
 		end
+	end
+end
 
+-- Kill a list of players at range: no pulling, no teleporting, and without
+-- pulling out the knife. Fires the knife's Events.HandleTouched remote per victim.
+function killBatch(targets, knife)
+	local handleTouched = tkaGetHandleTouched()
+	local handle = knife and knife:FindFirstChild("Handle")
+	for frame = 1, 10 do
+		local allDead = true
+		for _, plr in ipairs(targets) do
+			if plr and plr.Character and killIsAlive(plr.Character) then
+				allDead = false
+				killTargetAtDistance(plr.Character, handleTouched, handle)
+			end
+		end
 		if allDead then break end
 		RunService.Heartbeat:Wait()
 	end
-
 	local count = 0
 	for _, plr in ipairs(targets) do
 		if plr and plr.Character and not killIsAlive(plr.Character) then count = count + 1 end
@@ -9685,7 +10397,7 @@ function killBatch(targets, knife)
 end
 
 function doKillEveryone(exceptFriends)
-	local knife = killGetKnife()
+	local knife = killGetKnifeNoEquip()
 	if not knife then return nil end
 	local targets = {}
 	for _, plr in ipairs(Players:GetPlayers()) do
@@ -9707,10 +10419,10 @@ function doKillEveryone(exceptFriends)
 end
 
 function doKillSheriff()
-	local knife = killGetKnife()
+	local knife = killGetKnifeNoEquip()
 	if not knife then return nil end
 	local ok, result = pcall(function()
-		return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+		return invokePlayerData()
 	end)
 	if not (ok and result) then return 0 end
 	local targets = {}
@@ -9727,7 +10439,7 @@ function doKillSheriff()
 end
 
 function doKillPlayer(targetName)
-	local knife = killGetKnife()
+	local knife = killGetKnifeNoEquip()
 	if not knife then return false, "noknife" end
 	local plr = targetName and Players:FindFirstChild(targetName)
 	if not (plr and plr.Character) then return false, "notarget" end
@@ -9759,23 +10471,24 @@ killSheriffBtn.MouseButton1Click:Connect(function()
 	else notify("Kill Sheriff", "Hit " .. c .. " target(s).", 1.5) end
 end)
 
--- Kill Player picker (collapsible single-select) + Kill Player button
-killPicker = createPlayerPicker({
+-- Kill Player picker (collapsible multi-select) + Kill Player button
+killPicker = createMultiPlayerPicker({
 	parent = categoryFrames["Combat"],
 	order = 203.34,
 	prefix = "Kill",
-	statusText = "Select a player to kill",
+	statusText = "Select players to kill",
 })
 
-killPlayerBtn = createButton("KillPlayerButton", "Kill Player", 203.35)
+killPlayerBtn = createButton("KillPlayerButton", "Kill Player(s)", 203.35)
 killPlayerBtn.MouseButton1Click:Connect(function()
-	local sel = killPicker.selectedName
-	if not sel then notify("Kill Player", "No player selected.", 2) return end
-	local ok, why = doKillPlayer(sel)
-	if ok then notify("Kill Player", "Knifed " .. sel, 1.5)
-	elseif why == "noknife" then notify("Kill Player", "You need the knife (be the Murderer).", 2)
-	elseif why == "dead" then notify("Kill Player", sel .. " is already dead.", 2)
-	else notify("Kill Player", "Target not available.", 2) end
+	local sels = killPicker.selectedNames
+	if not sels or #sels == 0 then notify("Kill Player", "No players selected.", 2) return end
+	local killed = 0
+	for _, sel in ipairs(sels) do
+		local ok, why = doKillPlayer(sel)
+		if ok then killed = killed + 1 end
+	end
+	notify("Kill Player", "Knifed " .. killed .. "/" .. #sels .. " player(s)", 1.5)
 end)
 
 -- Auto kill loops
@@ -9785,7 +10498,7 @@ autoKillSheriffEnabled = false
 
 local function autoKillIsMurderer()
 	local ok, result = pcall(function()
-		return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+		return invokePlayerData()
 	end)
 	if ok and result then
 		local me = result[player.Name]
@@ -10067,6 +10780,189 @@ rangeInputBox.FocusLost:Connect(function()
 end)
 
 
+
+-- ============================================
+-- Throwing Knife Aura
+-- ============================================
+-- When enabled and the local player is the Murderer, throwing the knife kills
+-- every alive player whose body passes within `throwingKnifeAuraRadius` studs of
+-- the FLYING KNIFE itself — not of you. So a knife thrown across the map that
+-- sails 7 studs past a target (with the field set to 7) still kills them, even
+-- on a complete miss. We detect the throw by the projectile appearing in the
+-- Workspace, track it every frame along its whole flight, and for each player
+-- within range register a hit through the knife's own Events.HandleTouched
+-- remote plus a firetouchinterest fallback on the projectile Handle. The
+-- murderer is never teleported.
+throwingKnifeAuraEnabled = false
+throwingKnifeAuraConnection = nil
+throwingKnifeAuraRadius = 15
+tkaThrowCooldownUntil = 0
+
+-- True only for a thrown-knife projectile living directly in the Workspace
+-- (not the tool sitting in someone's Backpack / Character).
+function tkaIsThrownKnife(inst)
+	if not inst then return false end
+	if not (inst:IsA("BasePart") or inst:IsA("Model")) then return false end
+	local n = inst.Name:lower()
+	if not (n == "throwingknife" or n:find("throwingknife") or n:find("throwing_knife")) then
+		return false
+	end
+	local a = inst.Parent
+	while a and a ~= game do
+		if a:IsA("Backpack") then return false end
+		if a:IsA("Model") and Players:GetPlayerFromCharacter(a) then return false end
+		a = a.Parent
+	end
+	return inst:IsDescendantOf(Workspace)
+end
+
+-- BasePart of the flying projectile, used for the firetouchinterest fallback.
+function tkaGetThrownHandle(inst)
+	if not inst then return nil end
+	if inst:IsA("BasePart") then return inst end
+	if inst:IsA("Model") then
+		return inst:FindFirstChild("Handle")
+			or inst.PrimaryPart
+			or inst:FindFirstChildWhichIsA("BasePart")
+	end
+	return nil
+end
+
+-- Current world position of the flying knife.
+function tkaGetKnifePosition(inst)
+	local h = tkaGetThrownHandle(inst)
+	if h then return h.Position end
+	if inst and inst:IsA("Model") then
+		local ok, cf = pcall(function() return inst:GetBoundingBox() end)
+		if ok and cf then return cf.Position end
+	end
+	return nil
+end
+
+-- Shortest distance from point p to the segment a-b. Using the segment (rather
+-- than a single sampled point) means a knife moving fast enough to skip past a
+-- target between two frames is still caught if its PATH grazed within range.
+function tkaPointSegDist(p, a, b)
+	local ab = b - a
+	local len2 = ab:Dot(ab)
+	if len2 <= 0 then return (p - a).Magnitude end
+	local t = (p - a):Dot(ab) / len2
+	if t < 0 then t = 0 elseif t > 1 then t = 1 end
+	local proj = a + ab * t
+	return (p - proj).Magnitude
+end
+
+-- Locate the knife tool (equipped, or in the Backpack while on post-throw
+-- cooldown) and return its Events.HandleTouched remote.
+function tkaGetHandleTouched()
+	local knifeTool = player.Character and player.Character:FindFirstChild("Knife")
+	if not knifeTool then
+		local bp = player:FindFirstChild("Backpack")
+		knifeTool = bp and bp:FindFirstChild("Knife")
+	end
+	if not knifeTool then return nil end
+	local ev = knifeTool:FindFirstChild("Events")
+	return ev and ev:FindFirstChild("HandleTouched")
+end
+
+-- Kill every alive player whose HumanoidRootPart is within the aura radius of
+-- the knife's flight segment (prevPos -> curPos). prevPos may be nil on the
+-- first sampled frame, in which case we fall back to a point check at curPos.
+function tkaKillNearby(prevPos, curPos, thrownHandle)
+	if not curPos then return end
+	local handleTouched = tkaGetHandleTouched()
+
+	local players = Players:GetPlayers()
+	for i = 1, #players do
+		local plr = players[i]
+		if plr ~= player then
+			local tChar = plr.Character
+			local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+			local tHum = tChar and tChar:FindFirstChildOfClass("Humanoid")
+			if tRoot and tHum and tHum.Health > 0 then
+				local dist
+				if prevPos then
+					dist = tkaPointSegDist(tRoot.Position, prevPos, curPos)
+				else
+					dist = (tRoot.Position - curPos).Magnitude
+				end
+				if dist <= throwingKnifeAuraRadius then
+					for _, part in ipairs(tChar:GetDescendants()) do
+						if part:IsA("BasePart") then
+							if handleTouched then
+								pcall(function() handleTouched:FireServer(part) end)
+							end
+							if thrownHandle then
+								safeFireTouch(thrownHandle, part)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Toggle: hook the Workspace so each detected throw is tracked in flight and
+-- kills anyone the knife passes within range of.
+function toggleThrowingKnifeAura()
+	throwingKnifeAuraEnabled = not throwingKnifeAuraEnabled
+	if throwingKnifeAuraEnabled then
+		if throwingKnifeAuraConnection then
+			throwingKnifeAuraConnection:Disconnect()
+			throwingKnifeAuraConnection = nil
+		end
+		throwingKnifeAuraConnection = Workspace.DescendantAdded:Connect(function(inst)
+			if not throwingKnifeAuraEnabled then return end
+			if not tkaIsThrownKnife(inst) then return end
+			if not isPlayerMurderer() then return end
+			-- Debounce: one throw can spawn several descendants; track once.
+			if os.clock() < tkaThrowCooldownUntil then return end
+			tkaThrowCooldownUntil = os.clock() + 0.15
+			task.spawn(function()
+				-- Follow the projectile for its whole flight, sampling every
+				-- frame. Each step we measure the knife's travel segment against
+				-- every player so nobody is skipped even on a fast throw.
+				local prevPos = nil
+				local startT = os.clock()
+				while throwingKnifeAuraEnabled and (os.clock() - startT) < 5 do
+					if not (inst and inst.Parent and inst:IsDescendantOf(Workspace) and tkaIsThrownKnife(inst)) then
+						break
+					end
+					local curPos = tkaGetKnifePosition(inst)
+					if curPos then
+						local handle = tkaGetThrownHandle(inst)
+						pcall(tkaKillNearby, prevPos, curPos, handle)
+						prevPos = curPos
+					end
+					RunService.Heartbeat:Wait()
+				end
+			end)
+		end)
+	else
+		if throwingKnifeAuraConnection then
+			throwingKnifeAuraConnection:Disconnect()
+			throwingKnifeAuraConnection = nil
+		end
+	end
+end
+
+
+throwingKnifeAuraButton, throwingKnifeRadiusInputBox = createDualRow("ThrowingKnifeAuraButton", "Throwing Knife Aura: OFF", "Radius", throwingKnifeAuraRadius, 209.5)
+throwingKnifeAuraButton.MouseButton1Click:Connect(function()
+	toggleThrowingKnifeAura()
+	setToggleState(throwingKnifeAuraButton, throwingKnifeAuraEnabled, "Throwing Knife Aura: ON", "Throwing Knife Aura: OFF")
+	setExtractedBtnState("Throwing Knife Aura", throwingKnifeAuraEnabled)
+end)
+
+throwingKnifeRadiusInputBox.FocusLost:Connect(function()
+	local val = tonumber(throwingKnifeRadiusInputBox.Text)
+	if val and val > 0 then
+		throwingKnifeAuraRadius = val
+	else
+		throwingKnifeRadiusInputBox.Text = tostring(throwingKnifeAuraRadius)
+	end
+end)
 
 touchFlingButton = createButton("TouchFlingButton", "Touch Fling: OFF", 210)
 hiddenfling = false
@@ -11607,11 +12503,7 @@ end
 
 refreshSavedExploiters()
 
-task.spawn(function()
-	while task.wait(5) do
-		refreshSavedExploiters()
-	end
-end)
+-- [perf] removed periodic 5s saved-list rebuild (refreshSavedExploiters): major freeze source with large lists; list now refreshes only when it actually changes
 
 -- ============================================
 -- SCAMMERS TAB UI
@@ -12391,11 +13283,7 @@ end
 
 refreshSavedScammers()
 
-task.spawn(function()
-	while task.wait(5) do
-		refreshSavedScammers()
-	end
-end)
+-- [perf] removed periodic 5s saved-list rebuild (refreshSavedScammers): major freeze source with large lists; list now refreshes only when it actually changes
 
 -- ============================================
 -- Autofarm tab (MM2 coin autofarm)
@@ -12451,14 +13339,14 @@ autofarmActiveContainer = nil
 autofarmRoundFinished = false
 autofarmSpeed = 110                -- flight speed, studs per second
 autofarmPickupRange = 6
--- Lying on the back: pitch +90В° -> LookVector points straight UP (face to ceiling, back down)
+-- Lying on the back: pitch +90° -> LookVector points straight UP (face to ceiling, back down)
 autofarmLieCF = CFrame.Angles(math.rad(90), 0, 0)
 -- Under-floor flight: whenever a floor exists below the coin we travel BENEATH it
 -- (much harder to be killed), staying as close to the coins as possible while
--- never rising up onto them вЂ” Coin Aura pulls them in as we pass by.
-autofarmUnderFloorDepth = 1.25     -- how far below the floor surface we fly (studs) вЂ” hugs the floor, closer to the coins
+-- never rising up onto them — Coin Aura pulls them in as we pass by.
+autofarmUnderFloorDepth = 1.25     -- how far below the floor surface we fly (studs) — hugs the floor, closer to the coins
 autofarmAscendDist = 1             -- horizontal distance at which we start rising to the coin
-autofarmAscentMultiplier = 3       -- vertical speed multiplier when ascending to a coin
+autofarmAscentMultiplier = 1       -- DEPRECATED: the 3x ascent boost caused speed spikes ("jerks") when climbing to higher coins — flight now moves at ONE constant speed in all directions
 -- Coins currently being pulled in by Coin Aura: [coin] = os.clock() when we flew
 -- past it. These are SKIPPED as movement targets so the farm flies straight on
 -- to the next coin without ever stopping or bobbing up to collect.
@@ -12466,7 +13354,7 @@ autofarmAuraPending = {}
 -- Anti-kick: dt is clamped so one laggy frame can NEVER become a giant
 -- teleport-like step (those instant jumps were what the anti-cheat kicked for).
 autofarmMaxStepDt = 1 / 30
-autofarmSpentCoins = {}            -- [coin] = true вЂ” permanently done (collected/blacklisted), NEVER retargeted
+autofarmSpentCoins = {}            -- [coin] = true — permanently done (collected/blacklisted), NEVER retargeted
 autofarmCoinVisiblePart = {}       -- [coin] = cached visible visual part (to detect collected-but-not-removed coins)
 autofarmCoinVisCheckedAt = {}      -- [coin] = os.clock() of the last visible-part descendant scan (throttles rescans)
 autofarmTouchedAt = {}             -- [coin] = os.clock() when we first started touching this coin
@@ -12475,7 +13363,7 @@ autofarmFloorRayParams = RaycastParams.new()
 autofarmFloorRayParams.FilterType = Enum.RaycastFilterType.Blacklist
 -- [perf] Micro-freeze fixes: these caches remove ALL per-frame recursive scans
 -- from the flight loop (they were the "couple of ms" hitches during flight):
---   1. Workspace:FindFirstChild("CoinContainer", true) ran EVERY heartbeat вЂ” a
+--   1. Workspace:FindFirstChild("CoinContainer", true) ran EVERY heartbeat — a
 --      recursive scan of the whole Workspace, worst offender by far.
 --   2. autofarmGetBagCount() re-found + re-scanned the CoinBag GUI descendants
 --      EVERY heartbeat.
@@ -12485,6 +13373,8 @@ autofarmContainerCheckedAt = 0     -- last time the recursive scan actually ran
 autofarmBagLabelCache = nil        -- cached "12/40" TextLabel inside the coin-bag GUI
 autofarmBagCountCache = nil        -- last parsed bag count
 autofarmBagCountAt = 0             -- when the bag count was last refreshed
+autofarmBagPrev = nil              -- previous bag count, for delta-based session counting
+autofarmNoCoinSince = nil          -- os.clock() when we FIRST saw "no targetable coin" (grace timer)
 autofarmCharParts = {}             -- cached list of the character's BaseParts
 autofarmCharPartsChar = nil        -- character the cache belongs to
 autofarmCharPartsAt = 0            -- when the cache was last rebuilt
@@ -12499,6 +13389,28 @@ autofarmCoinWatched = {}              -- [coin] = true (counting connection atta
 autofarmCoinRetries = {}              -- [coin] = failed-touch retry count
 autofarmRoleCache = nil               -- cached invokePlayerData result (refreshed every second, not every frame)
 autofarmRoleCacheAt = 0
+
+-- Avoid murderer: teleport away when within a set distance during autofarm
+autofarmAvoidMurdererEnabled = false
+autofarmAvoidMurdererDist = 30        -- studs: teleport when closer than this to the murderer
+autofarmAvoidMurdererModeIndex = 1    -- destination selector (same modes as pre/post TP)
+
+-- Auto Anti-Shoot: enable Anti-Shoot at round start, disable when farming begins
+autofarmAutoAntiShootEnabled = false
+
+-- Auto Kill Sheriff/Hero: when you're the Murderer, kill anyone who picks up the gun
+autofarmAutoKillSheriffEnabled = false
+
+-- Stuck detector: if the player hasn't moved significantly for STUCK_TIMEOUT
+-- seconds during active farming, auto TP to map to unstick.
+-- We track position over a 1-second rolling window (not per-frame, because at
+-- 60fps the character moves ~1.8 studs/frame which is below the per-frame
+-- threshold and would trigger false stuck detections).
+autofarmStuckSince = nil          -- os.clock() when we first noticed being stuck
+autofarmStuckLastPos = nil        -- last known position (Vector3)
+autofarmStuckCheckAt = 0          -- os.clock() of last distance check
+AUTOFARM_STUCK_TIMEOUT = 5       -- seconds of being stuck before auto TP
+AUTOFARM_STUCK_MIN_DIST = 5      -- studs: if we moved less than this in 1 second, we're stuck
 
 -- Auto teleport BEFORE the farm (toggle + location selector, same destinations)
 autofarmPreTpEnabled = false
@@ -12518,7 +13430,7 @@ autofarmSessionStart = nil         -- os.clock() when the farming session starte
 
 -- Auto server hop: when you're the only player left the script saves the config,
 -- queues itself via queue_on_teleport (using the Script URL below) and teleports
--- to another public server вЂ” where the config restore re-enables everything.
+-- to another public server — where the config restore re-enables everything.
 TeleportService = game:GetService("TeleportService")
 autofarmServerHopEnabled = false
 AUTOFARM_SCRIPT_URL = (loadedConfig.values and loadedConfig.values.autofarmScriptUrl) or ""
@@ -12562,7 +13474,7 @@ end
 -- Only farm while we are ALIVE and IN THE ROUND (not dead, not in the lobby
 -- waiting for the round). FAIL-OPEN: we only block the farm when we POSITIVELY
 -- know we're dead/out of round. If the Alive attribute is missing and player
--- data can't be fetched, we allow farming вЂ” otherwise the farm silently never
+-- data can't be fetched, we allow farming — otherwise the farm silently never
 -- starts (that was the bug: the old check returned false on unknown state).
 function autofarmIsAliveInRound()
 	local char = player.Character
@@ -12595,7 +13507,7 @@ end
 -- Returns nil when the label can't be found (fallback: local counter).
 function autofarmGetBagCount()
 	-- [perf] Throttled + label cached. This used to re-find the CoinBag GUI and
-	-- scan ALL its descendants EVERY heartbeat вЂ” one of the mid-flight stutter
+	-- scan ALL its descendants EVERY heartbeat — one of the mid-flight stutter
 	-- sources. Now the "12/40" label is found once and only re-read every 0.25s.
 	local now = os.clock()
 	if (now - autofarmBagCountAt) < 0.25 then
@@ -12634,7 +13546,7 @@ function autofarmFindCoinContainer()
 	-- MM2 keeps coins in <MapModel>.CoinContainer during the round. The container
 	-- is searched RECURSIVELY: on some maps/updates the map model is nested inside
 	-- a folder (or the container sits deeper than one level).
-	-- [perf] The recursive Workspace scan used to run EVERY heartbeat вЂ” scanning
+	-- [perf] The recursive Workspace scan used to run EVERY heartbeat — scanning
 	-- the entire map every frame was THE main cause of the small mid-flight
 	-- freezes. The container is now cached; the expensive recursive scan only
 	-- reruns when the cached one is gone (round/map change), at most every 0.5s.
@@ -12654,7 +13566,7 @@ function autofarmGetCoinPart(coin)
 	return coin:FindFirstChildWhichIsA("BasePart")
 end
 
--- The coin's hitbox BasePart is always transparent in current MM2 вЂ” the VISIBLE
+-- The coin's hitbox BasePart is always transparent in current MM2 — the VISIBLE
 -- spinning coin is a child visual/mesh. Cache that visible part once per coin so
 -- we can detect "collected but not yet removed" coins cheaply every frame.
 function autofarmGetCoinVisiblePart(coin)
@@ -12695,7 +13607,7 @@ function autofarmGetCharParts(char)
 end
 
 -- Is this coin already gone / already collected?
--- A collected coin sometimes STAYS in the container with its visual hidden вЂ”
+-- A collected coin sometimes STAYS in the container with its visual hidden —
 -- that's exactly why the farm kept flying back to long-gone coins. So besides
 -- Parent == nil we also treat a coin as gone when its previously-VISIBLE visual
 -- part disappeared or turned invisible. Spent coins are permanently blacklisted.
@@ -12712,14 +13624,14 @@ function autofarmCoinIsGone(coin)
 		end
 	else
 		-- Cache the visible part the first time we see this coin (may legitimately
-		-- be nil for hitbox-only coins вЂ” those are handled via removal instead)
+		-- be nil for hitbox-only coins — those are handled via removal instead)
 		autofarmGetCoinVisiblePart(coin)
 	end
 	return false
 end
 
 -- Closest coin that isn't gone yet: keeps targeting the same coin every frame
--- until it disappears (no more 'touch once and move on' вЂ” that was why the farm
+-- until it disappears (no more 'touch once and move on' — that was why the farm
 -- flew past coins without collecting them). Coins touched for > 3 s without
 -- collection are blacklisted so we never get stuck on a bugged coin.
 function autofarmNearestCoin(container, fromPos)
@@ -12761,8 +13673,13 @@ function autofarmWatchCoin(coin)
 		if parent == nil and autofarmEnabled and autofarmCoinWatched[coin] then
 			autofarmCoinWatched[coin] = nil
 			autofarmSpentCoins[coin] = true
-			autofarmCollected += 1
-			autofarmSessionCoins += 1
+			-- Only count if WE touched this coin (not when another player collects
+			-- a coin we just flew past). autofarmTouchedAt is set when the farm's
+			-- HRP or body parts actually fireTouchInterest the coin.
+			if autofarmTouchedAt[coin] and autofarmGetBagCount() == nil then
+				autofarmCollected += 1
+				autofarmSessionCoins += 1
+			end
 		end
 	end)
 end
@@ -12774,7 +13691,7 @@ autofarmClaimPending = {}
 function autofarmClaimCoin(coin)
 	-- Count the coin only when the server actually removes it (= really collected).
 	-- The counting connection is attached ONCE per coin, even if the coin is
-	-- unclaimed and retried later вЂ” so a coin can never be counted twice.
+	-- unclaimed and retried later — so a coin can never be counted twice.
 	autofarmWatchCoin(coin)
 	-- Only ONE delayed verification per coin at a time; the flag clears when the
 	-- check runs, so the retry logic keeps working exactly as before.
@@ -12790,17 +13707,21 @@ function autofarmClaimCoin(coin)
 		local removed = (coin.Parent == nil) or (not part)
 		local turnedInvisible = visAtClaim and (not visAtClaim.Parent or visAtClaim.Transparency >= 0.95)
 		if removed or turnedInvisible then
-			-- Collected: permanently blacklist + make sure it gets counted even if
-			-- AncestryChanged missed (double count impossible вЂ” the watched flag is
-			-- cleared exactly once)
+			-- Collected: permanently blacklist so we never fly back to it.
 			autofarmSpentCoins[coin] = true
-			if turnedInvisible and autofarmCoinWatched[coin] and autofarmEnabled then
+			if autofarmCoinWatched[coin] then
 				autofarmCoinWatched[coin] = nil
-				autofarmCollected += 1
-				autofarmSessionCoins += 1
+				-- Only count if WE touched this coin (not when another player's
+				-- collection makes it invisible locally).
+				if turnedInvisible and autofarmTouchedAt[coin] and autofarmEnabled then
+					if autofarmGetBagCount() == nil then
+						autofarmCollected += 1
+						autofarmSessionCoins += 1
+					end
+				end
 			end
 		else
-			-- Coin is STILL there after a moment вЂ” the touch failed (e.g. lag).
+			-- Coin is STILL there after a moment — the touch failed (e.g. lag).
 			-- Allow up to 3 retries, then permanently blacklist it.
 			local tries = (autofarmCoinRetries[coin] or 0) + 1
 			autofarmCoinRetries[coin] = tries
@@ -12936,6 +13857,65 @@ function autofarmStopFlight()
 	if hum then pcall(function() hum.PlatformStand = false end) end
 end
 
+-- Pause flight between coins WITHOUT dropping the character: zero velocity,
+-- keep PlatformStand = true so the character floats in place instead of falling.
+-- This eliminates the sharp dip and the delay when switching coin targets.
+function autofarmPauseFlight()
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		pcall(function()
+			hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+		end)
+	end
+end
+
+-- Teleport to the selected Avoid Murderer destination
+function autofarmDoAvoidMurdererTp()
+	local mode = autofarmAvoidMurdererModes[autofarmAvoidMurdererModeIndex]
+	if mode == "OFF" then return end
+	local myChar = player.Character
+	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	if not myHrp then return end
+	if mode == "Lobby" then
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(23, 505, -34))
+	elseif mode == "VoteMap" then
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(14, 507, 35))
+	elseif mode == "Map" then
+		pcall(tpToMap)
+	elseif mode == "Above Map" then
+		pcall(tpAboveMap)
+	elseif mode == "Void" then
+		pcall(createVoidBaseplate)
+		pcall(function()
+			voidTpPreviousPos = myHrp.CFrame
+			myHrp.CFrame = CFrame.new(voidBaseplatePos.X, voidBaseplatePos.Y + 1, voidBaseplatePos.Z)
+		end)
+	end
+	notify("Autofarm", "Avoid Murderer TP: " .. mode, 2)
+end
+
+-- Check distance to the murderer and teleport away if too close during autofarm
+function autofarmCheckAvoidMurderer(hrp)
+	if not autofarmAvoidMurdererEnabled then return false end
+	if autofarmAvoidMurdererModeIndex <= 1 then return false end -- "OFF" selected
+	if not isPlayerMurderer() then
+		local murderer = autofarmFindMurdererPlayer()
+		if murderer and murderer.Character then
+			local mHrp = murderer.Character:FindFirstChild("HumanoidRootPart")
+			if mHrp then
+				local dist = (hrp.Position - mHrp.Position).Magnitude
+				if dist <= autofarmAvoidMurdererDist then
+					autofarmDoAvoidMurdererTp()
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
 function startAutofarm()
 	task.spawn(function()
 		while autofarmEnabled do
@@ -12966,13 +13946,31 @@ function startAutofarm()
 					autofarmClaimPending = {}
 					autofarmAuraPending = {}
 					autofarmBagLabelCache = nil -- new round = the bag GUI may be rebuilt
+					autofarmBagPrev = nil       -- restart the bag-delta baseline
+					autofarmNoCoinSince = nil   -- restart the no-coin grace timer
 					autofarmRoundFinished = false
+					autofarmStuckSince = nil    -- reset stuck detector for new round
+					autofarmStuckLastPos = nil
 				end
 
 				-- Effective count = the max of the local counter and the REAL
 				-- server-accepted bag count from the GUI. The reset always fires
 				-- exactly at the selected farm limit (40 normal / 50 Elite).
 				local bagCount = autofarmGetBagCount()
+				-- SESSION COUNTER FIX: the top-of-tab counter used to rely on coin
+				-- removal events, which MISSED coins (e.g. picked up by Coin Aura on
+				-- untargeted coins, or removal events swallowed under lag). Now the
+				-- session counter follows the server-accepted bag count directly:
+				-- every increase of the bag adds the exact delta — nothing can be
+				-- skipped or double-counted. Decreases (bag reset on round change /
+				-- deposit) are ignored, they just move the baseline.
+				if bagCount ~= nil then
+					if autofarmBagPrev ~= nil and bagCount > autofarmBagPrev then
+						autofarmSessionCoins += (bagCount - autofarmBagPrev)
+					end
+					autofarmBagPrev = bagCount
+					if bagCount > autofarmCollected then autofarmCollected = bagCount end
+				end
 				local effectiveCollected = math.max(autofarmCollected, bagCount or 0)
 
 				if not container or autofarmRoundFinished then
@@ -12995,26 +13993,65 @@ function startAutofarm()
 							end
 						end
 					end
+					if coin then autofarmNoCoinSince = nil end
 					if not coin and auraStillPulling then
-						-- Last remaining coins are inside the aura pull вЂ” just glide and
-						-- let the aura finish collecting them.
-						task.wait()
+						-- Last remaining coins are inside the aura pull — just hold
+						-- position and let the aura finish collecting them.
+						autofarmNoCoinSince = nil
+						autofarmPauseFlight()
 					elseif not coin then
-						-- No coin found: if we collected at least one, assume the round
-						-- is over and finish (fixes getting stuck at 39/40 when the last
-						-- coin's removal event was missed). Otherwise just wait.
-						if effectiveCollected > 0 then
-							autofarmRoundFinished = true
-							autofarmStopFlight()
-							notify("Autofarm", "No more coins вЂ” finishing round (" .. effectiveCollected .. "/" .. autofarmTargetCoins .. ")", 2)
-							autofarmFinishRound()
+						-- 39/40 FIX: no targetable coin does NOT mean the round is over.
+						-- Two real causes of finishing one coin short:
+						--   1. A still-existing coin was blacklisted too eagerly (3s of
+						--      failed touches / 3 retries under lag) — give those coins a
+						--      SECOND CHANCE before giving up on them for good.
+						--   2. MM2 spawns coins in WAVES: the last coin of the bag often
+						--      belongs to the NEXT wave. The old code finished the round
+						--      the moment the current wave was empty -> 39/40. Now we
+						--      wait up to 8s for a new wave before finishing.
+						local revived = false
+						if effectiveCollected > 0 and effectiveCollected < autofarmTargetCoins then
+							for _, c in ipairs(container:GetChildren()) do
+								if autofarmSpentCoins[c] and not autofarmCoinIsGone(c)
+									and (autofarmCoinRetries[c] or 0) < 9 then
+									autofarmSpentCoins[c] = nil
+									autofarmTouchedAt[c] = nil
+									revived = true
+								end
+							end
+						end
+						if revived then
+							autofarmNoCoinSince = nil
+						elseif effectiveCollected > 0 then
+							autofarmNoCoinSince = autofarmNoCoinSince or os.clock()
+							if (os.clock() - autofarmNoCoinSince) >= 8 then
+								autofarmRoundFinished = true
+								autofarmStopFlight()
+								notify("Autofarm", "No more coins — finishing round (" .. effectiveCollected .. "/" .. autofarmTargetCoins .. ")", 2)
+								autofarmFinishRound()
+							else
+								autofarmPauseFlight()
+							end
 						else
-							autofarmStopFlight()
-							task.wait()
+							autofarmPauseFlight()
 						end
 					else
+						-- Avoid murderer: teleport away if too close during autofarm
+						if autofarmCheckAvoidMurderer(hrp) then
+							autofarmStopFlight()
+							task.wait()
+						else
 						-- Fly: through walls, lying on the back (face up).
-						-- NO teleport snaps anywhere вЂ” instant position jumps are exactly
+						-- Auto Anti-Shoot: disable now that farming has started
+						if autofarmAutoAntiShootActive then
+							autofarmAutoAntiShootActive = false
+							if PastedSources then
+								toggleDesync()
+								if desyncButton then setToggleState(desyncButton, false, "Anti-Shoot: ON", "Anti-Shoot: OFF") end
+								setExtractedBtnState("Anti-Shoot", false)
+							end
+						end
+						-- NO teleport snaps anywhere — instant position jumps are exactly
 						-- what the anti-cheat kicked for. Every frame the character moves
 						-- at most autofarmSpeed studs/sec toward the target, and dt is
 						-- clamped so a lag spike can never become one huge step either.
@@ -13027,10 +14064,10 @@ function startAutofarm()
 
 						-- Keep touching the coin EVERY frame while in range (not just once).
 						-- The coin stays targetable until it disappears, so we keep hitting
-						-- it until the server accepts the touch вЂ” no more flying past coins.
+						-- it until the server accepts the touch — no more flying past coins.
 						-- [perf] HRP touch still fires EVERY frame (that's the one that
 						-- collects), but the full-body volley over all ~15 parts is now
-						-- throttled to every 0.15s per coin вЂ” the old every-frame volley
+						-- throttled to every 0.15s per coin — the old every-frame volley
 						-- was 30+ firetouchinterest pcalls per frame, another hitch source.
 						if dist <= autofarmPickupRange then
 							safeFireTouch(part, hrp)
@@ -13052,7 +14089,7 @@ function startAutofarm()
 						-- Coin Aura fly-through: the aura pulls coins in from up to
 						-- coinAuraRadius studs away, so there is NO reason to stop at
 						-- (or rise onto) this coin. Claim it, mark it pending and
-						-- immediately retarget the NEXT coin вЂ” the flight continues
+						-- immediately retarget the NEXT coin — the flight continues
 						-- without any pause while the aura finishes the pickup.
 						if coinAuraEnabled and dist <= coinAuraRadius then
 							safeFireTouch(part, hrp)
@@ -13086,20 +14123,23 @@ function startAutofarm()
 							target = part.Position - Vector3.new(0, 2, 0)
 						end
 
+						-- SINGLE clamped 3D step at constant speed. The old code
+						-- split the step into horizontal (up to maxStep) PLUS
+						-- vertical (up to 3x maxStep via the ascent multiplier)
+						-- applied in the SAME frame — so the moment the farm
+						-- switched from same-level coins to a coin higher up,
+						-- the effective speed spiked to ~3.16x the configured
+						-- speed. That spike was the "jerk" the anti-cheat can
+						-- kick for. Now the total displacement per frame is
+						-- NEVER more than autofarmSpeed * dt in ANY direction:
+						-- ascents, descents and level changes are all perfectly
+						-- smooth at the same constant speed.
 						local delta = target - hrp.Position
-						local hDelta = Vector3.new(delta.X, 0, delta.Z)
-						local hMag = hDelta.Magnitude
-						local vDelta = delta.Y
-						local ascentMult = (vDelta > 0) and autofarmAscentMultiplier or 1
+						local dMag = delta.Magnitude
 						local maxStep = autofarmSpeed * math.min(dt, autofarmMaxStepDt)
 						local newPos = hrp.Position
-						if hMag > 0.05 then
-							local hStep = math.min(maxStep, hMag)
-							newPos = newPos + hDelta.Unit * hStep
-						end
-						if math.abs(vDelta) > 0.05 then
-							local vStep = math.min(maxStep * ascentMult, math.abs(vDelta))
-							newPos = newPos + Vector3.new(0, (vDelta > 0 and 1 or -1) * vStep, 0)
+						if dMag > 0.05 then
+							newPos = newPos + delta * (math.min(maxStep, dMag) / dMag)
 						end
 						pcall(function()
 							hrp.CFrame = CFrame.new(newPos) * autofarmLieCF
@@ -13108,6 +14148,32 @@ function startAutofarm()
 							hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 							hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 						end)
+						-- Stuck detector: check position over a 1-second window.
+						-- Every ~1 second, compare current position to where we were.
+						-- If moved less than STUCK_MIN_DIST studs in that second, start
+						-- the stuck timer. After STUCK_TIMEOUT seconds stuck, TP to map.
+						local curPos = hrp.Position
+						local now = os.clock()
+						if (now - autofarmStuckCheckAt) >= 1 then
+							autofarmStuckCheckAt = now
+							if autofarmStuckLastPos then
+								local movedDist = (curPos - autofarmStuckLastPos).Magnitude
+								if movedDist < AUTOFARM_STUCK_MIN_DIST then
+									if not autofarmStuckSince then
+										autofarmStuckSince = now
+									elseif (now - autofarmStuckSince) >= AUTOFARM_STUCK_TIMEOUT then
+										autofarmStuckSince = nil
+										autofarmStuckLastPos = nil
+										notify("Autofarm", "Stuck detected — teleporting to map...", 2)
+										pcall(tpToMap)
+									end
+								else
+									autofarmStuckSince = nil
+								end
+							end
+							autofarmStuckLastPos = curPos
+						end
+						end -- avoid murderer else
 					end
 				end
 			end
@@ -13126,14 +14192,14 @@ function setAutofarmEnabled(state, target, silent)
 		end
 		-- Pre-farm teleport is handled by the round-start watcher below:
 		-- it fires exactly ONCE per round (when the sheriff+murderer roles
-		-- appear вЂ” same moment the round-start notification shows), waits
+		-- appear — same moment the round-start notification shows), waits
 		-- 3 seconds, then teleports reliably. Re-arm it so that enabling
 		-- the farm mid-round also teleports once for the current round.
 		autofarmPreTpLastRound = ""
 		startAutofarm()
 	else
 		autofarmStopFlight()
-		-- Every disable resets the session stats вЂ” timer and coin counter
+		-- Every disable resets the session stats — timer and coin counter
 		-- start from zero on the next enable.
 		autofarmSessionCoins = 0
 		autofarmSessionStart = nil
@@ -13153,7 +14219,7 @@ end
 -- ============================================
 -- Round start is detected exactly the way the sheriff/murderer notification
 -- works: the moment BOTH roles appear in the player data a new round has
--- begun. We then wait 3 seconds and teleport ONCE вЂ” re-applying the CFrame
+-- begun. We then wait 3 seconds and teleport ONCE — re-applying the CFrame
 -- for several frames so the teleport is guaranteed to stick even if the game
 -- (or the farm flight itself) tries to move the character back.
 autofarmPreTpLastRound = ""
@@ -13236,6 +14302,83 @@ task.spawn(function()
 	end
 end)
 
+-- Auto Anti-Shoot: enable Anti-Shoot at round start, disable when farming begins.
+-- The pre-farm TP loop detects round start — we piggyback on the same detection:
+-- when a new round starts and Auto Anti-Shoot is ON, enable Anti-Shoot immediately
+-- (it protects you during the pre-farm wait). The farming loop then disables it
+-- the moment it starts flying to coins.
+autofarmAutoAntiShootLastRound = ""
+autofarmAutoAntiShootActive = false -- true while Anti-Shoot is ON due to this feature
+task.spawn(function()
+	while task.wait(0.4) do
+		if autofarmEnabled and autofarmAutoAntiShootEnabled then
+			local result = autofarmGetPlayerData()
+			if result then
+				local murderer, sheriff = nil, nil
+				for name, data in pairs(result) do
+					if data.Role == "Murderer" then
+						murderer = name
+					elseif data.Role == "Sheriff" then
+						sheriff = name
+					end
+				end
+				if murderer and sheriff then
+					local roundKey = murderer .. "_" .. sheriff
+					if roundKey ~= autofarmAutoAntiShootLastRound then
+						autofarmAutoAntiShootLastRound = roundKey
+						-- Wait for the pre-farm TP to fire (3 seconds), then enable
+						-- Anti-Shoot right after so it protects during the remaining wait.
+						task.wait(3.5)
+						if autofarmEnabled and autofarmAutoAntiShootEnabled then
+							if not PastedSources then
+								toggleDesync()
+								if desyncButton then setToggleState(desyncButton, true, "Anti-Shoot: ON", "Anti-Shoot: OFF") end
+								setExtractedBtnState("Anti-Shoot", true)
+								autofarmAutoAntiShootActive = true
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
+-- Auto Kill Sheriff/Hero: when you're the Murderer, kill anyone who picks up the gun
+-- Runs on Heartbeat and immediately eliminates any player holding a Gun tool.
+autofarmAutoKillSheriffConnection = nil
+function autofarmSetupAutoKillSheriff()
+	if autofarmAutoKillSheriffConnection then
+		autofarmAutoKillSheriffConnection:Disconnect()
+		autofarmAutoKillSheriffConnection = nil
+	end
+	if not autofarmAutoKillSheriffEnabled then return end
+	autofarmAutoKillSheriffConnection = RunService.Heartbeat:Connect(function()
+		if not autofarmAutoKillSheriffEnabled then return end
+		if not autofarmEnabled then return end
+		if not isPlayerMurderer() then return end
+		-- Check every player for a gun
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= player then
+				local hasGun = false
+				local char = plr.Character
+				if char and char:FindFirstChild("Gun") then
+					hasGun = true
+				else
+					local bp = plr:FindFirstChild("Backpack")
+					if bp and bp:FindFirstChild("Gun") then
+						hasGun = true
+					end
+				end
+				if hasGun then
+					pcall(doKillPlayer, plr.Name)
+				end
+			end
+		end
+	end)
+end
+autofarmSetupAutoKillSheriff()
+
 -- ===== Discord webhook: coins farmed + how long you've been farming =====
 function autofarmFormatDuration(sec)
 	sec = math.floor(sec)
@@ -13258,7 +14401,7 @@ function autofarmSendWebhook()
 	local elapsed = autofarmSessionStart and (os.clock() - autofarmSessionStart) or 0
 	local payload = game:GetService("HttpService"):JSONEncode({
 		embeds = {{
-			title = "Adrenalin.win вЂ” Autofarm",
+			title = "Adrenalin.win — Autofarm",
 			color = 8421504,
 			fields = {
 				{ name = "Player", value = string.format("%s (%d)", player.Name, player.UserId), inline = true },
@@ -13381,6 +14524,40 @@ autofarmSpeedBox.FocusLost:Connect(function()
 	autofarmSpeedBox.Text = tostring(autofarmSpeed)
 end)
 
+-- ===== Anti-Afk: keeps you connected by simulating input when the game goes idle =====
+antiAfkEnabled = false
+antiAfkConnection = nil
+antiAfkVirtualUser = game:GetService("VirtualUser")
+
+function setupAntiAfk()
+	if antiAfkConnection then antiAfkConnection:Disconnect(); antiAfkConnection = nil end
+	if not antiAfkEnabled then return end
+	antiAfkConnection = player.Idled:Connect(function()
+		pcall(function()
+			antiAfkVirtualUser:CaptureController()
+			antiAfkVirtualUser:ClickButton2(Vector2.new())
+		end)
+	end)
+end
+
+function stopAntiAfk()
+	antiAfkEnabled = false
+	if antiAfkConnection then antiAfkConnection:Disconnect(); antiAfkConnection = nil end
+end
+
+currentCategory = "Autofarm"
+antiAfkBtn = createButton("AntiAfkButton", "Anti-Afk: OFF", 302.7)
+antiAfkBtn.MouseButton1Click:Connect(function()
+	antiAfkEnabled = not antiAfkEnabled
+	if antiAfkEnabled then
+		setupAntiAfk()
+	else
+		stopAntiAfk()
+	end
+	setToggleState(antiAfkBtn, antiAfkEnabled, "Anti-Afk: ON", "Anti-Afk: OFF")
+	saveConfig()
+end)
+
 createSection("After Autofarm", 303)
 
 autofarmResetInnocentBtn = createButton("AutofarmResetInnocentButton", "Auto Reset (Innocent): OFF", 304)
@@ -13401,6 +14578,14 @@ autofarmResetMurdererBtn.MouseButton1Click:Connect(function()
 	setToggleState(autofarmResetMurdererBtn, autofarmResetMurdererEnabled, "Auto Reset (Murderer): ON", "Auto Reset (Murderer): OFF")
 end)
 
+-- Auto Kill Sheriff/Hero: when you're the Murderer, kill anyone who picks up the gun
+autofarmAutoKillSheriffBtn = createButton("AutofarmAutoKillSheriffButton", "Auto Kill Sheriff/Hero (Murderer): OFF", 306.5)
+autofarmAutoKillSheriffBtn.MouseButton1Click:Connect(function()
+	autofarmAutoKillSheriffEnabled = not autofarmAutoKillSheriffEnabled
+	setToggleState(autofarmAutoKillSheriffBtn, autofarmAutoKillSheriffEnabled, "Auto Kill Sheriff/Hero (Murderer): ON", "Auto Kill Sheriff/Hero (Murderer): OFF")
+	saveConfig()
+end)
+
 -- Auto shot at the murderer with FORCED Piercer Bullet at the end of the farm
 -- (works for anyone holding the gun: sheriff, hero, or innocent who picked it up)
 autofarmPiercerBtn = createButton("AutofarmPiercerButton", "Shoot Murderer (Piercer, Sheriff/Hero): OFF", 307)
@@ -13413,6 +14598,14 @@ autofarmKillAllBtn = createButton("AutofarmKillAllButton", "Kill Everyone (Murde
 autofarmKillAllBtn.MouseButton1Click:Connect(function()
 	autofarmKillAllEnabled = not autofarmKillAllEnabled
 	setToggleState(autofarmKillAllBtn, autofarmKillAllEnabled, "Kill Everyone (Murderer): ON", "Kill Everyone (Murderer): OFF")
+end)
+
+-- Auto Anti-Shoot: enable Anti-Shoot at round start, auto-disable when farming begins
+autofarmAutoAntiShootBtn = createButton("AutofarmAutoAntiShootButton", "Auto Anti-Shoot: OFF", 308.1)
+autofarmAutoAntiShootBtn.MouseButton1Click:Connect(function()
+	autofarmAutoAntiShootEnabled = not autofarmAutoAntiShootEnabled
+	setToggleState(autofarmAutoAntiShootBtn, autofarmAutoAntiShootEnabled, "Auto Anti-Shoot: ON", "Auto Anti-Shoot: OFF")
+	saveConfig()
 end)
 
 -- ===== Pre-farm TP: toggle + location dropdown on the same row =====
@@ -13445,7 +14638,7 @@ autofarmPreTpSelect.Size = UDim2.new(0.5, -2, 1, 0)
 autofarmPreTpSelect.Position = UDim2.new(0.5, 2, 0, 0)
 autofarmPreTpSelect.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 autofarmPreTpSelect.TextColor3 = Color3.fromRGB(255, 255, 255)
-autofarmPreTpSelect.Text = "Lobby в–ј"
+autofarmPreTpSelect.Text = "Lobby ▼"
 autofarmPreTpSelect.Font = Enum.Font.SourceSansBold
 autofarmPreTpSelect.TextSize = 14
 autofarmPreTpSelect.AutoButtonColor = false
@@ -13485,7 +14678,7 @@ for i, modeName in ipairs(autofarmPreTpModes) do
 	btn.Parent = autofarmPreTpDropdownList
 	btn.MouseButton1Click:Connect(function()
 		autofarmPreTpModeIndex = i
-		autofarmPreTpSelect.Text = modeName .. " в–ј"
+		autofarmPreTpSelect.Text = modeName .. " ▼"
 		autofarmPreTpDropdownFrame.Visible = false
 	end)
 	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60) end)
@@ -13528,7 +14721,7 @@ autofarmTpSelect.Size = UDim2.new(0.5, -2, 1, 0)
 autofarmTpSelect.Position = UDim2.new(0.5, 2, 0, 0)
 autofarmTpSelect.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 autofarmTpSelect.TextColor3 = Color3.fromRGB(255, 255, 255)
-autofarmTpSelect.Text = "Lobby в–ј"
+autofarmTpSelect.Text = "Lobby ▼"
 autofarmTpSelect.Font = Enum.Font.SourceSansBold
 autofarmTpSelect.TextSize = 14
 autofarmTpSelect.AutoButtonColor = false
@@ -13568,7 +14761,7 @@ for i, modeName in ipairs(autofarmTpModes) do
 	btn.Parent = autofarmTpDropdownList
 	btn.MouseButton1Click:Connect(function()
 		autofarmTpModeIndex = i
-		autofarmTpSelect.Text = modeName .. " в–ј"
+		autofarmTpSelect.Text = modeName .. " ▼"
 		autofarmTpDropdownFrame.Visible = false
 	end)
 	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60) end)
@@ -13576,6 +14769,129 @@ for i, modeName in ipairs(autofarmTpModes) do
 end
 autofarmTpSelect.MouseButton1Click:Connect(function()
 	autofarmTpDropdownFrame.Visible = not autofarmTpDropdownFrame.Visible
+end)
+
+-- ===== Avoid Murderer: toggle + location dropdown + distance input =====
+autofarmAvoidMurdererModes = {"OFF", "Lobby", "VoteMap", "Map", "Above Map", "Void"}
+
+autofarmAvoidMurdererRow = Instance.new("Frame")
+autofarmAvoidMurdererRow.Name = "AutofarmAvoidMurdererRow"
+autofarmAvoidMurdererRow.Size = UDim2.new(1, 0, 0, 42)
+autofarmAvoidMurdererRow.BackgroundTransparency = 1
+autofarmAvoidMurdererRow.LayoutOrder = 308.9
+autofarmAvoidMurdererRow.Parent = categoryFrames["Autofarm"]
+
+autofarmAvoidMurdererBtn = Instance.new("TextButton")
+autofarmAvoidMurdererBtn.Name = "AutofarmAvoidMurdererButton"
+autofarmAvoidMurdererBtn.Size = UDim2.new(0.5, -2, 1, 0)
+autofarmAvoidMurdererBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmAvoidMurdererBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmAvoidMurdererBtn.Text = "Avoid Murderer TP: OFF"
+autofarmAvoidMurdererBtn.Font = Enum.Font.SourceSansBold
+autofarmAvoidMurdererBtn.TextSize = 14
+autofarmAvoidMurdererBtn.Parent = autofarmAvoidMurdererRow
+Instance.new("UICorner", autofarmAvoidMurdererBtn).CornerRadius = UDim.new(0, 6)
+autofarmAvoidMurdererBtn.MouseButton1Click:Connect(function()
+	autofarmAvoidMurdererEnabled = not autofarmAvoidMurdererEnabled
+	setToggleState(autofarmAvoidMurdererBtn, autofarmAvoidMurdererEnabled, "Avoid Murderer TP: ON", "Avoid Murderer TP: OFF")
+	saveConfig()
+end)
+
+autofarmAvoidMurdererSelect = Instance.new("TextButton")
+autofarmAvoidMurdererSelect.Size = UDim2.new(0.5, -2, 1, 0)
+autofarmAvoidMurdererSelect.Position = UDim2.new(0.5, 2, 0, 0)
+autofarmAvoidMurdererSelect.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmAvoidMurdererSelect.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmAvoidMurdererSelect.Text = "Lobby ▼"
+autofarmAvoidMurdererSelect.Font = Enum.Font.SourceSansBold
+autofarmAvoidMurdererSelect.TextSize = 14
+autofarmAvoidMurdererSelect.AutoButtonColor = false
+autofarmAvoidMurdererSelect.Parent = autofarmAvoidMurdererRow
+Instance.new("UICorner", autofarmAvoidMurdererSelect).CornerRadius = UDim.new(0, 6)
+
+autofarmAvoidMurdererDropdownFrame = Instance.new("Frame")
+autofarmAvoidMurdererDropdownFrame.Size = UDim2.new(0.5, -2, 0, math.min(#autofarmAvoidMurdererModes * 30, 180))
+autofarmAvoidMurdererDropdownFrame.Position = UDim2.new(0.5, 2, 0, 42)
+autofarmAvoidMurdererDropdownFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmAvoidMurdererDropdownFrame.BorderSizePixel = 0
+autofarmAvoidMurdererDropdownFrame.Visible = false
+autofarmAvoidMurdererDropdownFrame.ZIndex = 10
+autofarmAvoidMurdererDropdownFrame.Parent = autofarmAvoidMurdererRow
+
+autofarmAvoidMurdererDropdownList = Instance.new("ScrollingFrame")
+autofarmAvoidMurdererDropdownList.Size = UDim2.new(1, 0, 1, 0)
+autofarmAvoidMurdererDropdownList.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmAvoidMurdererDropdownList.BorderSizePixel = 0
+autofarmAvoidMurdererDropdownList.ScrollBarThickness = 4
+autofarmAvoidMurdererDropdownList.CanvasSize = UDim2.new(0, 0, 0, #autofarmAvoidMurdererModes * 30)
+autofarmAvoidMurdererDropdownList.ZIndex = 10
+autofarmAvoidMurdererDropdownList.Parent = autofarmAvoidMurdererDropdownFrame
+Instance.new("UICorner", autofarmAvoidMurdererDropdownList).CornerRadius = UDim.new(0, 6)
+
+for i, modeName in ipairs(autofarmAvoidMurdererModes) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 0, 30)
+	btn.Position = UDim2.new(0, 0, 0, (i-1)*30)
+	btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = modeName
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 14
+	btn.AutoButtonColor = false
+	btn.ZIndex = 10
+	btn.Parent = autofarmAvoidMurdererDropdownList
+	btn.MouseButton1Click:Connect(function()
+		autofarmAvoidMurdererModeIndex = i
+		autofarmAvoidMurdererSelect.Text = modeName .. " ▼"
+		autofarmAvoidMurdererDropdownFrame.Visible = false
+	end)
+	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60) end)
+	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0) end)
+end
+autofarmAvoidMurdererSelect.MouseButton1Click:Connect(function()
+	autofarmAvoidMurdererDropdownFrame.Visible = not autofarmAvoidMurdererDropdownFrame.Visible
+end)
+
+-- Avoid Murderer distance row: label + input box
+autofarmAvoidMurdererDistRow = Instance.new("Frame")
+autofarmAvoidMurdererDistRow.Name = "AutofarmAvoidMurdererDistRow"
+autofarmAvoidMurdererDistRow.Size = UDim2.new(1, 0, 0, 42)
+autofarmAvoidMurdererDistRow.BackgroundTransparency = 1
+autofarmAvoidMurdererDistRow.LayoutOrder = 310
+autofarmAvoidMurdererDistRow.Parent = categoryFrames["Autofarm"]
+
+autofarmAvoidMurdererDistLabel = Instance.new("TextLabel")
+autofarmAvoidMurdererDistLabel.Size = UDim2.new(1, -80, 1, 0)
+autofarmAvoidMurdererDistLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmAvoidMurdererDistLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmAvoidMurdererDistLabel.Text = "Avoid Distance (studs)"
+autofarmAvoidMurdererDistLabel.Font = Enum.Font.SourceSansBold
+autofarmAvoidMurdererDistLabel.TextSize = 14
+autofarmAvoidMurdererDistLabel.Parent = autofarmAvoidMurdererDistRow
+Instance.new("UICorner", autofarmAvoidMurdererDistLabel).CornerRadius = UDim.new(0, 6)
+
+autofarmAvoidMurdererDistBox = Instance.new("TextBox")
+autofarmAvoidMurdererDistBox.Name = "AutofarmAvoidMurdererDistInput"
+autofarmAvoidMurdererDistBox.Size = UDim2.new(0, 74, 1, 0)
+autofarmAvoidMurdererDistBox.Position = UDim2.new(1, -74, 0, 0)
+autofarmAvoidMurdererDistBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autofarmAvoidMurdererDistBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+autofarmAvoidMurdererDistBox.Text = tostring(autofarmAvoidMurdererDist)
+autofarmAvoidMurdererDistBox.PlaceholderText = "Studs"
+autofarmAvoidMurdererDistBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+autofarmAvoidMurdererDistBox.Font = Enum.Font.SourceSansBold
+autofarmAvoidMurdererDistBox.TextSize = 14
+autofarmAvoidMurdererDistBox.ClearTextOnFocus = false
+autofarmAvoidMurdererDistBox.Parent = autofarmAvoidMurdererDistRow
+Instance.new("UICorner", autofarmAvoidMurdererDistBox).CornerRadius = UDim.new(0, 6)
+
+autofarmAvoidMurdererDistBox.FocusLost:Connect(function()
+	local n = tonumber(autofarmAvoidMurdererDistBox.Text)
+	if n then
+		autofarmAvoidMurdererDist = math.clamp(n, 5, 200)
+	end
+	autofarmAvoidMurdererDistBox.Text = tostring(autofarmAvoidMurdererDist)
+	saveConfig()
 end)
 
 -- Reset Murderer On Death: LAST button in this category
@@ -13589,19 +14905,19 @@ end)
 
 -- Monitor player death -> wait 5s -> Touch Fling ON -> Reset Murderer -> Touch Fling OFF.
 -- The 5-second wait starts AT DEATH (the old version waited for a respawn first,
--- and its blocking repeat-loops silently hung вЂ” that's why the feature "stopped
+-- and its blocking repeat-loops silently hung — that's why the feature "stopped
 -- working"). Death is also detected when the character/humanoid is REMOVED
 -- (common in MM2), which the old `hum and hum.Health <= 0` check missed entirely.
 autofarmResetDeathBusy = false
 task.spawn(function()
 	local wasAlive = false
 	while task.wait(0.2) do
-		if autofarmResetDeathEnabled then
+		if autofarmResetDeathEnabled and autofarmEnabled then
 			local char = player.Character
 			local hum = char and char:FindFirstChildOfClass("Humanoid")
 			local isAlive = (hum ~= nil) and hum.Health > 0
 			if wasAlive and not isAlive and not autofarmResetDeathBusy then
-				-- We just died вЂ” run the sequence in its own thread so the
+				-- We just died — run the sequence in its own thread so the
 				-- detector keeps polling and NEVER misses the next death.
 				autofarmResetDeathBusy = true
 				task.spawn(function()
@@ -13640,9 +14956,9 @@ task.spawn(function()
 end)
 
 -- ===== Discord webhook UI =====
-createSection("Webhook", 310)
+createSection("Webhook", 311)
 
-autofarmWebhookBtn = createButton("AutofarmWebhookButton", "Discord Webhook Notification: OFF", 311)
+autofarmWebhookBtn = createButton("AutofarmWebhookButton", "Discord Webhook Notification: OFF", 312)
 autofarmWebhookBtn.MouseButton1Click:Connect(function()
 	autofarmWebhookEnabled = not autofarmWebhookEnabled
 	setToggleState(autofarmWebhookBtn, autofarmWebhookEnabled, "Discord Webhook Notification: ON", "Discord Webhook Notification: OFF")
@@ -13653,7 +14969,7 @@ autofarmWebhookUrlRow = Instance.new("Frame")
 autofarmWebhookUrlRow.Name = "AutofarmWebhookUrlRow"
 autofarmWebhookUrlRow.Size = UDim2.new(1, 0, 0, 64)
 autofarmWebhookUrlRow.BackgroundTransparency = 1
-autofarmWebhookUrlRow.LayoutOrder = 311.5
+autofarmWebhookUrlRow.LayoutOrder = 312.5
 autofarmWebhookUrlRow.Parent = categoryFrames["Autofarm"]
 
 autofarmWebhookUrlLabel = Instance.new("TextLabel")
@@ -13705,7 +15021,7 @@ autofarmWebhookRow = Instance.new("Frame")
 autofarmWebhookRow.Name = "AutofarmWebhookRow"
 autofarmWebhookRow.Size = UDim2.new(1, 0, 0, 42)
 autofarmWebhookRow.BackgroundTransparency = 1
-autofarmWebhookRow.LayoutOrder = 312
+autofarmWebhookRow.LayoutOrder = 313
 autofarmWebhookRow.Parent = categoryFrames["Autofarm"]
 
 autofarmWebhookLabel = Instance.new("TextLabel")
@@ -13742,13 +15058,13 @@ autofarmWebhookBox.FocusLost:Connect(function()
 end)
 
 -- Manual "send now" button for instant reports
-autofarmWebhookSendBtn = createButton("AutofarmWebhookSendButton", "Send Notification Now (Test)", 313)
+autofarmWebhookSendBtn = createButton("AutofarmWebhookSendButton", "Send Notification Now (Test)", 314)
 autofarmWebhookSendBtn.MouseButton1Click:Connect(function()
 	task.spawn(autofarmSendWebhook)
 end)
 
 -- ===== Auto server hop when you're the only player left =====
-createSection("Server Hop", 314)
+createSection("Server Hop", 315)
 
 -- Queue the script for re-execution after the teleport so it auto-loads on the
 -- new server and the config restore re-enables everything that was turned on.
@@ -13803,7 +15119,7 @@ task.spawn(function()
 				aloneSince = aloneSince or os.clock()
 				if (os.clock() - aloneSince) >= 10 then
 					hopInProgress = true
-					notify("Server Hop", "Alone on the server вЂ” hopping to another one...", 3)
+					notify("Server Hop", "Alone on the server — hopping to another one...", 3)
 					autofarmServerHop()
 					task.wait(30) -- teleport failed/throttled -> allow a retry
 					hopInProgress = false
@@ -13816,7 +15132,7 @@ task.spawn(function()
 	end
 end)
 
-autofarmServerHopBtn = createButton("AutofarmServerHopButton", "Server Hop When Alone: OFF", 315)
+autofarmServerHopBtn = createButton("AutofarmServerHopButton", "Server Hop When Alone: OFF", 316)
 autofarmServerHopBtn.MouseButton1Click:Connect(function()
 	autofarmServerHopEnabled = not autofarmServerHopEnabled
 	setToggleState(autofarmServerHopBtn, autofarmServerHopEnabled, "Server Hop When Alone: ON", "Server Hop When Alone: OFF")
@@ -13829,7 +15145,7 @@ autofarmScriptUrlRow = Instance.new("Frame")
 autofarmScriptUrlRow.Name = "AutofarmScriptUrlRow"
 autofarmScriptUrlRow.Size = UDim2.new(1, 0, 0, 64)
 autofarmScriptUrlRow.BackgroundTransparency = 1
-autofarmScriptUrlRow.LayoutOrder = 316
+autofarmScriptUrlRow.LayoutOrder = 317
 autofarmScriptUrlRow.Parent = categoryFrames["Autofarm"]
 
 autofarmScriptUrlLabel = Instance.new("TextLabel")
@@ -13870,7 +15186,6 @@ autofarmScriptUrlBox.FocusLost:Connect(function()
 		autofarmScriptUrlBox.Text = AUTOFARM_SCRIPT_URL
 	end
 end)
-
 
 currentCategory = "Animations"
 createSection("Animations", 400)
@@ -16593,11 +17908,7 @@ end
 
 refreshSavedTeamers()
 
-task.spawn(function()
-	while task.wait(5) do
-		refreshSavedTeamers()
-	end
-end)
+-- [perf] removed periodic 5s saved-list rebuild (refreshSavedTeamers): major freeze source with large lists; list now refreshes only when it actually changes
 
 -- Initial refresh
 refreshTeamerList()
@@ -16618,7 +17929,7 @@ createSection("Main", 700)
 
 mainProfileFrame = Instance.new("Frame")
 mainProfileFrame.Name = "MainProfileFrame"
-mainProfileFrame.Size = UDim2.new(1, 0, 0, 382)
+mainProfileFrame.Size = UDim2.new(1, 0, 0, 404)
 mainProfileFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 mainProfileFrame.BorderSizePixel = 0
 mainProfileFrame.LayoutOrder = 701
@@ -16660,6 +17971,7 @@ function createProfileLabel(text, yPos)
 end
 
 currentPlaceLabel = createProfileLabel("Current Place: Loading...", 10)
+createProfileLabel("Place ID: " .. tostring(game.PlaceId), 32)
 coroutine.wrap(function()
 	local suc, info = pcall(function()
 		return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
@@ -16668,17 +17980,17 @@ coroutine.wrap(function()
 		currentPlaceLabel.Text = "Current Place: " .. info.Name
 	end
 end)()
-createProfileLabel("Discord: Verified", 32)
-createProfileLabel("Subscription: WIN-X Premium & Star+", 76)
-scriptActivationLabel = createProfileLabel("Script Activations: " .. scriptActivationCount, 98)
-serverTimeLabel = createProfileLabel("Server Time: 0d 0h 0m 0s", 120)
-createProfileLabel("Roles: Owner & Developer", 54)
+createProfileLabel("Discord: Verified", 54)
+createProfileLabel("Subscription: WIN-X Premium & Star+", 98)
+scriptActivationLabel = createProfileLabel("Script Activations: " .. scriptActivationCount, 120)
+serverTimeLabel = createProfileLabel("Server Time: 0d 0h 0m 0s", 142)
+createProfileLabel("Roles: Owner & Developer", 76)
 
-createProfileLabel("Display Name: " .. player.DisplayName, 142)
-createProfileLabel("Username: " .. player.Name, 164)
-createProfileLabel("User ID: " .. player.UserId, 186)
+createProfileLabel("Display Name: " .. player.DisplayName, 164)
+createProfileLabel("Username: " .. player.Name, 186)
+createProfileLabel("User ID: " .. player.UserId, 208)
 
-regDateLabel = createProfileLabel("Registered: Loading...", 208)
+regDateLabel = createProfileLabel("Registered: Loading...", 230)
 mainCreationTime = os.time() - player.AccountAge * 86400
 coroutine.wrap(function()
 	local function calcRegDate(accountAge)
@@ -16745,14 +18057,14 @@ ageText = player.AccountAge .. " days"
 if years > 0 or months > 0 or days > 0 then
 	ageText = ageText .. " (" .. years .. "y, " .. months .. "m, " .. days .. "d)"
 end
-createProfileLabel("Account Age: " .. ageText, 230)
+createProfileLabel("Account Age: " .. ageText, 252)
 
-exactAgeLabel = createProfileLabel("Current Age: N/A", 252)
-positionLabel = createProfileLabel("Player Position: N/A", 274)
-speedLabel = createProfileLabel("Walk Speed: N/A", 296)
-jumpPowerLabel = createProfileLabel("Jump Power: N/A", 318)
-healthLabel = createProfileLabel("Health: N/A", 340)
-gravityLabel = createProfileLabel("Gravity: N/A", 362)
+exactAgeLabel = createProfileLabel("Current Age: N/A", 274)
+positionLabel = createProfileLabel("Player Position: N/A", 296)
+speedLabel = createProfileLabel("Walk Speed: N/A", 318)
+jumpPowerLabel = createProfileLabel("Jump Power: N/A", 340)
+healthLabel = createProfileLabel("Health: N/A", 362)
+gravityLabel = createProfileLabel("Gravity: N/A", 384)
 
 -- Server time updater
 coroutine.wrap(function()
@@ -17005,6 +18317,39 @@ end)
 
 currentCategory = "Settings"
 createSection("Settings", 700)
+
+settingsSearchBox = Instance.new("TextBox")
+settingsSearchBox.Name = "SettingsSearchBox"
+settingsSearchBox.Size = UDim2.new(1, 0, 0, 42)
+settingsSearchBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+settingsSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+settingsSearchBox.PlaceholderText = "Search settings"
+settingsSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+settingsSearchBox.Text = ""
+settingsSearchBox.Font = Enum.Font.SourceSansBold
+settingsSearchBox.TextSize = 16
+settingsSearchBox.ClearTextOnFocus = false
+settingsSearchBox.LayoutOrder = 700.5
+settingsSearchBox.Parent = categoryFrames["Settings"]
+
+settingsSearchCorner = Instance.new("UICorner")
+settingsSearchCorner.CornerRadius = UDim.new(0, 6)
+settingsSearchCorner.Parent = settingsSearchBox
+
+settingsSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local searchText = string.lower(settingsSearchBox.Text)
+	for _, child in ipairs(categoryFrames["Settings"]:GetChildren()) do
+		if child ~= settingsSearchBox and not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			local txt = ""
+			if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+				txt = child.Text
+			end
+			local lbl = child:FindFirstChildWhichIsA("TextLabel", true)
+			if lbl then txt = txt .. " " .. lbl.Text end
+			child.Visible = (searchText == "") or (string.find(string.lower(txt), searchText, 1, true) ~= nil)
+		end
+	end
+end)
 
 toggleBgRow = Instance.new("Frame")
 toggleBgRow.Size = UDim2.new(1, 0, 0, 42)
@@ -19253,6 +20598,9 @@ btnFeatures = {
 	{name = "KillAura",
 	 toggle = function() toggleReach(); setToggleState(reachButton, reachEnabled, "KillAura: ON", "KillAura: OFF"); setExtractedBtnState("KillAura", reachEnabled) end,
 	 getState = function() return reachEnabled end},
+	{name = "Throwing Knife Aura",
+	 toggle = function() toggleThrowingKnifeAura(); setToggleState(throwingKnifeAuraButton, throwingKnifeAuraEnabled, "Throwing Knife Aura: ON", "Throwing Knife Aura: OFF"); setExtractedBtnState("Throwing Knife Aura", throwingKnifeAuraEnabled) end,
+	 getState = function() return throwingKnifeAuraEnabled end},
 	{name = "Auto Dodge Knife",
 	 toggle = function() toggleAutoDodge(); setToggleState(autoDodgeButton, autoDodgeEnabled, "Auto Dodge Knife: ON", "Auto Dodge Knife: OFF"); setExtractedBtnState("Auto Dodge Knife", autoDodgeEnabled) end,
 	 getState = function() return autoDodgeEnabled end},
@@ -19338,12 +20686,24 @@ btnFeatures = {
 	{name = "LMB Shoot",
 	 toggle = function() aimLmbShootEnabled = not aimLmbShootEnabled; setToggleState(lmbShootButton, aimLmbShootEnabled, "LMB Shoot: ON", "LMB Shoot: OFF"); setExtractedBtnState("LMB Shoot", aimLmbShootEnabled) end,
 	 getState = function() return aimLmbShootEnabled end},
+	{name = "Flick Shot",
+	 toggle = function() flickShotEnabled = not flickShotEnabled; setToggleState(flickShotButton, flickShotEnabled, "Flick Shot: ON", "Flick Shot: OFF"); setExtractedBtnState("Flick Shot", flickShotEnabled) end,
+	 getState = function() return flickShotEnabled end},
+	{name = "Spin 360",
+	 toggle = function() spin360Enabled = not spin360Enabled; setToggleState(spin360Button, spin360Enabled, "Spin 360: ON", "Spin 360: OFF"); setExtractedBtnState("Spin 360", spin360Enabled) end,
+	 getState = function() return spin360Enabled end},
 	{name = "Piercer Bullet",
 	 toggle = function() aimWallbangEnabled = not aimWallbangEnabled; setToggleState(wallBangButton, aimWallbangEnabled, "Piercer Bullet: ON", "Piercer Bullet: OFF"); setExtractedBtnState("Piercer Bullet", aimWallbangEnabled) end,
 	 getState = function() return aimWallbangEnabled end},
 	{name = "Auto Shoot Murderer",
 	 toggle = function() aimAutoShotEnabled = not aimAutoShotEnabled; setToggleState(autoShotButton, aimAutoShotEnabled, "Auto Shoot Murderer: ON", "Auto Shoot Murderer: OFF"); setExtractedBtnState("Auto Shoot Murderer", aimAutoShotEnabled) end,
 	 getState = function() return aimAutoShotEnabled end},
+	{name = "Lay",
+	 toggle = function() toggleLay(); setToggleState(layButton, layEnabled, "Lay: ON", "Lay: OFF"); setExtractedBtnState("Lay", layEnabled) end,
+	 getState = function() return layEnabled end},
+	{name = "Freeze",
+	 toggle = function() toggleFreeze(); setToggleState(freezeButton, freezeEnabled, "Freeze: ON", "Freeze: OFF"); setExtractedBtnState("Freeze", freezeEnabled) end,
+	 getState = function() return freezeEnabled end},
 	{name = "FPS",
 	 toggle = function() end},
 	{name = "Ping",
@@ -19522,7 +20882,7 @@ popupHeightInputCorner.Parent = popupHeightInput
 
 popupWidthInput.FocusLost:Connect(function()
 	local val = tonumber(popupWidthInput.Text)
-	if val and val >= 100 and val <= 400 then
+	if val and val >= 40 and val <= 400 then
 		popupBtnWidth = val
 		for name, data in pairs(extractedButtons) do
 			if data.btn then
@@ -19676,7 +21036,7 @@ do
 
 	fpsPingWidthInput.FocusLost:Connect(function()
 		local val = tonumber(fpsPingWidthInput.Text)
-		if val and val >= 100 and val <= 400 then
+		if val and val >= 40 and val <= 400 then
 			fpsPingBtnWidth = val
 			if extractedButtons["FPS+Ping"] and extractedButtons["FPS+Ping"].btn then
 				extractedButtons["FPS+Ping"].btn.Size = UDim2.new(0, val, 0, fpsPingBtnHeight)
@@ -19700,7 +21060,26 @@ do
 	end)
 end
 
+buttonsSearchBox = Instance.new("TextBox")
+buttonsSearchBox.Name = "ButtonsSearchBox"
+buttonsSearchBox.Size = UDim2.new(1, 0, 0, 42)
+buttonsSearchBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+buttonsSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+buttonsSearchBox.PlaceholderText = "Search buttons"
+buttonsSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+buttonsSearchBox.Text = ""
+buttonsSearchBox.Font = Enum.Font.SourceSansBold
+buttonsSearchBox.TextSize = 16
+buttonsSearchBox.ClearTextOnFocus = false
+buttonsSearchBox.LayoutOrder = 901
+buttonsSearchBox.Parent = categoryFrames["Buttons"]
+
+buttonsSearchCorner = Instance.new("UICorner")
+buttonsSearchCorner.CornerRadius = UDim.new(0, 6)
+buttonsSearchCorner.Parent = buttonsSearchBox
+
 extractHandlers = {}
+buttonRowRefs = {}
 
 for bindOrder, feature in ipairs(btnFeatures) do
 	local row = Instance.new("Frame")
@@ -19709,6 +21088,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 	row.BackgroundTransparency = 1
 	row.LayoutOrder = 905 + bindOrder
 	row.Parent = categoryFrames["Buttons"]
+	buttonRowRefs[feature.name] = row
 
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(1, -164, 1, 0)
@@ -20041,6 +21421,13 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		saveConfig()
 	end)
 end
+
+buttonsSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local searchText = string.lower(buttonsSearchBox.Text)
+	for name, row in pairs(buttonRowRefs) do
+		row.Visible = searchText == "" or string.find(string.lower(name), searchText, 1, true) ~= nil
+	end
+end)
 
 refreshPlayerList()
 updateFlingStatus()
@@ -20522,12 +21909,25 @@ function restoreFullConfig()
 	autofarmWebhookEnabled = T.autofarmWebhookEnabled or false
 	autofarmServerHopEnabled = T.autofarmServerHopEnabled or false
 	autofarmResetDeathEnabled = T.autofarmResetDeathEnabled or false
+	autofarmAvoidMurdererEnabled = T.autofarmAvoidMurdererEnabled or false
+	autofarmAutoAntiShootEnabled = T.autofarmAutoAntiShootEnabled or false
+	autofarmAutoKillSheriffEnabled = T.autofarmAutoKillSheriffEnabled or false
+	antiAfkEnabled = T.antiAfkEnabled or false
+	throwingKnifeAuraEnabled = T.throwingKnifeAuraEnabled or false
+	flickShotEnabled = T.flickShotEnabled or false
+	spin360Enabled = T.spin360Enabled or false
+	layEnabled = T.layEnabled or false
+	freezeEnabled = T.freezeEnabled or false
+	customJumpPowerEnabled = T.customJumpPowerEnabled or false
+	instantRoleNotifyEnabled = T.instantRoleNotifyEnabled or false
+	showRoundTimerEnabled = T.showRoundTimerEnabled or false
 
 	-- Restore values
 	if c.values then
 		if c.values.JUMP_BOOST_POWER then JUMP_BOOST_POWER = c.values.JUMP_BOOST_POWER end
 		if c.values.FAKE_SPEED_CFRAME_SPEED then FAKE_SPEED_CFRAME_SPEED = c.values.FAKE_SPEED_CFRAME_SPEED end
 		if c.values.range then range = c.values.range end
+		if c.values.throwingKnifeAuraRadius then throwingKnifeAuraRadius = c.values.throwingKnifeAuraRadius end
 		if c.values.autoInvisActivateDist then autoInvisActivateDist = c.values.autoInvisActivateDist end
 		if c.values.autoInvisDeactivateDist then autoInvisDeactivateDist = c.values.autoInvisDeactivateDist end
 		if c.values.autoTpDist then autoTpDist = c.values.autoTpDist end
@@ -20541,12 +21941,21 @@ function restoreFullConfig()
 		if c.values.fpsPingBtnWidth then fpsPingBtnWidth = c.values.fpsPingBtnWidth end
 		if c.values.fpsPingBtnHeight then fpsPingBtnHeight = c.values.fpsPingBtnHeight end
 		if c.values.loopSpeedValue then loopSpeedValue = c.values.loopSpeedValue; if loopSpeedInput then loopSpeedInput.Text = tostring(loopSpeedValue) end end
+		if c.values.customJumpPowerValue then customJumpPowerValue = c.values.customJumpPowerValue; if customJumpPowerInput then customJumpPowerInput.Text = tostring(customJumpPowerValue) end end
 		if c.values.fakeDuckAntiAimSpeed then fakeDuckAntiAimSpeed = c.values.fakeDuckAntiAimSpeed; if fakeDuckAimInput then fakeDuckAimInput.Text = tostring(fakeDuckAntiAimSpeed) end end
 		if c.values.fakeDuckSpeedValue then fakeDuckSpeedValue = c.values.fakeDuckSpeedValue; if fakeDuckSpdInput then fakeDuckSpdInput.Text = tostring(fakeDuckSpeedValue) end end
 		if c.values.toggleBgTransparency ~= nil then toggleBgTransparency = c.values.toggleBgTransparency end
 		if c.values.mainBgTransparency ~= nil then mainBgTransparency = c.values.mainBgTransparency end
 		if c.values.popupBgTransparency ~= nil then popupBgTransparency = c.values.popupBgTransparency end
 		if c.values.toggleButtonSize ~= nil then toggleButtonSize = c.values.toggleButtonSize end
+		if c.values.instantRolePosXScale ~= nil then instantRolePosXScale = c.values.instantRolePosXScale end
+		if c.values.instantRolePosYScale ~= nil then instantRolePosYScale = c.values.instantRolePosYScale end
+		if c.values.instantRoleSizeXScale ~= nil then instantRoleSizeXScale = c.values.instantRoleSizeXScale end
+		if c.values.instantRoleSizeYScale ~= nil then instantRoleSizeYScale = c.values.instantRoleSizeYScale end
+		if c.values.roundTimerPosXScale ~= nil then roundTimerPosXScale = c.values.roundTimerPosXScale end
+		if c.values.roundTimerPosYScale ~= nil then roundTimerPosYScale = c.values.roundTimerPosYScale end
+		if c.values.roundTimerSizeXScale ~= nil then roundTimerSizeXScale = c.values.roundTimerSizeXScale end
+		if c.values.roundTimerSizeYScale ~= nil then roundTimerSizeYScale = c.values.roundTimerSizeYScale end
 		if c.values.mainMenuWidth ~= nil then mainMenuWidth = c.values.mainMenuWidth end
 		if c.values.mainMenuHeight ~= nil then mainMenuHeight = c.values.mainMenuHeight end
 		if c.values.popupBtnWidth ~= nil then popupBtnWidth = c.values.popupBtnWidth end
@@ -21088,6 +22497,26 @@ function restoreFullConfig()
 		if lmbShootButton then setToggleState(lmbShootButton, true, "LMB Shoot: ON", "LMB Shoot: OFF") end
 		setExtractedBtnState("LMB Shoot", true)
 	end
+	if T.flickShotEnabled then
+		flickShotEnabled = true
+		if flickShotButton then setToggleState(flickShotButton, true, "Flick Shot: ON", "Flick Shot: OFF") end
+		setExtractedBtnState("Flick Shot", true)
+	end
+	if T.spin360Enabled then
+		spin360Enabled = true
+		if spin360Button then setToggleState(spin360Button, true, "Spin 360: ON", "Spin 360: OFF") end
+		setExtractedBtnState("Spin 360", true)
+	end
+	if T.layEnabled then
+		layEnabled = true
+		if layButton then setToggleState(layButton, true, "Lay: ON", "Lay: OFF") end
+		setExtractedBtnState("Lay", true)
+	end
+	if T.freezeEnabled then
+		freezeEnabled = true
+		if freezeButton then setToggleState(freezeButton, true, "Freeze: ON", "Freeze: OFF") end
+		setExtractedBtnState("Freeze", true)
+	end
 	if T.autoKillEveryoneEnabled then
 		autoKillEveryoneEnabled = true
 		if autoKillEveryoneBtn then setToggleState(autoKillEveryoneBtn, true, "Auto Kill Everyone: ON", "Auto Kill Everyone: OFF") end
@@ -21105,6 +22534,17 @@ function restoreFullConfig()
 		if autoKillSheriffBtn then setToggleState(autoKillSheriffBtn, true, "Auto Kill Sheriff: ON", "Auto Kill Sheriff: OFF") end
 		setExtractedBtnState("Auto Kill Sheriff", true)
 		startAutoKillSheriff()
+	end
+	if T.throwingKnifeAuraEnabled then
+		throwingKnifeAuraEnabled = false; toggleThrowingKnifeAura()
+		if throwingKnifeAuraButton then setToggleState(throwingKnifeAuraButton, true, "Throwing Knife Aura: ON", "Throwing Knife Aura: OFF") end
+		setExtractedBtnState("Throwing Knife Aura", true)
+	end
+	if T.customJumpPowerEnabled then
+		customJumpPowerEnabled = false
+		toggleCustomJumpPower()
+		if customJumpPowerButton then setToggleState(customJumpPowerButton, true, "Jump Power: ON", "Jump Power: OFF") end
+		setExtractedBtnState("Jump Power", true)
 	end
 	-- Restore autofarm toggle states
 	if T.autofarmResetInnocentEnabled then
@@ -21139,11 +22579,43 @@ function restoreFullConfig()
 		autofarmServerHopEnabled = false
 		if autofarmServerHopBtn then setToggleState(autofarmServerHopBtn, true, "Server Hop When Alone: ON", "Server Hop When Alone: OFF") end
 	end
+	if T.autofarmAvoidMurdererEnabled then
+		autofarmAvoidMurdererEnabled = true
+		if autofarmAvoidMurdererBtn then setToggleState(autofarmAvoidMurdererBtn, true, "Avoid Murderer TP: ON", "Avoid Murderer TP: OFF") end
+	end
+	if T.autofarmAutoAntiShootEnabled then
+		autofarmAutoAntiShootEnabled = true
+		if autofarmAutoAntiShootBtn then setToggleState(autofarmAutoAntiShootBtn, true, "Auto Anti-Shoot: ON", "Auto Anti-Shoot: OFF") end
+	end
+	if T.autofarmAutoKillSheriffEnabled then
+		autofarmAutoKillSheriffEnabled = true
+		if autofarmAutoKillSheriffBtn then setToggleState(autofarmAutoKillSheriffBtn, true, "Auto Kill Sheriff/Hero (Murderer): ON", "Auto Kill Sheriff/Hero (Murderer): OFF") end
+		autofarmSetupAutoKillSheriff()
+	end
+	if T.antiAfkEnabled then
+		antiAfkEnabled = true
+		if antiAfkBtn then setToggleState(antiAfkBtn, true, "Anti-Afk: ON", "Anti-Afk: OFF") end
+		setupAntiAfk()
+	end
+	if c.values and c.values.autofarmAvoidMurdererModeIndex and autofarmAvoidMurdererModes[c.values.autofarmAvoidMurdererModeIndex] then
+		autofarmAvoidMurdererModeIndex = c.values.autofarmAvoidMurdererModeIndex
+		if autofarmAvoidMurdererSelect then autofarmAvoidMurdererSelect.Text = autofarmAvoidMurdererModes[autofarmAvoidMurdererModeIndex] .. " \u{25BC}" end
+	end
+	if c.values and c.values.autofarmAvoidMurdererDist then
+		autofarmAvoidMurdererDist = math.clamp(c.values.autofarmAvoidMurdererDist, 5, 200)
+		if autofarmAvoidMurdererDistBox then autofarmAvoidMurdererDistBox.Text = tostring(autofarmAvoidMurdererDist) end
+	end
 	if autofarmEnabled then
 		setAutofarmEnabled(true, autofarmTargetCoins)
 		refreshAutofarmButtons()
 	end
 
+	if instantRoleNotifyBtn then
+		setToggleState(instantRoleNotifyBtn, instantRoleNotifyEnabled, "Instant Role Notify: ON", "Instant Role Notify: OFF")
+	end
+	if showRoundTimerBtn then
+		setToggleState(showRoundTimerBtn, showRoundTimerEnabled, "Show Round Timer: ON", "Show Round Timer: OFF")
+	end
 	updateAntiAimButtonVisual()
 
 	-- Restore Multi Fling collapse state
