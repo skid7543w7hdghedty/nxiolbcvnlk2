@@ -183,6 +183,8 @@ function saveConfig()
 	config.toggles.wallhopToggle = wallhopToggle
 	config.toggles.noclipEnabled = noclipEnabled
 	config.toggles.reachEnabled = reachEnabled
+	config.toggles.throwingKnifeAuraEnabled = throwingKnifeAuraEnabled
+	config.values.throwingKnifeAuraRadius = throwingKnifeAuraRadius
 	config.toggles.fakeSpeedEnabled = fakeSpeedEnabled
 	config.toggles.secondLifeEnabled = secondLifeEnabled
 	config.toggles.invis_on = invis_on
@@ -225,6 +227,7 @@ function saveConfig()
 	config.toggles.notifyOnTeamers = notifyOnTeamers
 	config.toggles.notifyOnScammers = notifyOnScammers
 	config.toggles.hideButtonsEnabled = hideButtonsEnabled
+	config.toggles.hideMiniButtonsEnabled = hideMiniButtonsEnabled
 	config.toggles.notifyOnVoteStart = notifyOnVoteStart
 	config.toggles.headlessKorbloxEnabled = headlessKorbloxEnabled
 	config.toggles.shadersEnabled = shadersEnabled
@@ -237,6 +240,12 @@ function saveConfig()
 	config.toggles.autofarmWebhookEnabled = autofarmWebhookEnabled
 	config.toggles.autofarmServerHopEnabled = autofarmServerHopEnabled
 	config.toggles.autofarmResetDeathEnabled = autofarmResetDeathEnabled
+	config.toggles.autofarmAvoidMurdererEnabled = autofarmAvoidMurdererEnabled
+	config.toggles.autofarmAutoAntiShootEnabled = autofarmAutoAntiShootEnabled
+	config.toggles.autofarmAutoKillSheriffEnabled = autofarmAutoKillSheriffEnabled
+	config.toggles.antiAfkEnabled = antiAfkEnabled
+	config.toggles.customJumpPowerEnabled = customJumpPowerEnabled
+	config.values.customJumpPowerValue = customJumpPowerValue
 
 	config.values.JUMP_BOOST_POWER = JUMP_BOOST_POWER
 	config.values.FAKE_SPEED_CFRAME_SPEED = FAKE_SPEED_CFRAME_SPEED
@@ -1960,7 +1969,7 @@ end
 ESP_MAP_NAMES = {
 	"Hotel", "Factory", "BioLab", "Mansion2", "House2",
 	"Workplace", "Hospital3", "MilBase", "Bank2", "Office3",
-	"ResearchFacility"
+	"ResearchFacility", "Pier", "Yacht", "BeachResort"
 }
 
 function espGetRoleColor(plr)
@@ -3239,6 +3248,7 @@ function createDetachedEmote(animationId, animationName, savedPos, skipSave, sav
 	lockBtn.AutoButtonColor = false
 	lockBtn.BorderSizePixel = 0
 	lockBtn.Parent = frame
+	lockBtn.Visible = not hideMiniButtonsEnabled
 
 	local lockCorner = Instance.new("UICorner")
 	lockCorner.CornerRadius = UDim.new(0, 4)
@@ -3340,7 +3350,7 @@ function onCharacterAdded(char)
 		antiAimRealCF = nil
 	end
 
-	-- Р СџР ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ Anti-Fling Р ВµРЎРѓР В»Р С‘ Р С•Р Р… Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎР ВµР Р…
+	-- Р СџР ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ Anti-Fling Р ВµРЎРѓР В»Р С‘ Р С•Р Р… Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎР ВµР Р…
 	if antiFlingEnabled then
 		if antiFlingConnection then
 			antiFlingConnection:Disconnect()
@@ -3360,11 +3370,11 @@ function onCharacterAdded(char)
 		setupLoopSpeed()
 	end
 
-	-- Р СџР ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ ESP Р ВµРЎРѓР В»Р С‘ Р С•Р Р… Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎР ВµР Р… (ESP РЎРѓР В°Р С Р С•Р В±РЎР‚Р В°Р В±Р В°РЎвЂљРЎвЂ№Р Р†Р В°Р ВµРЎвЂљ CharacterAdded РЎвЂЎР ВµРЎР‚Р ВµР В· espHookPlayer)
-	-- Р СњР С‘РЎвЂЎР ВµР С–Р С• Р Т‘Р С•Р С—Р С•Р В»Р Р…Р С‘РЎвЂљР ВµР В»РЎРЉР Р…Р С•Р С–Р С• Р Р…Р Вµ Р Р…РЎС“Р В¶Р Р…Р С•, ESP РЎС“Р В¶Р Вµ Р С—Р С•Р Т‘Р С—Р С‘РЎРѓР В°Р Р… Р Р…Р В° CharacterAdded
+	-- Р СџР ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ ESP Р ВµРЎРѓР В»Р С‘ Р С•Р Р… Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎР ВµР Р… (ESP РЎРѓР В°Р С Р С•Р В±РЎР‚Р В°Р В±Р В°РЎвЂљРЎвЂ№Р Р†Р В°Р ВµРЎвЂљ CharacterAdded РЎвЂЎР ВµРЎР‚Р ВµР В· espHookPlayer)
+	-- Р СњР С‘РЎвЂЎР ВµР С–Р С• Р Т‘Р С•Р С—Р С•Р В»Р Р…Р С‘РЎвЂљР ВµР В»РЎРЉР Р…Р С•Р С–Р С• Р Р…Р Вµ Р Р…РЎС“Р В¶Р Р…Р С•, ESP РЎС“Р В¶Р Вµ Р С—Р С•Р Т‘Р С—Р С‘РЎРѓР В°Р Р… Р Р…Р В° CharacterAdded
 
 	humanoid.Died:Connect(function()
-		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Desync
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Desync
 		PastedSources = false
 		if desyncConnection then desyncConnection:Disconnect() desyncConnection = nil end
 		if desyncButton then
@@ -3382,7 +3392,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Desync", false)
 
-		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Wallhop
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Wallhop
 		wallhopToggle = false
 		if button2 then
 			button2.Text = "Wallhop: OFF"
@@ -3394,7 +3404,7 @@ function onCharacterAdded(char)
 		-- Anti-Aim intentionally persists across death/respawn (the driver re-arms
 		-- on the new character), so we do NOT disable it here.
 
-		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Infinite Jump
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Infinite Jump
 		isEnabled = false
 		if button1 then
 			button1.Text = "Infinite Jump: OFF"
@@ -3403,7 +3413,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Infinite Jump", false)
 
-		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Invisibility
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Invisibility
 		invis_on = false
 		if button5 then
 			button5.Text = "Invisibility: OFF"
@@ -3440,7 +3450,7 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Auto TP", false)
 
-		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Clumsy
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Clumsy
 		clumsy_on = false
 		removeClumsyGhost()
 		if clumsyButton then
@@ -3450,11 +3460,11 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Clumsy", false)
 
-		-- ==== Р СњР вЂў Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Speed Glitch - РЎРѓР С•РЎвЂ¦РЎР‚Р В°Р Р…РЎРЏР ВµР С Р ВµР С–Р С• РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ ====
-		-- fakeSpeedEnabled Р С•РЎРѓРЎвЂљР В°РЎвЂРЎвЂљРЎРѓРЎРЏ Р С”Р В°Р С” Р В±РЎвЂ№Р В»Р С•
-		-- Р СџРЎР‚Р С‘ Р Р…Р С•Р Р†Р С•Р С Р С—Р ВµРЎР‚РЎРѓР С•Р Р…Р В°Р В¶Р Вµ Р В±РЎС“Р Т‘Р ВµРЎвЂљ Р С—Р ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР ВµР Р… Р Р† onCharacterAdded
+		-- ==== Р СњР вЂў Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Speed Glitch - РЎРѓР С•РЎвЂ¦РЎР‚Р В°Р Р…РЎРЏР ВµР С Р ВµР С–Р С• РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ ====
+		-- fakeSpeedEnabled Р С•РЎРѓРЎвЂљР В°РЎвЂРЎвЂљРЎРѓРЎРЏ Р С”Р В°Р С” Р В±РЎвЂ№Р В»Р С•
+		-- Р СџРЎР‚Р С‘ Р Р…Р С•Р Р†Р С•Р С Р С—Р ВµРЎР‚РЎРѓР С•Р Р…Р В°Р В¶Р Вµ Р В±РЎС“Р Т‘Р ВµРЎвЂљ Р С—Р ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР ВµР Р… Р Р† onCharacterAdded
 
-		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Noclip
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Noclip
 		noclipEnabled = false
 		if noclipButton then
 			noclipButton.Text = "Noclip: OFF"
@@ -3467,18 +3477,8 @@ function onCharacterAdded(char)
 		end
 		setExtractedBtnState("Noclip", false)
 
-		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С KillAura
-		reachEnabled = false
-		if reachButton then
-			reachButton.Text = "KillAura: OFF"
-			reachButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-			reachButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		end
-		if reachConnection then
-			reachConnection:Disconnect()
-			reachConnection = nil
-		end
-		setExtractedBtnState("KillAura", false)
+		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С KillAura
+		-- KillAura is NOT disabled on death (matches PC version behavior)
 
 		if secondLifeEnabled then
 			disableSecondLife()
@@ -3527,17 +3527,10 @@ player.CharacterRemoving:Connect(function()
 	end
 	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
 	setExtractedBtnState("Noclip", false)
-	reachEnabled = false
-	if reachButton then
-		reachButton.Text = "KillAura: OFF"
-		reachButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-		reachButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	end
-	if reachConnection then reachConnection:Disconnect() reachConnection = nil end
-	setExtractedBtnState("KillAura", false)
-	-- ==== Р СњР вЂў Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Speed Glitch Р С—РЎР‚Р С‘ РЎРѓР СР ВµРЎР‚РЎвЂљР С‘ ====
-	-- Р С›Р Р… Р Т‘Р С•Р В»Р В¶Р ВµР Р… Р С•РЎРѓРЎвЂљР В°РЎвЂљРЎРЉРЎРѓРЎРЏ Р Р†Р С”Р В»РЎР‹РЎвЂЎРЎвЂР Р…Р Р…РЎвЂ№Р С Р ВµРЎРѓР В»Р С‘ Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎРЎвЂР Р…
-	-- Р СњР С• Р Р…РЎС“Р В¶Р Р…Р С• Р С—Р ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ connection
+	-- KillAura is NOT disabled on respawn (matches PC version behavior)
+	-- ==== Р СњР вЂў Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Speed Glitch Р С—РЎР‚Р С‘ РЎРѓР СР ВµРЎР‚РЎвЂљР С‘ ====
+	-- Р С›Р Р… Р Т‘Р С•Р В»Р В¶Р ВµР Р… Р С•РЎРѓРЎвЂљР В°РЎвЂљРЎРЉРЎРѓРЎРЏ Р Р†Р С”Р В»РЎР‹РЎвЂЎРЎвЂР Р…Р Р…РЎвЂ№Р С Р ВµРЎРѓР В»Р С‘ Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎРЎвЂР Р…
+	-- Р СњР С• Р Р…РЎС“Р В¶Р Р…Р С• Р С—Р ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ connection
 if fakeSpeedEnabled then
 		setupFakeSpeed()
 	end
@@ -3564,7 +3557,7 @@ if fakeSpeedEnabled then
 	end
 	setExtractedBtnState("Clumsy", false)
 
-	-- stopFling() РЈР‘Р РђРќ - С„Р»РёРЅРі РЅРµ РґРѕР»Р¶РµРЅ РѕС‚РєР»СЋС‡Р°С‚СЊСЃСЏ РїРѕСЃР»Рµ СЃРјРµСЂС‚Рё
+	-- stopFling() РЈР‘Р РђРќ - С„Р»РёРЅРі РЅРµ РґРѕР»Р¶РµРЅ РѕС‚РєР»СЋС‡Р°С‚СЊСЃСЏ РїРѕСЃР»Рµ СЃРјРµСЂС‚Рё
 	stopCurrentAnimation()
 	isAlive = false
 	PastedSources = false
@@ -4522,7 +4515,7 @@ function createCategoryScrollFrame(categoryName)
 	categoryFrames[categoryName] = scroll
 end
 
-	canScroll = false  -- Р В¤Р В»Р В°Р С– Р Т‘Р В»РЎРЏ Р В±Р В»Р С•Р С”Р С‘РЎР‚Р С•Р Р†Р С”Р С‘ РЎРѓР С”РЎР‚Р С•Р В»Р В»Р В° Р С—РЎР‚Р С‘ Р С‘Р Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р В°РЎвЂ Р С‘Р С‘
+	canScroll = false  -- Р В¤Р В»Р В°Р С– Р Т‘Р В»РЎРЏ Р В±Р В»Р С•Р С”Р С‘РЎР‚Р С•Р Р†Р С”Р С‘ РЎРѓР С”РЎР‚Р С•Р В»Р В»Р В° Р С—РЎР‚Р С‘ Р С‘Р Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р В°РЎвЂ Р С‘Р С‘
 
 createCategoryScrollFrame("Main")
 createCategoryScrollFrame("Movement")
@@ -5635,7 +5628,8 @@ autoGrabGunMagnets = {}
 autoGrabGunTargets = {
 	Hotel = true, Factory = true, BioLab = true, Mansion2 = true,
 	House2 = true, Workplace = true, Hospital = true, MilBase = true,
-	Bank2 = true, Office3 = true, PoliceStation = true, ResearchFacility = true
+	Bank2 = true, Office3 = true, PoliceStation = true, ResearchFacility = true,
+	Pier = true, Yacht = true, BeachResort = true
 }
 
 function autoGrabGetRoot()
@@ -5800,14 +5794,14 @@ function autoGrabConnectModel(model)
 	if autoGrabGunConnectedModels[model] then return end
 	autoGrabGunConnectedModels[model] = true
 
-	-- Р СљР С–Р Р…Р С•Р Р†Р ВµР Р…Р Р…Р В°РЎРЏ Р С—РЎР‚Р С•Р Р†Р ВµРЎР‚Р С”Р В° РЎРѓРЎС“РЎвЂ°Р ВµРЎРѓРЎвЂљР Р†РЎС“РЎР‹РЎвЂ°Р С‘РЎвЂ¦
+	-- Р СљР С–Р Р…Р С•Р Р†Р ВµР Р…Р Р…Р В°РЎРЏ Р С—РЎР‚Р С•Р Р†Р ВµРЎР‚Р С”Р В° РЎРѓРЎС“РЎвЂ°Р ВµРЎРѓРЎвЂљР Р†РЎС“РЎР‹РЎвЂ°Р С‘РЎвЂ¦
 	for _, child in ipairs(model:GetDescendants()) do
 		if child.Name == "GunDrop" then
 			autoGrabClaimDrop(child)
 		end
 	end
 
-	-- DescendantAdded - Р С—РЎР‚РЎРЏР СР С•Р в„– Р Р†РЎвЂ№Р В·Р С•Р Р† Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘ (Р В±РЎвЂ№РЎРѓРЎвЂљРЎР‚Р ВµР Вµ task.defer)
+	-- DescendantAdded - Р С—РЎР‚РЎРЏР СР С•Р в„– Р Р†РЎвЂ№Р В·Р С•Р Р† Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘ (Р В±РЎвЂ№РЎРѓРЎв��љРЎР‚Р ВµР Вµ task.defer)
 	local conn = model.DescendantAdded:Connect(function(descendant)
 		if not autoGrabGunEnabled then return end
 		if descendant.Name == "GunDrop" then
@@ -5816,7 +5810,7 @@ function autoGrabConnectModel(model)
 	end)
 	autoGrabGunConnections[model] = conn
 
-	-- ChildAdded - Р Т‘РЎС“Р В±Р В»Р С‘РЎР‚РЎС“РЎР‹РЎвЂ°Р С‘Р в„– Р С—Р ВµРЎР‚Р ВµРЎвЂ¦Р Р†Р В°РЎвЂљ
+	-- ChildAdded - Р Т‘РЎС“Р В±Р В»Р С‘РЎР‚РЎС“РЎР‹РЎвЂ°Р С‘Р в„– Р С—Р ВµРЎР‚Р ВµРЎвЂ¦Р Р†Р В°РЎвЂљ
 	local conn2 = model.ChildAdded:Connect(function(child)
 		if not autoGrabGunEnabled then return end
 		if child.Name == "GunDrop" then
@@ -5848,7 +5842,7 @@ function autoGrabScanWorkspace()
 		if obj:IsA("Model") and autoGrabGunTargets[obj.Name] then
 			autoGrabConnectModel(obj)
 		end
-		-- Р СћР В°Р С”Р В¶Р Вµ Р В»Р С•Р Р†Р С‘Р С GunDrop Р Р…Р В°Р С—РЎР‚РЎРЏР СРЎС“РЎР‹
+		-- Р СћР В°Р С”Р В¶Р Вµ Р В»Р С•Р Р†Р С‘Р С GunDrop Р Р…Р В°Р С—РЎР‚РЎРЏР СРЎС“РЎР‹
 		if obj.Name == "GunDrop" then
 			autoGrabClaimDrop(obj)
 		end
@@ -5870,18 +5864,18 @@ function enableAutoGrabGun()
 
 	autoGrabScanWorkspace()
 
-	-- Workspace.DescendantAdded - Р С—РЎР‚РЎРЏР СР С•Р в„– Р Р†РЎвЂ№Р В·Р С•Р Р†, Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘
+	-- Workspace.DescendantAdded - Р С—РЎР‚РЎРЏР СР С•Р в„– Р Р†РЎвЂ№Р В·Р С•Р Р†, Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘
 	table.insert(autoGrabGunConnections, Workspace.DescendantAdded:Connect(function(obj)
 		if not autoGrabGunEnabled then return end
 		if obj.Name == "GunDrop" then
-			-- GunDrop Р Р† Р С—Р ВµРЎР‚Р Р†РЎС“РЎР‹ Р С•РЎвЂЎР ВµРЎР‚Р ВµР Т‘РЎРЉ - РЎРѓР В°Р СРЎвЂ№Р в„– Р С—РЎР‚Р С‘Р С•РЎР‚Р С‘РЎвЂљР ВµРЎвЂљР Р…РЎвЂ№Р в„– РЎРѓР В»РЎС“РЎвЂЎР В°Р в„–
+			-- GunDrop Р Р† Р С—Р ВµРЎР‚Р Р†РЎС“РЎР‹ Р С•РЎвЂЎР ВµРЎР‚Р ВµР Т‘РЎРЉ - РЎРѓР В°Р СРЎвЂ№Р в„– Р С—РЎР‚Р С‘Р С•РЎР‚Р С‘РЎвЂљР ВµРЎвЂљР Р…РЎвЂ№Р в„– РЎРѓР В»РЎС“РЎвЂЎР В°Р в„–
 			autoGrabClaimDrop(obj)
 		elseif obj:IsA("Model") and autoGrabGunTargets[obj.Name] then
 			autoGrabConnectModel(obj)
 		end
 	end))
 
-	-- Workspace.ChildAdded - Р Т‘Р С•Р С—Р С•Р В»Р Р…Р С‘РЎвЂљР ВµР В»РЎРЉР Р…РЎвЂ№Р в„– Р С—Р ВµРЎР‚Р ВµРЎвЂ¦Р Р†Р В°РЎвЂљ Р Р†Р ВµРЎР‚РЎвЂ¦Р Р…Р ВµР С–Р С• РЎС“РЎР‚Р С•Р Р†Р Р…РЎРЏ
+	-- Workspace.ChildAdded - Р Т‘Р С•Р С—Р С•Р В»Р Р…Р С‘РЎвЂљР ВµР В»РЎРЉР Р…РЎвЂ№Р в„– Р С—Р ВµРЎР‚Р ВµРЎвЂ¦Р Р†Р В°РЎвЂљ Р Р†Р ВµРЎР‚РЎвЂ¦Р Р…Р ВµР С–Р С• РЎС“РЎР‚Р С•Р Р†Р Р…РЎРЏ
 	table.insert(autoGrabGunConnections, Workspace.ChildAdded:Connect(function(obj)
 		if not autoGrabGunEnabled then return end
 		if obj.Name == "GunDrop" then
@@ -5904,7 +5898,7 @@ function enableAutoGrabGun()
 		autoGrabScanWorkspace()
 	end))
 
-	-- Р СџР ВµРЎР‚Р С‘Р С•Р Т‘Р С‘РЎвЂЎР ВµРЎРѓР С”Р С•Р Вµ РЎРѓР С”Р В°Р Р…Р С‘РЎР‚Р С•Р Р†Р В°Р Р…Р С‘Р Вµ - Р С”Р В°Р В¶Р Т‘РЎвЂ№Р Вµ 5 РЎРѓР ВµР С”РЎС“Р Р…Р Т‘ (DescendantAdded Р В»Р С•Р Р†Р С‘РЎвЂљ Р СР С–Р Р…Р С•Р Р†Р ВµР Р…Р Р…Р С•)
+	-- Р СџР ВµРЎР‚Р С‘Р С•Р Т‘Р С‘РЎвЂЎР ВµРЎРѓР С”Р С•Р Вµ РЎРѓР С”Р В°Р Р…Р С‘РЎР‚Р С•Р Р†Р В°Р Р…Р С‘Р Вµ - Р С”Р В°Р В¶Р Т‘РЎвЂ№Р Вµ 5 РЎРѓР ВµР С”РЎС“Р Р…Р Т‘ (DescendantAdded Р В»Р С•Р Р†Р С‘РЎвЂљ Р СР С–Р Р…Р С•Р Р†Р ВµР Р…Р Р…Р С•)
 	task.spawn(function()
 		while autoGrabGunEnabled do
 			task.wait(1)
@@ -7046,9 +7040,9 @@ end)
 -- Map Vote Dupe (3 buttons) вЂ” Utilities tab
 -- ============================================
 voteMapCoords = {
-	CFrame.new(25, 507, 49),  -- Map 1
-	CFrame.new(14, 507, 52),  -- Map 2
-	CFrame.new(2, 507, 49),   -- Map 3
+	CFrame.new(-10, -64, -94),  -- Map 1
+	CFrame.new(-1, -64, -95),  -- Map 2
+	CFrame.new(10, -64, -94),   -- Map 3
 }
 
 voteDupeActive = false
@@ -7188,7 +7182,8 @@ MAGNET_DISTANCE = 15
 gunAuraTargets = {
 	Hotel = true, Factory = true, BioLab = true, Mansion2 = true,
 	House2 = true, Workplace = true, Hospital3 = true, MilBase = true,
-	Bank2 = true, Office3 = true, PoliceStation = true, ResearchFacility = true
+	Bank2 = true, Office3 = true, PoliceStation = true, ResearchFacility = true,
+	Pier = true, Yacht = true, BeachResort = true
 }
 
 function gunAuraGetRoot()
@@ -7506,7 +7501,8 @@ autoDeleteCoinsConnections = {}
 autoDeleteCoinsTargets = {
 	Hotel = true, Factory = true, BioLab = true, Mansion2 = true,
 	House2 = true, Workplace = true, Hospital3 = true, MilBase = true,
-	Bank2 = true, Office3 = true, PoliceStation = true, ResearchFacility = true
+	Bank2 = true, Office3 = true, PoliceStation = true, ResearchFacility = true,
+	Pier = true, Yacht = true, BeachResort = true
 }
 
 function isInsideTargetModel(instance)
@@ -7780,7 +7776,7 @@ btn.tpLobby.MouseButton1Click:Connect(function()
 	local myChar = player.Character
 	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	if myHrp then
-		myHrp.CFrame = CFrame.new(23, 505, -34)
+		myHrp.CFrame = CFrame.new(-12, -67, -11)
 		notify("Teleported", "Teleported to Lobby", 2)
 	else
 		notify("Error", "Character not found", 2)
@@ -7792,7 +7788,7 @@ btn.tpVoteMap.MouseButton1Click:Connect(function()
 	local myChar = player.Character
 	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	if myHrp then
-		myHrp.CFrame = CFrame.new(14, 507, 35)
+		myHrp.CFrame = CFrame.new(-1, -65, -79)
 		notify("Teleported", "Teleported to VoteMap", 2)
 	else
 		notify("Error", "Character not found", 2)
@@ -7811,13 +7807,13 @@ function tpGetRoles()
 	end
 end
 
--- Р СљР С–Р Р…Р С•Р Р†Р ВµР Р…Р Р…Р В°РЎРЏ РЎвЂљР ВµР В»Р ВµР С—Р С•РЎР‚РЎвЂљР В°РЎвЂ Р С‘РЎРЏ Р С” CFrame
+-- Р СљР С–Р Р…Р С•Р Р†Р ВµР Р…Р Р…Р В°РЎРЏ РЎвЂљР ВµР В»Р ВµР С—Р С•РЎР‚РЎвЂљР В°РЎвЂ Р С‘РЎРЏ Р С” CFrame
 function doInstantTp(myHrp, myChar, targetCF)
 	myHrp.CFrame = targetCF
 	myChar:SetPrimaryPartCFrame(targetCF)
 	myHrp.AssemblyLinearVelocity = Vector3.zero
 	myHrp.AssemblyAngularVelocity = Vector3.zero
-	-- Р В¤Р С‘Р С”РЎРѓР С‘РЎР‚РЎС“Р ВµР С Р Р…Р В° 2 Р С”Р В°Р Т‘РЎР‚Р В° РЎвЂЎРЎвЂљР С•Р В± РЎвЂћР С‘Р В·Р С‘Р С”Р В° Р Р…Р Вµ Р С•РЎвЂљР С”Р С‘Р Р…РЎС“Р В»Р В°
+	-- Р В¤Р С‘Р С”РЎРѓР С‘РЎР‚РЎС“Р ВµР С Р Р…Р В° 2 Р С”Р В°Р Т‘РЎР‚Р В° РЎвЂЎРЎвЂљР С•Р В± РЎвЂћР С‘Р В·Р С‘Р С”Р В° Р Р…Р Вµ Р С•РЎвЂљР С”Р С‘Р Р…РЎС“Р В»Р В°
 	local n = 0
 	local fixConn
 	fixConn = RunService.Heartbeat:Connect(function()
@@ -7916,7 +7912,10 @@ tpMapCoords = {
 	House2 = Vector3.new(49, 265, 9057),
 	MilBase = Vector3.new(85, 202, 9195),
 	Workplace = Vector3.new(19, 292, 8936),
-	PoliceStation = Vector3.new(-31, 289, 8927)
+	PoliceStation = Vector3.new(-31, 289, 8927),
+	Pier = Vector3.new(-716, 107, -2496),
+	Yacht = Vector3.new(-28, 220, 9175),
+	BeachResort = Vector3.new(33, 254, 9107)
 }
 
 function tpToMap()
@@ -7970,7 +7969,10 @@ tpAboveMapCoords = {
 	Workplace = Vector3.new(-3, 319, 9002),
 	PoliceStation = Vector3.new(-14, 307, 8934),
 	Bank2 = Vector3.new(-5, 328, 9008),
-	BioLab = Vector3.new(539, 322, 9856)
+	BioLab = Vector3.new(539, 322, 9856),
+	Pier = Vector3.new(-738, 267, -2189),
+	Yacht = Vector3.new(0, 313, 9004),
+	BeachResort = Vector3.new(42, 419, 9121)
 }
 
 function tpAboveMap()
@@ -8132,10 +8134,10 @@ function autoTpToTarget()
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 	if autoTpTarget == 1 then
-		hrp.CFrame = CFrame.new(23, 505, -34)
+		hrp.CFrame = CFrame.new(-12, -67, -11)
 		notify("Auto TP", "Teleported to Lobby", 2)
 	elseif autoTpTarget == 2 then
-		hrp.CFrame = CFrame.new(14, 507, 35)
+		hrp.CFrame = CFrame.new(-1, -65, -79)
 		notify("Auto TP", "Teleported to VoteMap", 2)
 	elseif autoTpTarget == 3 then
 		for mapName, coords in pairs(tpAboveMapCoords) do
@@ -8690,7 +8692,8 @@ autoDeleteCorpsesConnections = {}
 autoDeleteCorpsesTargets = {
 	Hotel = true, Factory = true, BioLab = true, Mansion2 = true,
 	House2 = true, Workplace = true, Hospital3 = true, MilBase = true,
-	Bank2 = true, Office3 = true, ResearchFacility = true
+	Bank2 = true, Office3 = true, ResearchFacility = true,
+	Pier = true, Yacht = true, BeachResort = true
 }
 
 function neutralizeCorpsePart(part)
@@ -8848,7 +8851,7 @@ function gameNotifSend(title, text, color, strokeColor, plr, userId)
 		notifGui.Parent = player.PlayerGui
 	end
 
-	-- Р РЋРЎвЂЎР С‘РЎвЂљР В°Р ВµР С РЎРѓР С”Р С•Р В»РЎРЉР С”Р С• РЎС“Р Р†Р ВµР Т‘Р С•Р СР В»Р ВµР Р…Р С‘Р в„– РЎС“Р В¶Р Вµ Р Р…Р В° РЎРЊР С”РЎР‚Р В°Р Р…Р Вµ
+	-- Р РЋРЎвЂЎР С‘РЎвЂљР В°Р ВµР С РЎРѓР С”Р С•Р В»РЎРЉР С”Р С• РЎС“Р Р†Р ВµР Т‘Р С•Р СР В»Р ВµР Р…Р С‘Р в„– РЎС“Р В¶Р Вµ Р Р…Р В° РЎРЊР С”РЎР‚Р В°Р Р…Р Вµ
 	local slotIndex = #gameNotifActiveNotifs
 
 	local frame = Instance.new("Frame")
@@ -8930,15 +8933,15 @@ function gameNotifSend(title, text, color, strokeColor, plr, userId)
 		end)
 	end
 
-	-- Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµР С Р Р† РЎРѓР С—Р С‘РЎРѓР С•Р С” Р В°Р С”РЎвЂљР С‘Р Р†Р Р…РЎвЂ№РЎвЂ¦
+	-- Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµР С Р Р† РЎРѓР С—Р С‘РЎРѓР С•Р С” Р В°Р С”РЎвЂљР С‘Р Р†Р Р…РЎвЂ№РЎвЂ¦
 	table.insert(gameNotifActiveNotifs, frame)
 
-	-- Р С’Р Р…Р С‘Р СР В°РЎвЂ Р С‘РЎРЏ Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘РЎРЏ
+	-- Р С’Р Р…Р С‘Р СР В°РЎвЂ Р С‘РЎРЏ Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘РЎРЏ
 	TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Size = UDim2.new(0, 340, 0, 80)
 	}):Play()
 
-	-- Р ВРЎРѓРЎвЂЎР ВµР В·Р Р…Р С•Р Р†Р ВµР Р…Р С‘Р Вµ РЎвЂЎР ВµРЎР‚Р ВµР В· 4 РЎРѓР ВµР С”РЎС“Р Р…Р Т‘РЎвЂ№
+	-- Р ВРЎРѓРЎвЂЎР ВµР В·Р Р…Р С•Р Р†Р ВµР Р…Р С‘Р Вµ РЎвЂЎР ВµРЎР‚Р ВµР В· 4 РЎРѓР ВµР С”РЎС“Р Р…Р Т‘РЎвЂ№
 	task.delay(4, function()
 		local fadeOut = TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 			Size = UDim2.new(0, 340, 0, 0)
@@ -8946,7 +8949,7 @@ function gameNotifSend(title, text, color, strokeColor, plr, userId)
 		fadeOut:Play()
 		fadeOut.Completed:Wait()
 
-		-- Р Р€Р Т‘Р В°Р В»РЎРЏР ВµР С Р С‘Р В· РЎРѓР С—Р С‘РЎРѓР С”Р В°
+		-- Р Р€Р Т‘Р В°Р В»РЎРЏР ВµР С Р С‘Р В· РЎРѓР С—Р С‘РЎРѓР С”Р В°
 		for i, f in ipairs(gameNotifActiveNotifs) do
 			if f == frame then
 				table.remove(gameNotifActiveNotifs, i)
@@ -8955,7 +8958,7 @@ function gameNotifSend(title, text, color, strokeColor, plr, userId)
 		end
 		frame:Destroy()
 
-		-- Р РЋР Т‘Р Р†Р С‘Р С–Р В°Р ВµР С Р С•РЎРѓРЎвЂљР В°Р Р†РЎв‚¬Р С‘Р ВµРЎРѓРЎРЏ РЎС“Р Р†Р ВµР Т‘Р С•Р СР В»Р ВµР Р…Р С‘РЎРЏ Р Р†Р Р…Р С‘Р В·
+		-- Р РЋР Т‘Р Р†Р С‘Р С–Р В°Р ВµР С Р С•РЎРѓРЎвЂљР В°Р Р†РЎв‚¬Р С‘Р ВµРЎРѓРЎРЏ РЎС“Р Р†Р ВµР Т‘Р С•Р СР В»Р ВµР Р…Р С‘РЎРЏ Р Р†Р Р…Р С‘Р В·
 		gameNotifRepositionAll()
 	end)
 end
@@ -9131,7 +9134,7 @@ function gameNotifSendRound(murdererName, sheriffName)
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = frame
 
-	-- Murderer РЎРѓРЎвЂљРЎР‚Р С•Р С”Р В° РЎРѓ Р В°Р Р†Р В°РЎвЂљР В°РЎР‚Р С”Р С•Р в„–
+	-- Murderer РЎРѓРЎвЂљРЎР‚Р С•Р С”Р В° РЎРѓ Р В°Р Р†Р В°РЎвЂљР В°РЎР‚Р С”Р С•Р в„–
 	local murdererAvatar = Instance.new("ImageLabel")
 	murdererAvatar.Size = UDim2.new(0, 24, 0, 24)
 	murdererAvatar.Position = UDim2.new(0, 10, 0, 34)
@@ -9174,7 +9177,7 @@ function gameNotifSendRound(murdererName, sheriffName)
 		end
 	end)
 
-	-- Sheriff РЎРѓРЎвЂљРЎР‚Р С•Р С”Р В° РЎРѓ Р В°Р Р†Р В°РЎвЂљР В°РЎР‚Р С”Р С•Р в„–
+	-- Sheriff РЎРѓРЎвЂљРЎР‚Р С•Р С”Р В° РЎРѓ Р В°Р Р†Р В°РЎвЂљР В°РЎР‚Р С”Р С•Р в„–
 	local sheriffAvatar = Instance.new("ImageLabel")
 	sheriffAvatar.Size = UDim2.new(0, 24, 0, 24)
 	sheriffAvatar.Position = UDim2.new(0, 10, 0, 54)
@@ -9241,7 +9244,7 @@ function gameNotifSendRound(murdererName, sheriffName)
 	end)
 end
 
--- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р Р…Р С‘Р Вµ РЎР‚Р С•Р В»Р ВµР в„–
+-- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р Р…Р С‘Р Вµ РЎР‚Р С•Р В»Р ВµР в„–
 task.spawn(function()
 	while true do
 		task.wait(0.5)
@@ -9388,7 +9391,7 @@ task.spawn(function()
 	end
 end)
 
--- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р Р…Р С‘Р Вµ Р С—Р С•Р Т‘Р В±Р С•РЎР‚Р В° GunDrop
+-- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р Р…Р С‘Р Вµ Р С—Р С•Р Т‘Р В±Р С•РЎР‚Р В° GunDrop
 task.spawn(function()
 	while true do
 		task.wait(0.5)
@@ -9463,7 +9466,7 @@ task.spawn(function()
 	end
 end)
 
--- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р Р…Р С‘Р Вµ Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘РЎРЏ GunDrop
+-- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р Р…Р С‘Р Вµ Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘РЎРЏ GunDrop
 task.spawn(function()
 	Workspace.DescendantAdded:Connect(function(obj)
 		if obj.Name == "GunDrop" then
@@ -10646,7 +10649,7 @@ autoKillSheriffBtn.MouseButton1Click:Connect(function()
 end)
 
 clumsyButton = createButton("ClumsyButton", "Clumsy: OFF", 204)
--- Р вЂќР С•Р В±Р В°Р Р†РЎРЉ Р Р†Р Р†Р ВµРЎР‚РЎвЂ¦РЎС“ РЎР‚РЎРЏР Т‘Р С•Р С РЎРѓ clumsyGhost
+-- Р вЂќР С•Р В±Р В°Р Р†РЎРЉ Р Р†Р Р†Р ВµРЎР‚РЎвЂ¦РЎС“ РЎР‚РЎРЏР Т‘Р С•Р С РЎРѓ clumsyGhost
 clumsyGhostAdornments = {}
 
 function clearClumsyAdornments()
@@ -10682,7 +10685,7 @@ function createClumsyGhost(position)
 			clone.Transparency = 0.6
 			clone.Material = Enum.Material.ForceField
 			clone.Color = Color3.fromRGB(150, 0, 255)
-			-- Р Р€Р В±Р С‘РЎР‚Р В°Р ВµР С Р Р†РЎРѓРЎвЂ Р В»Р С‘РЎв‚¬Р Р…Р ВµР Вµ Р С‘Р В· Р С”Р В»Р С•Р Р…Р В°
+			-- Р Р€Р В±Р С‘РЎР‚Р В°Р ВµР С Р Р†РЎРѓРЎвЂ Р В»Р С‘РЎв‚¬Р Р…Р ВµР Вµ Р С‘Р В· Р С”Р В»Р С•Р Р…Р В°
 			for _, child in pairs(clone:GetChildren()) do
 				if not child:IsA("SpecialMesh") and not child:IsA("DataModelMesh") then
 					child:Destroy()
@@ -10692,7 +10695,7 @@ function createClumsyGhost(position)
 		end
 	end
 
-	-- Р С™Р С•Р С—Р С‘РЎР‚РЎС“Р ВµР С Р В°Р С”РЎРѓР ВµРЎРѓРЎРѓРЎС“Р В°РЎР‚РЎвЂ№
+	-- Р С™Р С•Р С—Р С‘РЎР‚РЎС“Р ВµР С Р В°Р С”РЎРѓР ВµРЎРѓРЎРѓРЎС“Р В°РЎР‚РЎвЂ№
 	for _, acc in pairs(char:GetChildren()) do
 		if acc:IsA("Accessory") then
 			local handle = acc:FindFirstChild("Handle")
@@ -10714,7 +10717,7 @@ function createClumsyGhost(position)
 		end
 	end
 
-	-- Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµР С Р В±Р С‘Р В»Р В±Р С•РЎР‚Р Т‘ РЎРѓ РЎвЂљР ВµР С”РЎРѓРЎвЂљР С•Р С
+	-- Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµР С Р В±Р С‘Р В»Р В±Р С•РЎР‚Р Т‘ РЎРѓ РЎвЂљР ВµР С”РЎРѓРЎвЂљР С•Р С
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "GhostLabel"
 	billboard.AlwaysOnTop = true
@@ -10732,7 +10735,7 @@ function createClumsyGhost(position)
 	label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	label.Parent = billboard
 
-	-- Р СџР С•Р В·Р С‘РЎвЂ Р С‘Р С•Р Р…Р С‘РЎР‚РЎС“Р ВµР С РЎвЂЎР В°РЎРѓРЎвЂљР С‘ Р С—РЎР‚Р С‘Р В·РЎР‚Р В°Р С”Р В°
+	-- Р СџР С•Р В·Р С‘РЎвЂ Р С‘Р С•Р Р…Р С‘РЎР‚РЎС“Р ВµР С РЎвЂЎР В°РЎРѓРЎвЂљР С‘ Р С—РЎР‚Р С‘Р В·РЎР‚Р В°Р С”Р В°
 	local charCF = CFrame.new(position)
 	for _, part in pairs(ghost:GetChildren()) do
 		if part:IsA("BasePart") then
@@ -10744,14 +10747,14 @@ function createClumsyGhost(position)
 		end
 	end
 
-	-- Р вЂР С‘Р В»Р В±Р С•РЎР‚Р Т‘ Р Р…Р В° Р С–Р С•Р В»Р С•Р Р†РЎС“ Р С—РЎР‚Р С‘Р В·РЎР‚Р В°Р С”Р В°
+	-- Р вЂР С‘Р В»Р В±Р С•РЎР‚Р Т‘ Р Р…Р В° Р С–Р С•Р В»Р С•Р Р†РЎС“ Р С—РЎР‚Р С‘Р В·РЎР‚Р В°Р С”Р В°
 	local ghostHead = ghost:FindFirstChild("Head")
 	if ghostHead then
 		billboard.Adornee = ghostHead
 		billboard.Parent = ghostHead
 	end
 
-	-- Highlight РЎвЂЎРЎвЂљР С•Р В±РЎвЂ№ Р В±РЎвЂ№Р В»Р С• Р Р†Р С‘Р Т‘Р Р…Р С• РЎвЂЎР ВµРЎР‚Р ВµР В· РЎРѓРЎвЂљР ВµР Р…РЎвЂ№
+	-- Highlight РЎвЂЎРЎвЂљР С•Р В±РЎвЂ№ Р В±РЎвЂ№Р В»Р С• Р Р†Р С‘Р Т‘Р Р…Р С• РЎвЂЎР ВµРЎР‚Р ВµР В· РЎРѓРЎвЂљР ВµР Р…РЎвЂ№
 	local ghostHighlight = Instance.new("Highlight")
 ghostHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 ghostHighlight.FillTransparency = 0
@@ -10810,7 +10813,7 @@ clumsyButton.MouseButton1Click:Connect(function()
 		task.wait()
 		Seat.CFrame = savedpos
 
-		-- Р РЋР С•Р В·Р Т‘Р В°РЎвЂР С Р С—РЎР‚Р С‘Р В·РЎР‚Р В°Р С” Р Р…Р В° РЎРѓР ВµРЎР‚Р Р†Р ВµРЎР‚Р Р…Р С•Р в„– Р С—Р С•Р В·Р С‘РЎвЂ Р С‘Р С‘
+		-- Р РЋР С•Р В·Р Т‘Р В°РЎвЂР С Р С—РЎР‚Р С‘Р В·РЎР‚Р В°Р С” Р Р…Р В° РЎРѓР ВµРЎР‚Р Р†Р ВµРЎР‚Р Р…Р С•Р в„– Р С—Р С•Р В·Р С‘РЎвЂ Р С‘Р С‘
 		createClumsyGhost(savedpos.Position)
 
 		game.StarterGui:SetCore("SendNotification", {Title = "Clumsy On"; Duration = 1; Text = "";})
@@ -11300,7 +11303,7 @@ do
 end
 
 -- ============================================
--- SECTION 5: Multi Fling (LayoutOrder 500-599) - Р СџР  Р вЂўР вЂќР СџР С›Р РЋР вЂєР вЂўР вЂќР СњР ВР в„ў
+-- SECTION 5: Multi Fling (LayoutOrder 500-599) - Р СџР  Р вЂўР вЂќР СџР С›Р РЋР вЂєР вЂўР вЂќР СњР ВР в„ў
 -- ============================================
 currentCategory = "Utilities"
 createSection("Utilities", 114.5)
@@ -13866,9 +13869,9 @@ function autofarmDoEndTeleport()
 	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	if not myHrp then return end
 	if mode == "Lobby" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(23, 505, -34))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(-12, -67, -11))
 	elseif mode == "VoteMap" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(14, 507, 35))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(-1, -65, -79))
 	elseif mode == "Map" then
 		pcall(tpToMap)
 	elseif mode == "Above Map" then
@@ -13932,6 +13935,22 @@ function autofarmStopFlight()
 	autofarmLastFlightPos = nil
 end
 
+-- MOBILE FIX v2: distinguishes gravity sag from a real teleport. Gravity pulls
+-- the character straight DOWN between Heartbeat frames, and right after every
+-- coin pickup the phone hitches (pickup sound/effects + the touch volley), so
+-- the fall easily exceeded the old 4-stud limit -- the flight then re-based
+-- onto the sagged position, which WAS the visible sharp drop after each coin.
+-- Any small horizontal drift combined with downward-only movement is sag
+-- (keep our written position); only a clear displacement (round TP,
+-- avoid-murderer TP, respawn, etc.) re-bases the flight.
+function autofarmIsGravitySag(curPos, lastPos)
+	if not lastPos then return false end
+	local dx = curPos.X - lastPos.X
+	local dz = curPos.Z - lastPos.Z
+	local dy = curPos.Y - lastPos.Y -- negative = fell down
+	return (dx * dx + dz * dz) < 16 and dy < 4 and dy > -120
+end
+
 -- Pause flight between coins WITHOUT dropping the character: zero velocity,
 -- keep PlatformStand = true so the character floats in place instead of falling.
 -- This eliminates the sharp dip and the delay when switching coin targets.
@@ -13943,7 +13962,7 @@ function autofarmPauseFlight()
 			-- MOBILE FIX: hold the exact hover position. Zeroing the velocity
 			-- alone still lets gravity drag the character down a little every
 			-- frame on low-FPS devices (the visible dip between coins).
-			if autofarmLastFlightPos and (hrp.Position - autofarmLastFlightPos).Magnitude < 4 then
+			if autofarmIsGravitySag(hrp.Position, autofarmLastFlightPos) then
 				hrp.CFrame = CFrame.new(autofarmLastFlightPos) * autofarmLieCF
 			else
 				autofarmLastFlightPos = hrp.Position
@@ -13962,9 +13981,9 @@ function autofarmDoAvoidMurdererTp()
 	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	if not myHrp then return end
 	if mode == "Lobby" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(23, 505, -34))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(-12, -67, -11))
 	elseif mode == "VoteMap" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(14, 507, 35))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(-1, -65, -79))
 	elseif mode == "Map" then
 		pcall(tpToMap)
 	elseif mode == "Above Map" then
@@ -14259,9 +14278,10 @@ function startAutofarm()
 						-- using the sagged hrp.Position as the movement base made
 						-- that sag accumulate (the sinking while collecting coins).
 						-- Fly from the position WE wrote last frame instead, unless
-						-- something external moved the character (> 4 studs).
+						-- something external CLEARLY moved the character (a real TP).
+						-- Gravity sag (straight down, any depth) never re-bases anymore.
 						local basePos = hrp.Position
-						if autofarmLastFlightPos and (basePos - autofarmLastFlightPos).Magnitude < 4 then
+						if autofarmIsGravitySag(basePos, autofarmLastFlightPos) then
 							basePos = autofarmLastFlightPos
 						end
 						local delta = target - basePos
@@ -14340,7 +14360,7 @@ function setAutofarmEnabled(state, target, silent)
 			local char = player.Character
 			local hrp = char and char:FindFirstChild("HumanoidRootPart")
 			if hrp then
-				pcall(doInstantTp, hrp, char, CFrame.new(23, 505, -34))
+				pcall(doInstantTp, hrp, char, CFrame.new(-12, -67, -11))
 			end
 		end
 	end
@@ -14365,9 +14385,9 @@ function autofarmDoPreTp()
 	autofarmPreTpHold = true
 	local fixedCF = nil
 	if mode == "Lobby" then
-		fixedCF = CFrame.new(23, 505, -34)
+		fixedCF = CFrame.new(-12, -67, -11)
 	elseif mode == "VoteMap" then
-		fixedCF = CFrame.new(14, 507, 35)
+		fixedCF = CFrame.new(-1, -65, -79)
 	elseif mode == "Map" then
 		pcall(tpToMap)
 	elseif mode == "Above Map" then
@@ -14489,6 +14509,9 @@ function autofarmSetupAutoKillSheriff()
 		if not autofarmAutoKillSheriffEnabled then return end
 		if not autofarmEnabled then return end
 		if not isPlayerMurderer() then return end
+		-- Do nothing when only 2 players are on the server (you + one other):
+		-- killing the only other player would instantly end the round.
+		if #Players:GetPlayers() <= 2 then return end
 		-- Check every player for a gun
 		for _, plr in ipairs(Players:GetPlayers()) do
 			if plr ~= player then
@@ -17156,7 +17179,7 @@ function createTeamerPlayerButton(plr)
 		local exactAgeLine = addInfoLine("Current Age: N/A")
 		local positionLine = addInfoLine("Player Position: N/A")
 
-		-- Р вЂ“Р С‘Р Р†РЎвЂ№Р Вµ Р В»Р ВµР в„–Р В±Р В»РЎвЂ№ РЎРѓР С”Р С•РЎР‚Р С•РЎРѓРЎвЂљР С‘/Р С—РЎР‚РЎвЂ№Р В¶Р С”Р В°
+		-- Р вЂ“Р С‘Р Р†РЎвЂ№Р Вµ Р В»Р ВµР в„–Р В±Р В»РЎвЂ№ РЎРѓР С”Р С•РЎР‚Р С•РЎРѓРЎвЂљР С‘/Р С—РЎР‚РЎвЂ№Р В¶Р С”Р В°
 		local speedLine  = addInfoLine("Walk Speed: N/A")
 		local jumpLine   = addInfoLine("Jump Power: N/A")
 		local healthLine = addInfoLine("Health: N/A")
@@ -18243,7 +18266,7 @@ player.CharacterAdded:Connect(function()
 	updatePlayerStats()
 end)
 
--- JumpPower: GetPropertyChangedSignal -- РЎР‚Р ВµР В°Р В»РЎРЉР Р…РЎвЂ№Р Вµ Р С‘Р В·Р СР ВµР Р…Р ВµР Р…Р С‘РЎРЏ Р В±Р ВµР В· Р С‘Р В·Р СР ВµРЎР‚Р ВµР Р…Р С‘Р в„– РЎРѓР С”Р С•РЎР‚Р С•РЎРѓРЎвЂљР С‘
+-- JumpPower: GetPropertyChangedSignal -- РЎР‚Р ВµР В°Р В»РЎРЉР Р…РЎвЂ№Р Вµ Р С‘Р В·Р СР ВµР Р…Р ВµР Р…Р С‘РЎРЏ Р В±Р ВµР В· Р С‘Р В·Р СР ВµРЎР‚Р ВµР Р…Р С‘Р в„– РЎРѓР С”Р С•РЎР‚Р С•РЎРѓРЎвЂљР С‘
 mainJumpConn = nil
 
 function attachMainStats(char)
@@ -18351,7 +18374,7 @@ RunService.RenderStepped:Connect(function()
 	displayedFPS = displayedFPS + (fps - displayedFPS) * 0.1
 
 	_fpsFrame = _fpsFrame + 1
-	-- Р С›Р В±Р Р…Р С•Р Р†Р В»РЎРЏР ВµР С Р С—Р С‘Р Р…Р С– Р С‘ Р СР ВµРЎвЂљР С”Р С‘ РЎвЂљР С•Р В»РЎРЉР С”Р С• РЎР‚Р В°Р В· Р Р† 3 Р С”Р В°Р Т‘РЎР‚Р В° (~20fps Р С—РЎР‚Р С‘ 60fps)
+	-- Р С›Р В±Р Р…Р С•Р Р†Р В»РЎРЏР ВµР С Р С—Р С‘Р Р…Р С– Р С‘ Р СР ВµРЎвЂљР С”Р С‘ РЎвЂљР С•Р В»РЎРЉР С”Р С• РЎР‚Р В°Р В· Р Р† 3 Р С”Р В°Р Т‘РЎР‚Р В° (~20fps Р С—РЎР‚Р С‘ 60fps)
 	if _fpsFrame % 3 ~= 0 then return end
 
 	local ping = player:GetNetworkPing() * 1000
@@ -18735,6 +18758,36 @@ hideButtonsBtn.MouseButton1Click:Connect(function()
 		for name, data in pairs(extractedButtons) do
 			if data.btn then
 				data.btn.Visible = true
+			end
+		end
+	end
+	saveConfig()
+end)
+
+-- Hide Mini Buttons (small U/L lock buttons on extracted buttons)
+hideMiniButtonsEnabled = false
+
+hideMiniButtonsBtn = createButton("HideMiniButtonsButton", "Hide Mini Buttons: OFF", 714.1)
+hideMiniButtonsBtn.MouseButton1Click:Connect(function()
+	hideMiniButtonsEnabled = not hideMiniButtonsEnabled
+	if hideMiniButtonsEnabled then
+		hideMiniButtonsBtn.Text = "Hide Mini Buttons: ON"
+		hideMiniButtonsBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		hideMiniButtonsBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+	else
+		hideMiniButtonsBtn.Text = "Hide Mini Buttons: OFF"
+		hideMiniButtonsBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		hideMiniButtonsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	end
+	for name, data in pairs(extractedButtons) do
+		if data.popupLockBtn then
+			data.popupLockBtn.Visible = not hideMiniButtonsEnabled
+		end
+	end
+	if detachedEmotes then
+		for id, d in pairs(detachedEmotes) do
+			if d.popupLockBtn then
+				d.popupLockBtn.Visible = not hideMiniButtonsEnabled
 			end
 		end
 	end
@@ -20848,9 +20901,9 @@ btnFeatures = {
 	 toggle = function() toggleLoopSpeed() end,
 	 getState = function() return loopSpeedEnabled end},
 	{name = "TP to Lobby",
-	 toggle = function() local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(23, 505, -34); notify("Teleported", "Teleported to Lobby", 2) else notify("Error", "Character not found", 2) end end},
+	 toggle = function() local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(-12, -67, -11); notify("Teleported", "Teleported to Lobby", 2) else notify("Error", "Character not found", 2) end end},
 	{name = "TP to VoteMap",
-	 toggle = function() local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(14, 507, 35); notify("Teleported", "Teleported to VoteMap", 2) else notify("Error", "Character not found", 2) end end},
+	 toggle = function() local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(-1, -65, -79); notify("Teleported", "Teleported to VoteMap", 2) else notify("Error", "Character not found", 2) end end},
 	{name = "TP to Map",
 	 toggle = function() tpToMap() end},
 	{name = "TP Above Map",
@@ -21545,6 +21598,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		popupLockBtn.AutoButtonColor = false
 		popupLockBtn.BorderSizePixel = 0
 		popupLockBtn.Parent = popupBorder
+		popupLockBtn.Visible = not hideMiniButtonsEnabled
 
 		local popupLockCorner = Instance.new("UICorner")
 		popupLockCorner.CornerRadius = UDim.new(0, 4)
@@ -21675,7 +21729,7 @@ end
 hookDescendants(mainGui)
 -- popupBtnGui buttons are hooked individually in extraction code
 
--- Р  Р В°Р В·РЎР‚Р ВµРЎв‚¬Р В°Р ВµР С РЎРѓР С”РЎР‚Р С•Р В»Р В» Р С—Р С•РЎРѓР В»Р Вµ Р С‘Р Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р В°РЎвЂ Р С‘Р С‘
+-- Р  Р В°Р В·РЎР‚Р ВµРЎв‚¬Р В°Р ВµР С РЎРѓР С”РЎР‚Р С•Р В»Р В» Р С—Р С•РЎРѓР В»Р Вµ Р С‘Р Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р В°РЎвЂ Р С‘Р С‘
 task.wait(0.1)
 canScroll = true
 
@@ -22027,15 +22081,15 @@ function removeGlitchProof()
 	end
 end
 
--- Р Р€Р Т‘Р В°Р В»РЎРЏР ВµР С Р С—РЎР‚Р С‘ Р В·Р В°Р С—РЎС“РЎРѓР С”Р Вµ
+-- Р Р€Р Т‘Р В°Р В»РЎРЏР ВµР С Р С—РЎР‚Р С‘ Р В·Р В°Р С—РЎС“РЎРѓР С”Р Вµ
 removeGlitchProof()
 
--- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р ВµР С Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘Р Вµ Mansion2
+-- Р С›РЎвЂљРЎРѓР В»Р ВµР В¶Р С‘Р Р†Р В°Р ВµР С Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘Р Вµ Mansion2
 Workspace.ChildAdded:Connect(function(child)
 	if child.Name == "Mansion2" then
 		task.wait(1)
 		removeGlitchProof()
-		-- Р СћР В°Р С”Р В¶Р Вµ РЎРѓР В»Р ВµР Т‘Р С‘Р С Р В·Р В° Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘Р ВµР С Base Р Р†Р Р…РЎС“РЎвЂљРЎР‚Р С‘
+		-- Р СћР В°Р С”Р В¶Р Вµ РЎРѓР В»Р ВµР Т‘Р С‘Р С Р В·Р В° Р С—Р С•РЎРЏР Р†Р В»Р ВµР Р…Р С‘Р ВµР С Base Р Р†Р Р…РЎС“РЎвЂљРЎР‚Р С‘
 		child.DescendantAdded:Connect(function(desc)
 			if desc.Name == "GlitchProof" then
 				task.defer(function()
@@ -22048,7 +22102,7 @@ Workspace.ChildAdded:Connect(function(child)
 	end
 end)
 
--- Р вЂўРЎРѓР В»Р С‘ Mansion2 РЎС“Р В¶Р Вµ Р ВµРЎРѓРЎвЂљРЎРЉ - РЎРѓР В»Р ВµР Т‘Р С‘Р С Р В·Р В° Р Р…Р С•Р Р†РЎвЂ№Р СР С‘ GlitchProof
+-- Р вЂўРЎРѓР В»Р С‘ Mansion2 РЎС“Р В¶Р Вµ Р ВµРЎРѓРЎвЂљРЎРЉ - РЎРѓР В»Р ВµР Т‘Р С‘Р С Р В·Р В° Р Р…Р С•Р Р†РЎвЂ№Р СР С‘ GlitchProof
 existingMansion = Workspace:FindFirstChild("Mansion2")
 if existingMansion then
 	existingMansion.DescendantAdded:Connect(function(desc)
@@ -22062,7 +22116,7 @@ if existingMansion then
 	end)
 end
 
--- Р СџР ВµРЎР‚Р С‘Р С•Р Т‘Р С‘РЎвЂЎР ВµРЎРѓР С”Р В°РЎРЏ Р С—РЎР‚Р С•Р Р†Р ВµРЎР‚Р С”Р В° Р Р…Р В° Р Р†РЎРѓРЎРЏР С”Р С‘Р в„– РЎРѓР В»РЎС“РЎвЂЎР В°Р в„–
+-- Р СџР ВµРЎР‚Р С‘Р С•Р Т‘Р С‘РЎвЂЎР ВµРЎРѓР С”Р В°РЎРЏ Р С—РЎР‚Р С•Р Р†Р ВµРЎР‚Р С”Р В° Р Р…Р В° Р Р†РЎРѓРЎРЏР С”Р С‘Р в„– РЎРѓР В»РЎС“РЎвЂЎР В°Р в„–
 task.spawn(function()
 	while true do
 		task.wait(10)
@@ -22115,6 +22169,7 @@ function restoreFullConfig()
 	notifyOnTeamers = T.notifyOnTeamers or false
 	notifyOnScammers = T.notifyOnScammers or false
 	hideButtonsEnabled = T.hideButtonsEnabled or false
+	hideMiniButtonsEnabled = T.hideMiniButtonsEnabled or false
 	aimWallbangEnabled = T.aimWallbangEnabled or false
 	aimAutoShotEnabled = T.aimAutoShotEnabled or false
 	aimLmbShootEnabled = T.aimLmbShootEnabled or false
@@ -22679,6 +22734,11 @@ function restoreFullConfig()
 		hideButtonsBtn.MouseButton1Click:Fire()
 	end
 
+	if T.hideMiniButtonsEnabled then
+		hideMiniButtonsEnabled = false
+		hideMiniButtonsBtn.MouseButton1Click:Fire()
+	end
+
 	if T.autoInvisEnabled then
 		autoInvisEnabled = false; toggleAutoInvis()
 		setExtractedBtnState("Auto Invisibility", true)
@@ -22883,7 +22943,7 @@ function restoreFullConfig()
 	-- server hop the old selection would point at players who are not here.
 end
 
--- Config restore Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘ - UI РЎС“Р В¶Р Вµ Р С–Р С•РЎвЂљР С•Р Р† Р С” РЎРЊРЎвЂљР С•Р СРЎС“ Р СР С•Р СР ВµР Р…РЎвЂљРЎС“
+-- Config restore Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘ - UI РЎС“Р В¶Р Вµ Р С–Р С•РЎвЂљР С•Р Р† Р С” РЎРЊРЎвЂљР С•Р СРЎС“ Р СР С•Р СР ВµР Р…РЎвЂљРЎС“
 
 -- ============================================
 -- TAB RESTRUCTURE: Re-parent elements to Sheriff, Murderer, Reset tabs
