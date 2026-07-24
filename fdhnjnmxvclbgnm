@@ -22353,7 +22353,7 @@ function restoreFullConfig()
 		if c.values.autofarmSpeed then autofarmSpeed = c.values.autofarmSpeed end
 		if c.values.autofarmTpModeIndex then
 			autofarmTpModeIndex = c.values.autofarmTpModeIndex
-			if autofarmTpSelect and autofarmTpModes[autofarmTpModeIndex] then autofarmTpSelect.Text = autofarmTpModes[autofarmTpModeIndex] .. " \u25bc" end
+			if autofarmTpSelect and autofarmTpModes[autofarmTpModeIndex] then autofarmTpSelect.Text = autofarmTpModes[autofarmTpModeIndex] .. " ▼" end
 		end
 		if c.values.autofarmTpEnabled ~= nil then
 			autofarmTpEnabled = c.values.autofarmTpEnabled
@@ -22362,7 +22362,7 @@ function restoreFullConfig()
 		end
 		if c.values.autofarmPreTpModeIndex then
 			autofarmPreTpModeIndex = c.values.autofarmPreTpModeIndex
-			if autofarmPreTpSelect and autofarmPreTpModes[autofarmPreTpModeIndex] then autofarmPreTpSelect.Text = autofarmPreTpModes[autofarmPreTpModeIndex] .. " \u25bc" end
+			if autofarmPreTpSelect and autofarmPreTpModes[autofarmPreTpModeIndex] then autofarmPreTpSelect.Text = autofarmPreTpModes[autofarmPreTpModeIndex] .. " ▼" end
 		end
 		if c.values.autofarmPreTpEnabled ~= nil then
 			autofarmPreTpEnabled = c.values.autofarmPreTpEnabled
