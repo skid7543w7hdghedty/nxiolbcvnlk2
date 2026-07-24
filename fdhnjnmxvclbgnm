@@ -228,6 +228,7 @@ function saveConfig()
 	config.toggles.notifyOnScammers = notifyOnScammers
 	config.toggles.hideButtonsEnabled = hideButtonsEnabled
 	config.toggles.hideMiniButtonsEnabled = hideMiniButtonsEnabled
+	config.toggles.skipLoadingScreenEnabled = skipLoadingScreenEnabled
 	config.toggles.notifyOnVoteStart = notifyOnVoteStart
 	config.toggles.headlessKorbloxEnabled = headlessKorbloxEnabled
 	config.toggles.shadersEnabled = shadersEnabled
@@ -303,6 +304,7 @@ function saveConfig()
 	config.values.animationStyle = animationStyle
 	config.values.loadingAnimStyle = loadingAnimStyle
 	config.values.loadingScreenTime = loadingScreenTime
+	config.values.animationSpeeds = animationSpeeds
 	config.values.gameNotifScale = gameNotifScale
 	config.values.menuAppearStyle = menuAppearStyle
 	config.values.mainBgImageUrl = mainBgImageUrl
@@ -3248,7 +3250,6 @@ function createDetachedEmote(animationId, animationName, savedPos, skipSave, sav
 	lockBtn.AutoButtonColor = false
 	lockBtn.BorderSizePixel = 0
 	lockBtn.Parent = frame
-	lockBtn.Visible = not hideMiniButtonsEnabled
 
 	local lockCorner = Instance.new("UICorner")
 	lockCorner.CornerRadius = UDim.new(0, 4)
@@ -3256,6 +3257,7 @@ function createDetachedEmote(animationId, animationName, savedPos, skipSave, sav
 
 	local d = { frame = frame, btn = btn, popupBtn = btn, popupLockBtn = lockBtn, name = animationName, conns = {} }
 	detachedEmotes[animationId] = d
+	if hideMiniButtonsEnabled and lockBtn then lockBtn.Visible = false end
 
 	if savedLocked then
 		lockBtn.Text = "L"
@@ -3478,7 +3480,9 @@ function onCharacterAdded(char)
 		setExtractedBtnState("Noclip", false)
 
 		-- Р С›РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С KillAura
-		-- KillAura is NOT disabled on death (matches PC version behavior)
+		-- FIX: do NOT force-disable KillAura on death; it must stay enabled
+		-- across respawns (toggleReach's CharacterAdded watcher rehooks it).
+		-- This force-off was why KillAura never worked on mobile.
 
 		if secondLifeEnabled then
 			disableSecondLife()
@@ -3527,7 +3531,7 @@ player.CharacterRemoving:Connect(function()
 	end
 	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
 	setExtractedBtnState("Noclip", false)
-	-- KillAura is NOT disabled on respawn (matches PC version behavior)
+	-- FIX: keep KillAura enabled when the character is removed; it rehooks on respawn.
 	-- ==== Р СњР вЂў Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР В°Р ВµР С Speed Glitch Р С—РЎР‚Р С‘ РЎРѓР СР ВµРЎР‚РЎвЂљР С‘ ====
 	-- Р С›Р Р… Р Т‘Р С•Р В»Р В¶Р ВµР Р… Р С•РЎРѓРЎвЂљР В°РЎвЂљРЎРЉРЎРѓРЎРЏ Р Р†Р С”Р В»РЎР‹РЎвЂЎРЎвЂР Р…Р Р…РЎвЂ№Р С Р ВµРЎРѓР В»Р С‘ Р В±РЎвЂ№Р В» Р Р†Р С”Р В»РЎР‹РЎвЂЎРЎвЂР Р…
 	-- Р СњР С• Р Р…РЎС“Р В¶Р Р…Р С• Р С—Р ВµРЎР‚Р ВµР С—Р С•Р Т‘Р С”Р В»РЎР‹РЎвЂЎР С‘РЎвЂљРЎРЉ connection
@@ -3747,6 +3751,8 @@ animationStyle = 1
 animStyles = {"Scale", "Fade Only", "Slide Left", "Slide Right", "Slide Up", "Bounce", "Scale+Fade"}
 loadingAnimStyle = 1
 loadingAnimStyles = {"Letter by Letter", "Fade In", "Scale Up", "Slide Up"}
+skipLoadingScreenEnabled = false -- Instant Load: skip the splash entirely (Settings tab)
+animationSpeeds = {} -- [tostring(animationId)] = saved playback speed (Animations tab)
 loadingScreenTime = 1.5 -- total splash ("Adrenalin.win" preview) duration in seconds (Settings tab)
 menuAppearStyle = 1
 menuAppearStyles = {"None", "Fade In", "Scale Up", "Slide Down", "Bounce", "Blur Reveal"}
@@ -3802,13 +3808,20 @@ mainMenuHeight = 230
 -- Loading Screen (Mobile-optimized)
 -- ============================================
 function playLoadingScreen()
-	local LOADING_DURATION = math.max(0.05, (tonumber(loadingScreenTime) or 1.5) - 0.9) -- hold = total - intro(~0.55s) - outro(~0.35s)
 	-- The splash plays BEFORE the config-apply step at the very end of the
 	-- script, so read the saved style/duration straight from the raw config.
 	if loadedConfig and loadedConfig.values then
 		loadingAnimStyle = tonumber(loadedConfig.values.loadingAnimStyle) or loadingAnimStyle
 		loadingScreenTime = tonumber(loadedConfig.values.loadingScreenTime) or loadingScreenTime
 	end
+	if loadedConfig and loadedConfig.toggles and loadedConfig.toggles.skipLoadingScreenEnabled then
+		skipLoadingScreenEnabled = true
+	end
+	-- Instant Load: skip the whole splash so the script is usable immediately
+	if skipLoadingScreenEnabled then return end
+	-- FIX: compute the hold time AFTER the saved duration is read (it used to
+	-- be computed before, so the saved value never actually applied).
+	local LOADING_DURATION = math.max(0.05, (tonumber(loadingScreenTime) or 1.5) - 0.9) -- hold = total - intro(~0.55s) - outro(~0.35s)
 	local style = loadingAnimStyles[loadingAnimStyle] or "Letter by Letter"
 
 	local blur = Instance.new("BlurEffect")
@@ -4515,7 +4528,7 @@ function createCategoryScrollFrame(categoryName)
 	categoryFrames[categoryName] = scroll
 end
 
-	canScroll = false  -- Р В¤Р В»Р В°Р С– Р Т‘Р В»РЎРЏ Р В±Р В»Р С•Р С”Р С‘РЎР‚Р С•Р Р†Р С”Р С‘ РЎРѓР С”РЎР‚Р С•Р В»Р В»Р В° Р С—РЎР‚Р С‘ Р С‘Р Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р В°РЎвЂ Р С‘Р С‘
+	canScroll = false  -- Р В¤Р В»Р В°Р С– Р Т‘Р В»РЎРЏ Р В±Р В»Р С•�� С”Р С‘РЎР‚Р С•Р Р†Р С”Р С‘ РЎРѓР С”РЎР‚Р С•Р В»Р В»Р В° Р С—РЎР‚Р С‘ Р С‘Р Р…Р С‘РЎвЂ Р С‘Р В°Р В»Р С‘Р В·Р В°РЎвЂ Р С‘Р С‘
 
 createCategoryScrollFrame("Main")
 createCategoryScrollFrame("Movement")
@@ -5801,7 +5814,7 @@ function autoGrabConnectModel(model)
 		end
 	end
 
-	-- DescendantAdded - Р С—РЎР‚РЎРЏР СР С•Р в„– Р Р†РЎвЂ№Р В·Р С•Р Р† Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘ (Р В±РЎвЂ№РЎРѓРЎв��љРЎР‚Р ВµР Вµ task.defer)
+	-- DescendantAdded - Р С—РЎР‚РЎРЏР СР С•Р в„– Р Р†РЎвЂ№Р В·Р С•Р Р† Р В±Р ВµР В· Р В·Р В°Р Т‘Р ВµРЎР‚Р В¶Р С”Р С‘ (Р В±РЎвЂ№РЎРѓРЎвЂљРЎР‚Р ВµР Вµ task.defer)
 	local conn = model.DescendantAdded:Connect(function(descendant)
 		if not autoGrabGunEnabled then return end
 		if descendant.Name == "GunDrop" then
@@ -7041,7 +7054,7 @@ end)
 -- ============================================
 voteMapCoords = {
 	CFrame.new(-10, -64, -94),  -- Map 1
-	CFrame.new(-1, -64, -95),  -- Map 2
+	CFrame.new(-1, -64, -95),   -- Map 2
 	CFrame.new(10, -64, -94),   -- Map 3
 }
 
@@ -10838,7 +10851,7 @@ noclipButton.MouseButton1Click:Connect(function()
 	setExtractedBtnState("Noclip", noclipEnabled)
 end)
 
-reachButton, rangeInputBox = createDualRow("ReachButton", "KillAura: OFF", "Range", range, 209)
+reachButton, rangeInputBox = createDualRow("ReachButton", "KillAura: OFF", "Range", range, 209.5)
 reachButton.MouseButton1Click:Connect(function()
 	toggleReach()
 	setToggleState(reachButton, reachEnabled, "KillAura: ON", "KillAura: OFF")
@@ -11023,7 +11036,7 @@ function toggleThrowingKnifeAura()
 end
 
 
-throwingKnifeAuraButton, throwingKnifeRadiusInputBox = createDualRow("ThrowingKnifeAuraButton", "Throwing Knife Aura: OFF", "Radius", throwingKnifeAuraRadius, 209.5)
+throwingKnifeAuraButton, throwingKnifeRadiusInputBox = createDualRow("ThrowingKnifeAuraButton", "Throwing Knife Aura: OFF", "Radius", throwingKnifeAuraRadius, 209)
 throwingKnifeAuraButton.MouseButton1Click:Connect(function()
 	toggleThrowingKnifeAura()
 	setToggleState(throwingKnifeAuraButton, throwingKnifeAuraEnabled, "Throwing Knife Aura: ON", "Throwing Knife Aura: OFF")
@@ -13512,19 +13525,31 @@ TeleportService = game:GetService("TeleportService")
 autofarmServerHopEnabled = false
 AUTOFARM_SCRIPT_URL = (loadedConfig.values and loadedConfig.values.autofarmScriptUrl) or ""
 
+autofarmRoleRefreshing = false
+-- ANTI-STUTTER FIX: never yield the farm loop. The old version called
+-- invokePlayerData() (a blocking InvokeServer round-trip) directly from the
+-- flight frame every time the 1s cache expired, so the flight froze for the
+-- whole server round-trip (the mid-flight micro-stop on phones). The refresh
+-- now runs in a BACKGROUND thread and callers always get the last cached
+-- snapshot instantly.
 function autofarmGetPlayerData()
 	if autofarmRoleCache and (os.clock() - autofarmRoleCacheAt) < 1 then
 		return autofarmRoleCache
 	end
-	local ok, result = pcall(function()
-		return invokePlayerData()
-	end)
-	if ok and result then
-		autofarmRoleCache = result
-		autofarmRoleCacheAt = os.clock()
-		return result
+	if not autofarmRoleRefreshing then
+		autofarmRoleRefreshing = true
+		task.spawn(function()
+			local ok, result = pcall(function()
+				return invokePlayerData()
+			end)
+			if ok and result then
+				autofarmRoleCache = result
+				autofarmRoleCacheAt = os.clock()
+			end
+			autofarmRoleRefreshing = false
+		end)
 	end
-	return nil
+	return autofarmRoleCache
 end
 
 function autofarmGetMyRole()
@@ -13935,25 +13960,23 @@ function autofarmStopFlight()
 	autofarmLastFlightPos = nil
 end
 
--- MOBILE FIX v2: distinguishes gravity sag from a real teleport. Gravity pulls
--- the character straight DOWN between Heartbeat frames, and right after every
--- coin pickup the phone hitches (pickup sound/effects + the touch volley), so
--- the fall easily exceeded the old 4-stud limit -- the flight then re-based
--- onto the sagged position, which WAS the visible sharp drop after each coin.
--- Any small horizontal drift combined with downward-only movement is sag
--- (keep our written position); only a clear displacement (round TP,
--- avoid-murderer TP, respawn, etc.) re-bases the flight.
-function autofarmIsGravitySag(curPos, lastPos)
-	if not lastPos then return false end
-	local dx = curPos.X - lastPos.X
-	local dz = curPos.Z - lastPos.Z
-	local dy = curPos.Y - lastPos.Y -- negative = fell down
-	return (dx * dx + dz * dz) < 16 and dy < 4 and dy > -120
-end
-
 -- Pause flight between coins WITHOUT dropping the character: zero velocity,
 -- keep PlatformStand = true so the character floats in place instead of falling.
 -- This eliminates the sharp dip and the delay when switching coin targets.
+-- MOBILE FIX v2: distinguish pure gravity sag from an external move. A phone
+-- hitch (e.g. right after a coin pickup) can let gravity pull the character
+-- down MORE than 4 studs; rebasing onto that sagged position caused the
+-- visible drop after every coin. Treat any mostly-vertical downward drift as
+-- sag and keep flying from the position we wrote ourselves.
+function autofarmIsGravitySag(curPos, lastPos)
+	local diff = curPos - lastPos
+	local horizontal = Vector3.new(diff.X, 0, diff.Z)
+	if horizontal.Magnitude >= 4 then return false end
+	if diff.Y > 4 then return false end
+	if diff.Y < -120 then return false end
+	return true
+end
+
 function autofarmPauseFlight()
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -13962,7 +13985,7 @@ function autofarmPauseFlight()
 			-- MOBILE FIX: hold the exact hover position. Zeroing the velocity
 			-- alone still lets gravity drag the character down a little every
 			-- frame on low-FPS devices (the visible dip between coins).
-			if autofarmIsGravitySag(hrp.Position, autofarmLastFlightPos) then
+			if autofarmLastFlightPos and autofarmIsGravitySag(hrp.Position, autofarmLastFlightPos) then
 				hrp.CFrame = CFrame.new(autofarmLastFlightPos) * autofarmLieCF
 			else
 				autofarmLastFlightPos = hrp.Position
@@ -14278,10 +14301,9 @@ function startAutofarm()
 						-- using the sagged hrp.Position as the movement base made
 						-- that sag accumulate (the sinking while collecting coins).
 						-- Fly from the position WE wrote last frame instead, unless
-						-- something external CLEARLY moved the character (a real TP).
-						-- Gravity sag (straight down, any depth) never re-bases anymore.
+						-- something external moved the character (> 4 studs).
 						local basePos = hrp.Position
-						if autofarmIsGravitySag(basePos, autofarmLastFlightPos) then
+						if autofarmLastFlightPos and autofarmIsGravitySag(basePos, autofarmLastFlightPos) then
 							basePos = autofarmLastFlightPos
 						end
 						local delta = target - basePos
@@ -14509,8 +14531,7 @@ function autofarmSetupAutoKillSheriff()
 		if not autofarmAutoKillSheriffEnabled then return end
 		if not autofarmEnabled then return end
 		if not isPlayerMurderer() then return end
-		-- Do nothing when only 2 players are on the server (you + one other):
-		-- killing the only other player would instantly end the round.
+		-- Do nothing when only 2 players are on the server (you + one other)
 		if #Players:GetPlayers() <= 2 then return end
 		-- Check every player for a gun
 		for _, plr in ipairs(Players:GetPlayers()) do
@@ -15457,6 +15478,9 @@ for index = 1, #animationButtons, 2 do
 			speedBox.Text = "1"
 			numericSpeed = 1
 		end
+		-- FIX: persist the speed so it survives rejoins
+		animationSpeeds[tostring(animationId)] = numericSpeed
+		saveConfig()
 		if playingAnimationId == animationId and animationTrack then
 			animationTrack:AdjustSpeed(numericSpeed)
 		end
@@ -18764,8 +18788,23 @@ hideButtonsBtn.MouseButton1Click:Connect(function()
 	saveConfig()
 end)
 
--- Hide Mini Buttons (small U/L lock buttons on extracted buttons)
+-- Hide Mini Buttons: hides the small lock buttons shown on extracted buttons
 hideMiniButtonsEnabled = false
+
+function applyHideMiniButtons()
+	for _, data in pairs(extractedButtons) do
+		if data.popupLockBtn then
+			data.popupLockBtn.Visible = not hideMiniButtonsEnabled
+		end
+	end
+	if detachedEmotes then
+		for _, d in pairs(detachedEmotes) do
+			if d.popupLockBtn then
+				d.popupLockBtn.Visible = not hideMiniButtonsEnabled
+			end
+		end
+	end
+end
 
 hideMiniButtonsBtn = createButton("HideMiniButtonsButton", "Hide Mini Buttons: OFF", 714.1)
 hideMiniButtonsBtn.MouseButton1Click:Connect(function()
@@ -18779,18 +18818,7 @@ hideMiniButtonsBtn.MouseButton1Click:Connect(function()
 		hideMiniButtonsBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		hideMiniButtonsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
-	for name, data in pairs(extractedButtons) do
-		if data.popupLockBtn then
-			data.popupLockBtn.Visible = not hideMiniButtonsEnabled
-		end
-	end
-	if detachedEmotes then
-		for id, d in pairs(detachedEmotes) do
-			if d.popupLockBtn then
-				d.popupLockBtn.Visible = not hideMiniButtonsEnabled
-			end
-		end
-	end
+	applyHideMiniButtons()
 	saveConfig()
 end)
 
@@ -19376,6 +19404,32 @@ notifSizeInput.FocusLost:Connect(function()
 	else
 		notifSizeInput.Text = tostring(math.floor(gameNotifScale * 100 + 0.5))
 	end
+	saveConfig()
+end)
+
+-- Instant Load: skip the splash entirely for an instant script start
+skipLoadingRow = Instance.new("Frame")
+skipLoadingRow.Size = UDim2.new(1, 0, 0, 42)
+skipLoadingRow.BackgroundTransparency = 1
+skipLoadingRow.LayoutOrder = 715.35
+skipLoadingRow.Parent = categoryFrames["Settings"]
+
+skipLoadingBtn = Instance.new("TextButton")
+skipLoadingBtn.Size = UDim2.new(1, 0, 1, 0)
+skipLoadingBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+skipLoadingBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+skipLoadingBtn.Text = "Instant Load (Skip Intro): OFF"
+skipLoadingBtn.Font = Enum.Font.SourceSansBold
+skipLoadingBtn.TextSize = 16
+skipLoadingBtn.Parent = skipLoadingRow
+
+skipLoadingBtnCorner = Instance.new("UICorner")
+skipLoadingBtnCorner.CornerRadius = UDim.new(0, 6)
+skipLoadingBtnCorner.Parent = skipLoadingBtn
+
+skipLoadingBtn.MouseButton1Click:Connect(function()
+	skipLoadingScreenEnabled = not skipLoadingScreenEnabled
+	setToggleState(skipLoadingBtn, skipLoadingScreenEnabled, "Instant Load (Skip Intro): ON", "Instant Load (Skip Intro): OFF")
 	saveConfig()
 end)
 
@@ -21598,7 +21652,6 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		popupLockBtn.AutoButtonColor = false
 		popupLockBtn.BorderSizePixel = 0
 		popupLockBtn.Parent = popupBorder
-		popupLockBtn.Visible = not hideMiniButtonsEnabled
 
 		local popupLockCorner = Instance.new("UICorner")
 		popupLockCorner.CornerRadius = UDim.new(0, 4)
@@ -21677,6 +21730,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			dragConn = popupDragConn,
 			state = false,
 		}
+		if hideMiniButtonsEnabled and popupLockBtn then popupLockBtn.Visible = false end
 
 		if feature.getState and feature.getState() then
 			setExtractedBtnState(feature.name, true, feature.getStatusText and feature.getStatusText())
@@ -22170,6 +22224,7 @@ function restoreFullConfig()
 	notifyOnScammers = T.notifyOnScammers or false
 	hideButtonsEnabled = T.hideButtonsEnabled or false
 	hideMiniButtonsEnabled = T.hideMiniButtonsEnabled or false
+	skipLoadingScreenEnabled = T.skipLoadingScreenEnabled or false
 	aimWallbangEnabled = T.aimWallbangEnabled or false
 	aimAutoShotEnabled = T.aimAutoShotEnabled or false
 	aimLmbShootEnabled = T.aimLmbShootEnabled or false
@@ -22203,7 +22258,10 @@ function restoreFullConfig()
 		if c.values.JUMP_BOOST_POWER then JUMP_BOOST_POWER = c.values.JUMP_BOOST_POWER end
 		if c.values.FAKE_SPEED_CFRAME_SPEED then FAKE_SPEED_CFRAME_SPEED = c.values.FAKE_SPEED_CFRAME_SPEED end
 		if c.values.range then range = c.values.range end
-		if c.values.throwingKnifeAuraRadius then throwingKnifeAuraRadius = c.values.throwingKnifeAuraRadius end
+		if c.values.throwingKnifeAuraRadius then throwingKnifeAuraRadius = c.values.throwingKnifeAuraRadius; if throwingKnifeRadiusInputBox then throwingKnifeRadiusInputBox.Text = tostring(throwingKnifeAuraRadius) end end
+		-- FIX: Coin Aura radius was saved under config.values but restored from
+		-- config.toggles (always missing), so it reset to 10 on rejoin.
+		if c.values.coinAuraRadius then coinAuraRadius = math.clamp(c.values.coinAuraRadius, 1, 20) end
 		if c.values.autoInvisActivateDist then autoInvisActivateDist = c.values.autoInvisActivateDist end
 		if c.values.autoInvisDeactivateDist then autoInvisDeactivateDist = c.values.autoInvisDeactivateDist end
 		if c.values.autoTpDist then autoTpDist = c.values.autoTpDist end
@@ -22218,6 +22276,13 @@ function restoreFullConfig()
 		if c.values.fpsPingBtnHeight then fpsPingBtnHeight = c.values.fpsPingBtnHeight end
 		if c.values.loopSpeedValue then loopSpeedValue = c.values.loopSpeedValue; if loopSpeedInput then loopSpeedInput.Text = tostring(loopSpeedValue) end end
 		if c.values.customJumpPowerValue then customJumpPowerValue = c.values.customJumpPowerValue; if customJumpPowerInput then customJumpPowerInput.Text = tostring(customJumpPowerValue) end end
+		if c.values.animationSpeeds then
+			animationSpeeds = c.values.animationSpeeds
+			for id, entry in pairs(animationUiById) do
+				local sp = animationSpeeds[tostring(id)]
+				if sp and entry.Box then entry.Box.Text = tostring(sp) end
+			end
+		end
 		if c.values.fakeDuckAntiAimSpeed then fakeDuckAntiAimSpeed = c.values.fakeDuckAntiAimSpeed; if fakeDuckAimInput then fakeDuckAimInput.Text = tostring(fakeDuckAntiAimSpeed) end end
 		if c.values.fakeDuckSpeedValue then fakeDuckSpeedValue = c.values.fakeDuckSpeedValue; if fakeDuckSpdInput then fakeDuckSpdInput.Text = tostring(fakeDuckSpeedValue) end end
 		if c.values.toggleBgTransparency ~= nil then toggleBgTransparency = c.values.toggleBgTransparency end
@@ -22286,10 +22351,23 @@ function restoreFullConfig()
 		if c.values.roundStartSoundPath ~= nil then roundStartSoundPath = c.values.roundStartSoundPath end
 		if c.values.autofarmTargetCoins then autofarmTargetCoins = c.values.autofarmTargetCoins end
 		if c.values.autofarmSpeed then autofarmSpeed = c.values.autofarmSpeed end
-		if c.values.autofarmTpModeIndex then autofarmTpModeIndex = c.values.autofarmTpModeIndex end
-		if c.values.autofarmTpEnabled ~= nil then autofarmTpEnabled = c.values.autofarmTpEnabled end
-		if c.values.autofarmPreTpModeIndex then autofarmPreTpModeIndex = c.values.autofarmPreTpModeIndex end
-		if c.values.autofarmPreTpEnabled ~= nil then autofarmPreTpEnabled = c.values.autofarmPreTpEnabled end
+		if c.values.autofarmTpModeIndex then
+			autofarmTpModeIndex = c.values.autofarmTpModeIndex
+			if autofarmTpSelect and autofarmTpModes[autofarmTpModeIndex] then autofarmTpSelect.Text = autofarmTpModes[autofarmTpModeIndex] .. " \u25bc" end
+		end
+		if c.values.autofarmTpEnabled ~= nil then
+			autofarmTpEnabled = c.values.autofarmTpEnabled
+			-- FIX: also repaint the button, otherwise the toggle looked OFF after rejoin
+			if autofarmTpBtn then setToggleState(autofarmTpBtn, autofarmTpEnabled, "Auto TP After Farm: ON", "Auto TP After Farm: OFF") end
+		end
+		if c.values.autofarmPreTpModeIndex then
+			autofarmPreTpModeIndex = c.values.autofarmPreTpModeIndex
+			if autofarmPreTpSelect and autofarmPreTpModes[autofarmPreTpModeIndex] then autofarmPreTpSelect.Text = autofarmPreTpModes[autofarmPreTpModeIndex] .. " \u25bc" end
+		end
+		if c.values.autofarmPreTpEnabled ~= nil then
+			autofarmPreTpEnabled = c.values.autofarmPreTpEnabled
+			if autofarmPreTpBtn then setToggleState(autofarmPreTpBtn, autofarmPreTpEnabled, "Auto TP Before Farm: ON", "Auto TP Before Farm: OFF") end
+		end
 		if c.values.autofarmWebhookIntervalMin then autofarmWebhookIntervalMin = c.values.autofarmWebhookIntervalMin end
 		if c.values.autofarmWebhookUrl then AUTOFARM_WEBHOOK_URL = c.values.autofarmWebhookUrl end
 		if c.values.autofarmScriptUrl then AUTOFARM_SCRIPT_URL = c.values.autofarmScriptUrl end
@@ -22734,9 +22812,13 @@ function restoreFullConfig()
 		hideButtonsBtn.MouseButton1Click:Fire()
 	end
 
-	if T.hideMiniButtonsEnabled then
+	if hideMiniButtonsEnabled and hideMiniButtonsBtn then
 		hideMiniButtonsEnabled = false
 		hideMiniButtonsBtn.MouseButton1Click:Fire()
+	end
+
+	if skipLoadingScreenEnabled and skipLoadingBtn then
+		setToggleState(skipLoadingBtn, true, "Instant Load (Skip Intro): ON", "Instant Load (Skip Intro): OFF")
 	end
 
 	if T.autoInvisEnabled then
@@ -22838,36 +22920,38 @@ function restoreFullConfig()
 		setExtractedBtnState("Jump Power", true)
 	end
 	-- Restore autofarm toggle states
+	-- FIX: these fire-restore blocks used to set the variable to FALSE while
+	-- painting the button ON, so the features silently turned off on rejoin.
 	if T.autofarmResetInnocentEnabled then
-		autofarmResetInnocentEnabled = false
+		autofarmResetInnocentEnabled = true
 		if autofarmResetInnocentBtn then setToggleState(autofarmResetInnocentBtn, true, "Auto Reset (Innocent): ON", "Auto Reset (Innocent): OFF") end
 	end
 	if T.autofarmResetSheriffEnabled then
-		autofarmResetSheriffEnabled = false
+		autofarmResetSheriffEnabled = true
 		if autofarmResetSheriffBtn then setToggleState(autofarmResetSheriffBtn, true, "Auto Reset (Sheriff/Hero): ON", "Auto Reset (Sheriff/Hero): OFF") end
 	end
 	if T.autofarmResetMurdererEnabled then
-		autofarmResetMurdererEnabled = false
+		autofarmResetMurdererEnabled = true
 		if autofarmResetMurdererBtn then setToggleState(autofarmResetMurdererBtn, true, "Auto Reset (Murderer): ON", "Auto Reset (Murderer): OFF") end
 	end
 	if T.autofarmKillAllEnabled then
-		autofarmKillAllEnabled = false
+		autofarmKillAllEnabled = true
 		if autofarmKillAllBtn then setToggleState(autofarmKillAllBtn, true, "Kill Everyone (Murderer): ON", "Kill Everyone (Murderer): OFF") end
 	end
 	if T.autofarmShootPiercerEnabled then
-		autofarmShootPiercerEnabled = false
+		autofarmShootPiercerEnabled = true
 		if autofarmPiercerBtn then setToggleState(autofarmPiercerBtn, true, "Shoot Murderer (Piercer, Sheriff/Hero): ON", "Shoot Murderer (Piercer, Sheriff/Hero): OFF") end
 	end
 	if T.autofarmResetDeathEnabled then
-		autofarmResetDeathEnabled = false
+		autofarmResetDeathEnabled = true
 		if autofarmResetDeathBtn then setToggleState(autofarmResetDeathBtn, true, "Reset Murderer On Death: ON", "Reset Murderer On Death: OFF") end
 	end
 	if T.autofarmWebhookEnabled then
-		autofarmWebhookEnabled = false
+		autofarmWebhookEnabled = true
 		if autofarmWebhookBtn then setToggleState(autofarmWebhookBtn, true, "Discord Webhook Notification: ON", "Discord Webhook Notification: OFF") end
 	end
 	if T.autofarmServerHopEnabled then
-		autofarmServerHopEnabled = false
+		autofarmServerHopEnabled = true
 		if autofarmServerHopBtn then setToggleState(autofarmServerHopBtn, true, "Server Hop When Alone: ON", "Server Hop When Alone: OFF") end
 	end
 	if T.autofarmAvoidMurdererEnabled then
@@ -23047,12 +23131,12 @@ do
 		-- Move Throwing Knife Aura (dual row) right after Auto Kill Sheriff
 		if throwingKnifeAuraButton then
 			local tkaRow = throwingKnifeAuraButton.Parent
-			if tkaRow then tkaRow.Parent = murdererFrame; tkaRow.LayoutOrder = 278.2 end
+			if tkaRow then tkaRow.Parent = murdererFrame; tkaRow.LayoutOrder = 279 end
 		end
 		-- Move KillAura (dual row: reachButton.Parent is a row frame)
 		if reachButton then
 			local row = reachButton.Parent
-			if row then row.Parent = murdererFrame; row.LayoutOrder = 279 end
+			if row then row.Parent = murdererFrame; row.LayoutOrder = 278.2 end
 		end
 	end
 
