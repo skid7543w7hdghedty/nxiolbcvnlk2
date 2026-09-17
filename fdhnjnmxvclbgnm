@@ -313,8 +313,7 @@ config.toggles.gameNotifEnabled = gameNotifEnabled
 	config.toggles.korbloxEnabled = korbloxEnabled
 	config.toggles.headlessEnabled = headlessEnabled
 	config.toggles.headlessAllHatsEnabled = headlessAllHatsEnabled
-	config.toggles.crosshairEnabled = crosshairEnabled
-	config.toggles.keystrokeEnabled = keystrokeEnabled
+	-- crosshair/keystroke REMOVED on mobile: not saved.
 	config.toggles.shadersEnabled = shadersEnabled
 
 	-- Autofarm state + all its sub-settings (restored automatically on rejoin/hop)
@@ -565,10 +564,7 @@ config.values.autofarmStuckTimeout = autofarmStuckTimeout
 		local p = toggleButton.Position
 		config.togglePos = {X = {Scale = p.X.Scale, Offset = p.X.Offset}, Y = {Scale = p.Y.Scale, Offset = p.Y.Offset}}
 	end
-	if keystrokeSavedPos then
-		local p = keystrokeSavedPos
-		config.keystrokePos = {X = {Scale = p.X.Scale, Offset = p.X.Offset}, Y = {Scale = p.Y.Scale, Offset = p.Y.Offset}}
-	end
+	-- keystrokePos REMOVED on mobile (keystroke feature taken out).
 
 	if savedAvatars then
 		config.savedAvatars = savedAvatars
@@ -628,16 +624,7 @@ config.values.autofarmStuckTimeout = autofarmStuckTimeout
 			config.emoteOrder[#config.emoteOrder + 1] = { id = entry.id, name = entry.name }
 		end
 	end
-	config.emotionKeyBinds = {}
-	if emotionKeyBinds then
-		for animId, kc in pairs(emotionKeyBinds) do
-			-- Save keyboard keys as "G" and mouse buttons as "MouseButton2" so
-			-- both round-trip through the config and reload correctly.
-			config.emotionKeyBinds[tostring(animId)] = tostring(kc)
-				:gsub("Enum.KeyCode%.", "")
-				:gsub("Enum.UserInputType%.", "")
-		end
-	end
+	-- Emotion keybinds REMOVED on mobile: nothing to save.
 	config.customAnimations = {}
 	if customAnims then
 		for _, entry in ipairs(customAnims) do
@@ -1346,6 +1333,8 @@ function reachDoSlashKill()
 	local handle = tool.Handle
 	local handleTouched = tkaGetHandleTouched()
 	local origin = killGetRealCFrame().Position
+	-- Victims: every alive player within `range` studs right now.
+	local victims = {}
 	local p = reachCachePlayers
 	for i = 1, #p do
 		local plr = p[i]
@@ -1355,6 +1344,20 @@ function reachDoSlashKill()
 			local tHum = v and v:FindFirstChildOfClass("Humanoid")
 			if tRoot and tHum and tHum.Health > 0
 				and (origin - tRoot.Position).Magnitude <= range then
+				victims[#victims + 1] = plr
+			end
+		end
+	end
+	if #victims == 0 then return end
+	-- Burst the hits over several frames: mobile networks/executors often drop
+	-- a single remote batch, so keep firing until everyone is dead or frames run out.
+	for frame = 1, 6 do
+		local allDead = true
+		for _, plr in ipairs(victims) do
+			local v = plr and plr.Character
+			local tHum = v and v:FindFirstChildOfClass("Humanoid")
+			if v and tHum and tHum.Health > 0 then
+				allDead = false
 				for _, part in ipairs(v:GetDescendants()) do
 					if part:IsA("BasePart") then
 						if handleTouched then
@@ -1365,6 +1368,8 @@ function reachDoSlashKill()
 				end
 			end
 		end
+		if allDead then break end
+		RunService.Heartbeat:Wait()
 	end
 end
 
@@ -1576,32 +1581,43 @@ function toggleThrowingKnifeAura()
 			if os.clock() < tkaThrowCooldownUntil then return end
 			tkaThrowCooldownUntil = os.clock() + 0.15
 			task.spawn(function()
-				-- Follow the projectile for its whole flight, sampling every frame.
-				-- Accumulate the SINGLE closest player seen at any point during the
-				-- flight, then kill only that one player once the flight ends.
-				-- This guarantees exactly one kill per throw — the nearest victim.
+				-- Follow the projectile every frame and kill INSTANTLY the first
+				-- time the blade passes within range of someone (no waiting for
+				-- the flight to end at a wall). One kill per throw.
 				local prevPos = nil
+				local spawnPos = nil
 				local startT = os.clock()
-				local bestPlr = nil
-				local bestDist = math.huge
 				while throwingKnifeAuraEnabled and (os.clock() - startT) < 5 do
 					if not (inst and inst.Parent and inst:IsDescendantOf(Workspace) and tkaIsThrownKnife(inst)) then
 						break
 					end
 					local curPos = tkaGetKnifePosition(inst)
 					if curPos then
-						local plr, dist = tkaFindClosest(prevPos, curPos)
-						if plr and dist < bestDist then
-							bestDist = dist
-							bestPlr = plr
+						if not spawnPos then spawnPos = curPos end
+						-- Arm only once the knife left your hand: kills don't count
+						-- while it is still within one radius of the throw origin,
+						-- so a teammate standing next to you doesn't eat the throw.
+						local armed = spawnPos and (curPos - spawnPos).Magnitude >= throwingKnifeAuraRadius
+						if armed then
+							local plr = tkaFindClosest(prevPos, curPos)
+							if plr then
+								-- Verify over a few frames: re-fire while the victim
+								-- is alive and the knife is still flying (mobile
+								-- often drops single shots).
+								for attempt = 1, 4 do
+									tkaKillOne(plr)
+									task.wait(0.12)
+									local ch = plr.Character
+									local h = ch and ch:FindFirstChildOfClass("Humanoid")
+									if not (h and h.Health > 0) then break end
+									if not (inst and inst.Parent and inst:IsDescendantOf(Workspace)) then break end
+								end
+								break
+							end
 						end
 						prevPos = curPos
 					end
 					RunService.Heartbeat:Wait()
-				end
-				-- Kill only the single closest player found during the whole flight
-				if bestPlr then
-					tkaKillOne(bestPlr)
 				end
 			end)
 		end)
@@ -3298,11 +3314,7 @@ animationTrack = nil
 playingAnimationId = 0
 animationUiById = {}
 
--- Per-emotion keybinds: maps animationId → Enum.KeyCode
-emotionKeyBinds = {}
-listeningForEmotionBind = false
-listeningEmotionTextBox = nil
-listeningEmotionId = nil
+-- Emotion keybinds REMOVED on mobile (no bind buttons in Emotions/Ragebait).
 
 -- Ordered emotion list (flat pairs: id, name). This is the single source of
 -- truth for the Emotions tab order + membership. Users can add, delete and
@@ -3362,63 +3374,6 @@ if loadedConfig and type(loadedConfig.emotionOrder) == "table" and #loadedConfig
 		end
 	end
 	if #final > 0 then emotionOrder = final end
-end
-
--- Load per-emotion keybinds from config
-if loadedConfig and type(loadedConfig.emotionKeyBinds) == "table" then
-	for idStr, keyCodeStr in pairs(loadedConfig.emotionKeyBinds) do
-		local id = tonumber(idStr)
-		if id and keyCodeStr then
-			local ok, kc = pcall(function()
-				local kc2 = Enum.KeyCode[keyCodeStr]
-				if kc2 then return kc2 end
-				return Enum.UserInputType[keyCodeStr]
-			end)
-			if ok and kc then
-				emotionKeyBinds[id] = kc
-			end
-		end
-	end
-end
-
--- Register saved emotion keybinds into the global keyBinds table.
--- NOTE: emote-ness is resolved lazily at press time (emoteOrder is built much
--- later in the file, so snapshotting it here would mark every restored bind
--- as a non-emote and R15 emotes would silently do nothing after a rejoin).
-function emotionIsEmote(animId)
-	if emoteOrder then
-		for _, e in ipairs(emoteOrder) do
-			if e.id == animId then return true end
-		end
-	end
-	return false
-end
-keyBinds = keyBinds or {}
-for animId, kc in pairs(emotionKeyBinds) do
-	keyBinds[kc] = {
-		callback = function()
-			if emotionIsEmote(animId) then
-				local char2 = player.Character
-				local hum2 = char2 and char2:FindFirstChildOfClass("Humanoid")
-				if hum2 and hum2.RigType == Enum.HumanoidRigType.R15 then
-					local desc = hum2:FindFirstChildOfClass("HumanoidDescription")
-					local ok = pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-					if not ok and desc then
-						local nm = (emoteUiById[animId] and emoteUiById[animId].Name) or ("Emote "..tostring(animId))
-						pcall(function() desc:AddEmote(nm, animId) end)
-						pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-					end
-				end
-			else
-				if playingAnimationId == animId then
-					stopCurrentAnimation()
-				else
-					playAnimation(animId, "1")
-				end
-			end
-		end,
-		description = "Emotion: " .. tostring(animId),
-	}
 end
 
 function notify(title, text, duration)
@@ -4659,10 +4614,10 @@ roundStartSoundIndex = 0
 voteStartSoundIndex = 0
 toggleBgTransparency = 0
 mainBgTransparency = 0
-toggleButtonSize = 60
-mainMenuWidth = 550
-mainMenuHeight = 300
-tabTextSize = 12
+toggleButtonSize = 56
+mainMenuWidth = 400
+mainMenuHeight = 230
+tabTextSize = 10
 _tabSizeConstraints = {}
 
 -- ============================================
@@ -4681,7 +4636,7 @@ function playLoadingScreen()
 	-- Instant Load: skip the whole splash so the script is usable immediately
 	if skipLoadingScreenEnabled then return end
 	-- Editable splash duration (ported from mobile): hold = total - intro/outro
-	local LOADING_DURATION = math.max(0.05, (tonumber(loadingScreenTime) or 2.4) - 0.9)
+	local LOADING_DURATION = math.max(0.05, (tonumber(loadingScreenTime) or 1.5) - 0.9)
 	local style = loadingAnimStyles[loadingAnimStyle] or "Letter by Letter"
 
 	local blur = Instance.new("BlurEffect")
@@ -4705,7 +4660,7 @@ function playLoadingScreen()
 	local textsFrame = Instance.new("Frame")
 	textsFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 	textsFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-	textsFrame.Size = UDim2.new(1, 0, 0, 200)
+	textsFrame.Size = UDim2.new(0.9, 0, 0, 120)
 	textsFrame.BackgroundTransparency = 1
 	textsFrame.Parent = loaderGui
 
@@ -4714,7 +4669,7 @@ function playLoadingScreen()
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.VerticalAlignment = Enum.VerticalAlignment.Center
-	layout.Padding = UDim.new(0, -1)
+	layout.Padding = UDim.new(0, -2)
 	layout.Parent = textsFrame
 
 	-- Animate blur in
@@ -4729,7 +4684,7 @@ function playLoadingScreen()
 		for i = 1, #loadText do
 			local char = loadText:sub(i, i)
 			local letterFrame = Instance.new("Frame")
-			letterFrame.Size = UDim2.new(0, 35, 0, 100)
+			letterFrame.Size = UDim2.new(0, 28, 0, 80)
 			letterFrame.BackgroundTransparency = 1
 			letterFrame.LayoutOrder = i
 			letterFrame.Parent = textsFrame
@@ -4737,12 +4692,12 @@ function playLoadingScreen()
 			local letterLabel = Instance.new("TextLabel")
 			letterLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 			letterLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
-			letterLabel.Size = UDim2.new(0, 30, 0, 60)
+			letterLabel.Size = UDim2.new(0, 24, 0, 50)
 			letterLabel.BackgroundTransparency = 1
 			letterLabel.Text = char
 			letterLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 			letterLabel.Font = Enum.Font.GothamBold
-			letterLabel.TextSize = 40
+			letterLabel.TextSize = 32
 			letterLabel.TextTransparency = 1
 			letterLabel.Parent = letterFrame
 
@@ -4751,19 +4706,19 @@ function playLoadingScreen()
 
 		for i, lbl in ipairs(textObjs) do
 			TweenService:Create(lbl, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
-			task.wait(0.06)
+			task.wait(0.03)
 		end
 
 	elseif style == "Fade In" then
 		local fullLabel = Instance.new("TextLabel")
 		fullLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 		fullLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
-		fullLabel.Size = UDim2.new(0, 500, 0, 80)
+		fullLabel.Size = UDim2.new(1, 0, 0, 80)
 		fullLabel.BackgroundTransparency = 1
 		fullLabel.Text = loadText
 		fullLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		fullLabel.Font = Enum.Font.GothamBold
-		fullLabel.TextSize = 48
+		fullLabel.TextSize = 36
 		fullLabel.TextTransparency = 1
 		fullLabel.Parent = textsFrame
 
@@ -4773,27 +4728,27 @@ function playLoadingScreen()
 		local fullLabel = Instance.new("TextLabel")
 		fullLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 		fullLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
-		fullLabel.Size = UDim2.new(0, 500, 0, 80)
+		fullLabel.Size = UDim2.new(1, 0, 0, 80)
 		fullLabel.BackgroundTransparency = 1
 		fullLabel.Text = loadText
 		fullLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		fullLabel.Font = Enum.Font.GothamBold
-		fullLabel.TextSize = 10
+		fullLabel.TextSize = 8
 		fullLabel.TextTransparency = 0
 		fullLabel.Parent = textsFrame
 
-		TweenService:Create(fullLabel, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 48}):Play()
+		TweenService:Create(fullLabel, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 36}):Play()
 
 	elseif style == "Slide Up" then
 		local fullLabel = Instance.new("TextLabel")
 		fullLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-		fullLabel.Position = UDim2.new(0.5, 0, 0.5, 100)
-		fullLabel.Size = UDim2.new(0, 500, 0, 80)
+		fullLabel.Position = UDim2.new(0.5, 0, 0.5, 80)
+		fullLabel.Size = UDim2.new(1, 0, 0, 80)
 		fullLabel.BackgroundTransparency = 1
 		fullLabel.Text = loadText
 		fullLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		fullLabel.Font = Enum.Font.GothamBold
-		fullLabel.TextSize = 48
+		fullLabel.TextSize = 36
 		fullLabel.TextTransparency = 0
 		fullLabel.Parent = textsFrame
 
@@ -4845,7 +4800,7 @@ toggleGui.Parent = playerGui
 mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, mainMenuWidth, 0, mainMenuHeight)
-mainFrame.Position = UDim2.new(0.5, -300, 0.5, -100)
+mainFrame.Position = UDim2.new(0.5, -200, 0.5, -115)
 mainFrame.BackgroundColor3 = mainMenuColor
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -4864,7 +4819,7 @@ mainStroke.Parent = mainFrame
 -- TOP BAR (spans entire width)
 topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 34)
+topBar.Size = UDim2.new(1, 0, 0, 28)
 topBar.BackgroundColor3 = mainMenuColor
 topBar.BorderSizePixel = 0
 topBar.Parent = mainFrame
@@ -4874,8 +4829,8 @@ topCorner.CornerRadius = UDim.new(0, 8)
 topCorner.Parent = topBar
 
 topFix = Instance.new("Frame")
-topFix.Size = UDim2.new(1, 0, 0, 10)
-topFix.Position = UDim2.new(0, 0, 1, -10)
+topFix.Size = UDim2.new(1, 0, 0, 8)
+topFix.Position = UDim2.new(0, 0, 1, -8)
 topFix.BackgroundColor3 = mainMenuColor
 topFix.BorderSizePixel = 0
 topFix.Parent = topBar
@@ -4889,18 +4844,18 @@ titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleBar.TextXAlignment = Enum.TextXAlignment.Left
 titleBar.Text = "Adrenalin.win V3.1.9.26 — Murder Mystery 2"
 titleBar.Font = Enum.Font.SourceSansBold
-titleBar.TextSize = 16.5
+titleBar.TextSize = 13
 titleBar.Parent = topBar
 
 lockButton = Instance.new("TextButton")
 lockButton.Name = "LockButton"
-lockButton.Size = UDim2.new(0, 28, 0, 28)
-lockButton.Position = UDim2.new(1, -92, 0, 3)
+lockButton.Size = UDim2.new(0, 24, 0, 24)
+lockButton.Position = UDim2.new(1, -80, 0, 3)
 lockButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 lockButton.Text = "L"
 lockButton.Font = Enum.Font.SourceSansBold
-lockButton.TextSize = 16
+lockButton.TextSize = 12
 lockButton.Parent = topBar
 
 lockCorner = Instance.new("UICorner")
@@ -4909,13 +4864,13 @@ lockCorner.Parent = lockButton
 
 minimizeButton = Instance.new("TextButton")
 minimizeButton.Name = "MinimizeButton"
-minimizeButton.Size = UDim2.new(0, 28, 0, 28)
-minimizeButton.Position = UDim2.new(1, -60, 0, 3)
+minimizeButton.Size = UDim2.new(0, 24, 0, 24)
+minimizeButton.Position = UDim2.new(1, -52, 0, 3)
 minimizeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeButton.Text = "-"
 minimizeButton.Font = Enum.Font.SourceSansBold
-minimizeButton.TextSize = 18
+minimizeButton.TextSize = 14
 minimizeButton.Parent = topBar
 
 minCorner = Instance.new("UICorner")
@@ -4924,8 +4879,8 @@ minCorner.Parent = minimizeButton
 
 closeButton = Instance.new("TextButton")
 closeButton.Name = "CloseButton"
-closeButton.Size = UDim2.new(0, 28, 0, 28)
-closeButton.Position = UDim2.new(1, -28, 0, 3)
+closeButton.Size = UDim2.new(0, 24, 0, 24)
+closeButton.Position = UDim2.new(1, -24, 0, 3)
 closeButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeButton.Text = "X"
@@ -4940,8 +4895,8 @@ closeCorner.Parent = closeButton
 -- LEFT SIDEBAR
 leftSidebar = Instance.new("ScrollingFrame")
 leftSidebar.Name = "LeftSidebar"
-leftSidebar.Size = UDim2.new(0, 70, 1, -34)
-leftSidebar.Position = UDim2.new(0, 0, 0, 34)
+leftSidebar.Size = UDim2.new(0, 64, 1, -28)
+leftSidebar.Position = UDim2.new(0, 0, 0, 28)
 leftSidebar.BackgroundColor3 = mainMenuColor
 leftSidebar.BorderSizePixel = 0
 leftSidebar.ScrollBarThickness = 2
@@ -5370,8 +5325,8 @@ local function playStartupSound() playSoundFile(startupSoundPath) end
 
 contentArea = Instance.new("Frame")
 contentArea.Name = "ContentArea"
-contentArea.Position = UDim2.new(0, 78, 0, 42)
-contentArea.Size = UDim2.new(1, -86, 1, -50)
+contentArea.Position = UDim2.new(0, 72, 0, 36)
+contentArea.Size = UDim2.new(1, -80, 1, -44)
 contentArea.BackgroundTransparency = 1
 contentArea.BorderSizePixel = 0
 contentArea.Parent = mainFrame
@@ -5434,7 +5389,6 @@ createCategoryScrollFrame("Ragebait")
 createCategoryScrollFrame("Animations")
 createCategoryScrollFrame("Changer")
 createCategoryScrollFrame("Skybox")
-createCategoryScrollFrame("Binds")
 createCategoryScrollFrame("Buttons")
 createCategoryScrollFrame("Settings")
 
@@ -5478,7 +5432,6 @@ function createCategoryButton(shortName, layoutOrder)
 		["Emo"] = "Ragebait",
 		["Emt"] = "Emotions",
 		["Anim"] = "Animations",
-		["Bind"] = "Binds",
 		["Expl"] = "Exploiters",
 		["Main"] = "Main",
 		["Btn"] = "Buttons",
@@ -5579,7 +5532,6 @@ createCategoryButton("Emo", 7)
 createCategoryButton("Anim", 7.05)
 createCategoryButton("Changer", 7.5)
 createCategoryButton("Skybox", 7.6)
-createCategoryButton("Bind", 8)
 createCategoryButton("Btn", 9)
 createCategoryButton("Set", 10)
 
@@ -7049,7 +7001,7 @@ function enableAutoGrabGun()
 	-- Ultra-fast GunDrop poll: FindFirstChild is C++ fast, catches even if DescendantAdded missed (0.06s)
 	task.spawn(function()
 		while autoGrabGunEnabled do
-			task.wait(0.06)
+			task.wait(0.03)
 			if autoGrabGunEnabled then
 				local d = Workspace:FindFirstChild("GunDrop", true)
 				if d then autoGrabClaimDrop(d) end
@@ -10333,11 +10285,7 @@ function disableCrosshair()
 	if crosshairGui then crosshairGui:Destroy() crosshairGui = nil end
 end
 
-btn.crosshairBtn = createButton("CrosshairButton", "Adrenalin.win Crosshair: OFF", 118)
-btn.crosshairBtn.MouseButton1Click:Connect(function()
-	if crosshairEnabled then disableCrosshair() else enableCrosshair() end
-	setToggleState(btn.crosshairBtn, crosshairEnabled, "Adrenalin.win Crosshair: ON", "Adrenalin.win Crosshair: OFF")
-end)
+-- Crosshair button REMOVED on mobile (taken out of Utilities).
 
 -- Keystroke (toggleable with position saving)
 keystrokeEnabled = false
@@ -10552,11 +10500,7 @@ function disableKeystroke()
 	if keystrokeGui then keystrokeGui:Destroy() keystrokeGui = nil end
 end
 
-btn.keystrokeBtn = createButton("KeystrokeButton", "Keystroke: OFF", 119)
-btn.keystrokeBtn.MouseButton1Click:Connect(function()
-	if keystrokeEnabled then disableKeystroke() else enableKeystroke() end
-	setToggleState(btn.keystrokeBtn, keystrokeEnabled, "Keystroke: ON", "Keystroke: OFF")
-end)
+-- Keystroke button REMOVED on mobile (taken out of Utilities).
 
 -- Shaders (toggleable)
 shadersEnabled = false
@@ -15039,8 +14983,8 @@ function showPlayerInfoPopup(plr)
 	popupTitle.Parent = popup
 
 	local popupClose = Instance.new("TextButton")
-	popupClose.Size = UDim2.new(0, 24, 0, 24)
-	popupClose.Position = UDim2.new(1, -30, 0.5, -12)
+	popupClose.Size = UDim2.new(0, 32, 0, 32)
+	popupClose.Position = UDim2.new(1, -36, 0.5, -16)
 	popupClose.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	popupClose.TextColor3 = Color3.fromRGB(255, 255, 255)
 	popupClose.Text = "X"
@@ -19450,7 +19394,7 @@ function rebuildEmote()
 		order = order + 1
 		local animationButton = Instance.new("TextButton")
 		animationButton.Name = "EmoteButton_" .. tostring(animationId)
-		animationButton.Size = UDim2.new(1, -126, 1, 0)
+		animationButton.Size = UDim2.new(1, -102, 1, 0)
 		animationButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		animationButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 		animationButton.Text = animationName
@@ -19458,21 +19402,10 @@ function rebuildEmote()
 		animationButton.TextSize = 15
 		animationButton.Parent = animationRow
 		Instance.new("UICorner", animationButton).CornerRadius = UDim.new(0, 6)
-		-- NOTE: no speed box in the Emotions tab (removed): the play button below
-		-- stretches over the freed space and the rest is packed to the right.
-		local bindBtn = Instance.new("TextButton")
-		bindBtn.Size = UDim2.new(0, 22, 1, 0)
-		bindBtn.Position = UDim2.new(1, -24, 0, 0)
-		bindBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		bindBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		bindBtn.Text = emotionKeyBinds[animationId] and bindKeyToName(emotionKeyBinds[animationId]) or "⌨"
-		bindBtn.Font = Enum.Font.SourceSansBold
-		bindBtn.TextSize = 12
-		bindBtn.Parent = animationRow
-		Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 4)
+		-- NOTE: no speed box and no bind button in the Emotions tab (removed).
 		local starBtn = Instance.new("TextButton")
 		starBtn.Size = UDim2.new(0, 22, 1, 0)
-		starBtn.Position = UDim2.new(1, -48, 0, 0)
+		starBtn.Position = UDim2.new(1, -24, 0, 0)
 		starBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		starBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		starBtn.Text = isEmoteDetached(animationId) and "★" or "☆"
@@ -19483,7 +19416,7 @@ function rebuildEmote()
 		local moveGroup = Instance.new("Frame")
 		moveGroup.Name = "EmoteMove_" .. tostring(animationId)
 		moveGroup.Size = UDim2.new(0, 46, 1, 0)
-		moveGroup.Position = UDim2.new(1, -96, 0, 0)
+		moveGroup.Position = UDim2.new(1, -72, 0, 0)
 		moveGroup.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		moveGroup.Parent = animationRow
 		Instance.new("UICorner", moveGroup).CornerRadius = UDim.new(0, 4)
@@ -19507,7 +19440,7 @@ function rebuildEmote()
 		downBtn.Parent = moveGroup
 		local delBtn = Instance.new("TextButton")
 		delBtn.Size = UDim2.new(0, 22, 1, 0)
-		delBtn.Position = UDim2.new(1, -120, 0, 0)
+		delBtn.Position = UDim2.new(1, -96, 0, 0)
 		delBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		delBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		delBtn.Text = "×"
@@ -19520,7 +19453,6 @@ function rebuildEmote()
 			Button = animationButton,
 			Name = animationName,
 			PopOut = starBtn,
-			Bind = bindBtn,
 		}
 		starBtn.MouseButton1Click:Connect(function()
 			if isEmoteDetached(animationId) then
@@ -19529,35 +19461,6 @@ function rebuildEmote()
 			else
 				createDetachedEmote(animationId, animationName)
 				starBtn.Text = "★"
-			end
-		end)
-		bindBtn.MouseButton1Click:Connect(function()
-			lastUIInteract = tick()
-			if listeningForEmotionBind then
-				listeningForEmotionBind = false
-				listeningEmotionTextBox = nil
-				listeningEmotionId = nil
-				bindBtn.Text = emotionKeyBinds[animationId] and bindKeyToName(emotionKeyBinds[animationId]) or "⌨"
-				return
-			end
-			bindBtn.Text = "..."
-			listeningForEmotionBind = true
-			listeningEmotionTextBox = bindBtn
-			listeningEmotionId = animationId
-		end)
-		bindBtn.MouseButton2Click:Connect(function()
-			lastUIInteract = tick()
-			if listeningForEmotionBind and listeningEmotionId == animationId then
-				listeningForEmotionBind = false
-				listeningEmotionTextBox = nil
-				listeningEmotionId = nil
-			end
-			local oldKey = emotionKeyBinds[animationId]
-			if oldKey then
-				if keyBinds[oldKey] then keyBinds[oldKey] = nil end
-				emotionKeyBinds[animationId] = nil
-				bindBtn.Text = "⌨"
-				pcall(saveConfig)
 			end
 		end)
 		animationButton.MouseButton1Click:Connect(function()
@@ -19587,11 +19490,6 @@ function rebuildEmote()
 		applySearchRowVisible()
 		delBtn.MouseButton1Click:Connect(function()
 			if isEmoteDetached(animationId) then removeDetachedEmote(animationId, true) end
-			local oldKey = emotionKeyBinds[animationId]
-			if oldKey then
-				if keyBinds[oldKey] then keyBinds[oldKey] = nil end
-				emotionKeyBinds[animationId] = nil
-			end
 			for i = 1, #emoteOrder do
 				if emoteOrder[i].id == animationId then
 					table.remove(emoteOrder, i)
@@ -19774,7 +19672,7 @@ function rebuildEmotions()
 
 		local animationButton = Instance.new("TextButton")
 		animationButton.Name = "AnimButton_" .. tostring(animationId)
-		animationButton.Size = UDim2.new(1, -208, 1, 0)
+		animationButton.Size = UDim2.new(1, -184, 1, 0)
 		animationButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		animationButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 		animationButton.Text = animationName
@@ -19798,20 +19696,10 @@ function rebuildEmotions()
 		speedBox.Parent = animationRow
 		Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0, 6)
 
-		local bindBtn = Instance.new("TextButton")
-		bindBtn.Size = UDim2.new(0, 22, 1, 0)
-		bindBtn.Position = UDim2.new(1, -102, 0, 0)
-		bindBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		bindBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		bindBtn.Text = emotionKeyBinds[animationId] and bindKeyToName(emotionKeyBinds[animationId]) or "⌨"
-		bindBtn.Font = Enum.Font.SourceSansBold
-		bindBtn.TextSize = 12
-		bindBtn.Parent = animationRow
-		Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 4)
-
+		-- NOTE: bind button REMOVED on mobile: star/move/del packed right.
 		local starBtn = Instance.new("TextButton")
 		starBtn.Size = UDim2.new(0, 22, 1, 0)
-		starBtn.Position = UDim2.new(1, -126, 0, 0)
+		starBtn.Position = UDim2.new(1, -102, 0, 0)
 		starBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		starBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		starBtn.Text = isEmoteDetached(animationId) and "★" or "☆"
@@ -19826,7 +19714,7 @@ function rebuildEmotions()
 		local moveGroup = Instance.new("Frame")
 		moveGroup.Name = "AnimMove_" .. tostring(animationId)
 		moveGroup.Size = UDim2.new(0, 46, 1, 0)
-		moveGroup.Position = UDim2.new(1, -174, 0, 0)
+		moveGroup.Position = UDim2.new(1, -150, 0, 0)
 		moveGroup.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		moveGroup.Parent = animationRow
 		Instance.new("UICorner", moveGroup).CornerRadius = UDim.new(0, 4)
@@ -19853,7 +19741,7 @@ function rebuildEmotions()
 
 		local delBtn = Instance.new("TextButton")
 		delBtn.Size = UDim2.new(0, 22, 1, 0)
-		delBtn.Position = UDim2.new(1, -198, 0, 0)
+		delBtn.Position = UDim2.new(1, -174, 0, 0)
 		delBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		delBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		delBtn.Text = "×"
@@ -19868,7 +19756,6 @@ function rebuildEmotions()
 			Box = speedBox,
 			Name = animationName,
 			PopOut = starBtn,
-			Bind = bindBtn,
 		}
 
 		starBtn.MouseButton1Click:Connect(function()
@@ -19878,40 +19765,6 @@ function rebuildEmotions()
 			else
 				createDetachedEmote(animationId, animationName)
 				starBtn.Text = "★"
-			end
-		end)
-
-		bindBtn.MouseButton1Click:Connect(function()
-			lastUIInteract = tick()
-			if listeningForEmotionBind then
-				listeningForEmotionBind = false
-				listeningEmotionTextBox = nil
-				listeningEmotionId = nil
-				bindBtn.Text = emotionKeyBinds[animationId] and bindKeyToName(emotionKeyBinds[animationId]) or "⌨"
-				return
-			end
-			-- Enter listening mode WITHOUT dropping an existing bind: the old key
-			-- stays active until a new key is pressed (or the bind is cleared).
-			bindBtn.Text = "..."
-			listeningForEmotionBind = true
-			listeningEmotionTextBox = bindBtn
-			listeningEmotionId = animationId
-		end)
-
-		-- Right-click the bind button to remove the bind (shows ⌨ again).
-		bindBtn.MouseButton2Click:Connect(function()
-			lastUIInteract = tick()
-			if listeningForEmotionBind and listeningEmotionId == animationId then
-				listeningForEmotionBind = false
-				listeningEmotionTextBox = nil
-				listeningEmotionId = nil
-			end
-			local oldKey = emotionKeyBinds[animationId]
-			if oldKey then
-				if keyBinds[oldKey] then keyBinds[oldKey] = nil end
-				emotionKeyBinds[animationId] = nil
-				bindBtn.Text = "⌨"
-				pcall(saveConfig)
 			end
 		end)
 
@@ -19944,12 +19797,6 @@ function rebuildEmotions()
 		-- Delete emotion (both built-in and user-added entries)
 		delBtn.MouseButton1Click:Connect(function()
 			if isEmoteDetached(animationId) then removeDetachedEmote(animationId, true) end
-			-- Remove its keybind too so no stale shortcut keeps triggering it
-			local oldKey = emotionKeyBinds[animationId]
-			if oldKey then
-				if keyBinds[oldKey] then keyBinds[oldKey] = nil end
-				emotionKeyBinds[animationId] = nil
-			end
 			for i = 1, #emotionOrder do
 				if emotionOrder[i].id == animationId then
 					table.remove(emotionOrder, i)
@@ -21581,10 +21428,13 @@ end
 -- ============================================
 -- SECTION 6: Binds (LayoutOrder 500-599)
 -- ============================================
+-- Binds tab REMOVED on mobile: the whole section below is commented out.
+-- Stubs kept so save/restore code keeps working with empty tables.
+bindToggleStates = {}
+bindableFeatures = {}
+--[[ BINDS TAB REMOVED (mobile)
 currentCategory = "Binds"
 createSection("Binds", 500)
-
-bindToggleStates = {}
 
 bindableFeatures = {
 	{name = "Toggle Menu", defaultKey = nil, getState = function() return menuVisible end, callback = function()
@@ -22150,6 +22000,7 @@ bindsSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		row.Visible = searchText == "" or string.find(string.lower(name), searchText, 1, true) ~= nil
 	end
 end)
+]] -- END BINDS TAB REMOVED (mobile)
 
 -- ============================================
 -- Exact timestamp from ISO 8601
@@ -22439,8 +22290,8 @@ function createTeamerPlayerButton(plr)
 
 		local popup = Instance.new("Frame")
 		popup.Name = "TeamerPopup"
-		popup.Size = UDim2.new(0, 350, 0, 460)
-		popup.Position = UDim2.new(0.5, -175, 0.5, -230)
+		popup.Size = UDim2.new(0, 280, 0, 320)
+		popup.Position = UDim2.new(0.5, -140, 0.5, -160)
 		popup.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 		popup.BorderSizePixel = 0
 		popup.Parent = popupGui
@@ -22461,8 +22312,8 @@ function createTeamerPlayerButton(plr)
 		popupTitle.Parent = popup
 
 		local popupClose = Instance.new("TextButton")
-		popupClose.Size = UDim2.new(0, 24, 0, 24)
-		popupClose.Position = UDim2.new(1, -30, 0.5, -12)
+		popupClose.Size = UDim2.new(0, 32, 0, 32)
+		popupClose.Position = UDim2.new(1, -36, 0.5, -16)
 		popupClose.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		popupClose.TextColor3 = Color3.fromRGB(255, 255, 255)
 		popupClose.Text = "X"
@@ -22474,33 +22325,38 @@ function createTeamerPlayerButton(plr)
 		popupCloseCorner.CornerRadius = UDim.new(0, 4)
 		popupCloseCorner.Parent = popupClose
 
-		popupClose.MouseButton1Click:Connect(function()
-			-- Full close (not just hide): otherwise the 0.15s stats loop and the 2s
-			-- friend-list loop keep running forever and stack up -> periodic freezes.
-			teamerPopupCache[plr.Name] = nil
-			popupGui:Destroy()
+		popupClose.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				-- Full close (not just hide): otherwise the 0.15s stats loop and the 2s
+				-- friend-list loop keep running forever and stack up -> periodic freezes.
+				teamerPopupCache[plr.Name] = nil
+				popupGui:Destroy()
+			end
 		end)
 
 		-- Inspect Avatar button (below title bar)
 		local inspectBtn = Instance.new("TextButton")
 		inspectBtn.Name = "InspectAvatarBtn"
-		inspectBtn.Size = UDim2.new(0, 100, 0, 26)
-		inspectBtn.Position = UDim2.new(0.5, -50, 0, 42)
-		inspectBtn.BackgroundTransparency = 1
+		inspectBtn.Size = UDim2.new(0, 110, 0, 30)
+		inspectBtn.Position = UDim2.new(0.5, -55, 0, 42)
+		inspectBtn.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 		inspectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		inspectBtn.Text = "Inspect Avatar"
 		inspectBtn.Font = Enum.Font.SourceSansBold
 		inspectBtn.TextSize = 14
 		inspectBtn.Parent = popup
-		inspectBtn.MouseButton1Click:Connect(function()
-			local GuiService = game:GetService("GuiService")
-			pcall(function() GuiService:CloseInspectMenu() end)
-			pcall(function() GuiService:InspectPlayerFromUserId(plr.UserId) end)
+		Instance.new("UICorner", inspectBtn).CornerRadius = UDim.new(0, 6)
+		inspectBtn.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				local GuiService = game:GetService("GuiService")
+				pcall(function() GuiService:CloseInspectMenu() end)
+				pcall(function() GuiService:InspectPlayerFromUserId(plr.UserId) end)
+			end
 		end)
 
 		local friendsScroll = Instance.new("ScrollingFrame")
-		friendsScroll.Size = UDim2.new(1, -10, 0, 370)
-		friendsScroll.Position = UDim2.new(0, 5, 0, 72)
+		friendsScroll.Size = UDim2.new(1, -10, 0, 228)
+		friendsScroll.Position = UDim2.new(0, 5, 0, 76)
 		friendsScroll.BackgroundTransparency = 1
 		friendsScroll.ScrollBarThickness = 4
 		friendsScroll.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
@@ -23813,7 +23669,7 @@ createProfileLabel("Discord: Verified", 54)
 createProfileLabel("Subscription: WIN-X Premium & Star+", 98)
 scriptActivationLabel = createProfileLabel("Script Activations: " .. scriptActivationCount, 120)
 serverTimeLabel = createProfileLabel("Server Time: 0d 0h 0m 0s", 142)
-createProfileLabel("Roles: Owner | Developer & Beta Tester", 76)
+createProfileLabel("Roles: Beta Tester & T1 Trader", 76)
 
 createProfileLabel("Display Name: " .. player.DisplayName, 164)
 createProfileLabel("Username: " .. player.Name, 186)
@@ -26977,7 +26833,7 @@ function buildConfigData()
 	config.toggles.notifyOnScammers = notifyOnScammers; config.toggles.hideButtonsEnabled = hideButtonsEnabled; config.toggles.hideMiniButtonsEnabled = hideMiniButtonsEnabled; config.toggles.skipLoadingScreenEnabled = skipLoadingScreenEnabled
 	config.toggles.notifyOnVoteStart = notifyOnVoteStart
 	config.toggles.zombieTryhardEnabled = zombieTryhardEnabled; config.toggles.tryhardAnimEnabled = tryhardAnimEnabled; config.toggles.tryhardMainEnabled = tryhardMainEnabled; config.toggles.r6AnimEnabled = r6AnimEnabled; config.toggles.activeCustomAnimName = activeCustomAnimName; config.toggles.korbloxEnabled = korbloxEnabled; config.toggles.headlessEnabled = headlessEnabled; config.toggles.headlessAllHatsEnabled = headlessAllHatsEnabled
-	config.toggles.crosshairEnabled = crosshairEnabled; config.toggles.keystrokeEnabled = keystrokeEnabled
+	-- crosshair/keystroke REMOVED on mobile: not saved.
 	config.toggles.shadersEnabled = shadersEnabled
 	config.toggles.autofarmEnabled = autofarmEnabled; config.toggles.autofarmResetInnocentEnabled = autofarmResetInnocentEnabled
 	config.toggles.autofarmResetSheriffEnabled = autofarmResetSheriffEnabled; config.toggles.autofarmResetMurdererEnabled = autofarmResetMurdererEnabled
@@ -26989,7 +26845,7 @@ function buildConfigData()
 	config.toggles.instantRolePerkNotifyEnabled = instantRolePerkNotifyEnabled
 	config.toggles.showRoundTimerEnabled = showRoundTimerEnabled
 	config.toggles.voteDupeMode = voteDupeMode
-	if keystrokeSavedPos then config.keystrokePos = {X = {Scale = keystrokeSavedPos.X.Scale, Offset = keystrokeSavedPos.X.Offset}, Y = {Scale = keystrokeSavedPos.Y.Scale, Offset = keystrokeSavedPos.Y.Offset}} end
+	-- keystrokePos REMOVED on mobile (keystroke feature taken out).
 	config.values.JUMP_BOOST_POWER = JUMP_BOOST_POWER; config.values.FAKE_SPEED_CFRAME_SPEED = FAKE_SPEED_CFRAME_SPEED
 	config.values.instantRolePosXScale = instantRolePosXScale; config.values.instantRolePosYScale = instantRolePosYScale
 	config.values.instantRoleSizeXScale = instantRoleSizeXScale; config.values.instantRoleSizeYScale = instantRoleSizeYScale
@@ -28408,7 +28264,7 @@ minimizeButton.MouseButton1Click:Connect(function()
 	contentVisible = not contentVisible
 	contentArea.Visible = contentVisible
 	leftSidebar.Visible = contentVisible
-	mainFrame.Size = contentVisible and UDim2.new(0, 550, 0, 300) or UDim2.new(0, 550, 0, 34)
+	mainFrame.Size = contentVisible and UDim2.new(0, mainMenuWidth, 0, mainMenuHeight) or UDim2.new(0, mainMenuWidth, 0, 28)
 	minimizeButton.Text = contentVisible and "-" or "+"
 end)
 
@@ -28509,7 +28365,7 @@ local function initToggleAndMainGUI()
 toggleButton = Instance.new("Frame")
 toggleButton.Name = "ToggleButton"
 toggleButton.Size = UDim2.new(0, toggleButtonSize, 0, toggleButtonSize)
-toggleButton.Position = UDim2.new(0.5, -295, 0.5, 125)
+toggleButton.Position = UDim2.new(0.5, -28, 0.5, 120)
 toggleButton.BackgroundColor3 = toggleBtnColor
 toggleButton.BackgroundTransparency = toggleBgTransparency or 0
 toggleButton.Active = true
@@ -28533,7 +28389,7 @@ toggleText.BackgroundTransparency = 1
 toggleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleText.Text = "WIN-X"
 toggleText.Font = Enum.Font.SourceSansBold
-toggleText.TextSize = 18
+toggleText.TextSize = 16
 toggleText.Parent = toggleButton
 
 toggleClickButton = Instance.new("TextButton")
@@ -28939,6 +28795,11 @@ function restoreFullConfig()
 		if c.values.roundTimerSizeYScale ~= nil then roundTimerSizeYScale = c.values.roundTimerSizeYScale end
 		if c.values.mainMenuWidth ~= nil then mainMenuWidth = c.values.mainMenuWidth end
 		if c.values.mainMenuHeight ~= nil then mainMenuHeight = c.values.mainMenuHeight end
+		-- Force mobile caps: if saved config still has old PC sizes (550x300 / 60), clamp to mobile (400x230 / 56) so menu fits phones
+		if mainMenuWidth > 420 then mainMenuWidth = 400 end
+		if mainMenuHeight > 250 then mainMenuHeight = 230 end
+		if toggleButtonSize > 56 then toggleButtonSize = 56 end
+		if tabTextSize > 10 then tabTextSize = 10 end
 		if c.values.popupBtnWidth ~= nil then popupBtnWidth = c.values.popupBtnWidth end
 		if c.values.popupBtnHeight ~= nil then popupBtnHeight = c.values.popupBtnHeight end
 		if c.values.fpsPingBtnWidth ~= nil then fpsPingBtnWidth = c.values.fpsPingBtnWidth end
@@ -29336,109 +29197,10 @@ function restoreFullConfig()
 		roundTimerSizeHInput.Text = tostring(math.floor(c.values.roundTimerSizeYScale * 100))
 	end
 
-	-- Restore binds UI FIRST (before toggles, so saveConfig sees them).
-	-- Full resync: wipe current binds first, otherwise switching to a config
-	-- without binds (or with different keys) leaves stale shortcuts firing
-	-- while the UI already shows "None".
-	if c.binds then
-		for name, oldKey in pairs(featureBinds) do
-			if oldKey and keyBinds[oldKey] then
-				keyBinds[oldKey] = nil
-			end
-			featureBinds[name] = nil
-		end
-		for name, keyStr in pairs(c.binds) do
-			local key = stringToKey(keyStr)
-			if key then
-				featureBinds[name] = key
-				for _, feature in ipairs(bindableFeatures) do
-					if feature.name == name then
-						keyBinds[key] = {callback = feature.callback, description = name}
-						break
-					end
-				end
-			end
-		end
-		for _, feature in ipairs(bindableFeatures) do
-			local row = categoryFrames["Binds"]:FindFirstChild("BindRow_" .. feature.name:gsub("%W", ""))
-			if row then
-				for _, child in ipairs(row:GetChildren()) do
-					if child:IsA("TextButton") and child.Text ~= "X" then
-						child.Text = featureBinds[feature.name] and bindKeyToName(featureBinds[feature.name]) or "None"
-					end
-				end
-			end
-		end
-	end
-
-	-- Restore emotion binds (Emotions/Ragebait tabs): full resync for the same
-	-- reason — stale emotion shortcuts must die when the new config lacks them.
-	if c.emotionKeyBinds then
-		for animId, oldKc in pairs(emotionKeyBinds) do
-			if oldKc and keyBinds[oldKc] then
-				keyBinds[oldKc] = nil
-			end
-		end
-		emotionKeyBinds = {}
-		for idStr, keyCodeStr in pairs(c.emotionKeyBinds) do
-			local id = tonumber(idStr)
-			if id and keyCodeStr then
-				local ok, kc = pcall(function()
-					local kc2 = Enum.KeyCode[keyCodeStr]
-					if kc2 then return kc2 end
-					return Enum.UserInputType[keyCodeStr]
-				end)
-				if ok and kc then
-					emotionKeyBinds[id] = kc
-				end
-			end
-		end
-		for animId, kc in pairs(emotionKeyBinds) do
-			keyBinds[kc] = {
-				callback = function()
-					if emotionIsEmote(animId) then
-						local char2 = player.Character
-						local hum2 = char2 and char2:FindFirstChildOfClass("Humanoid")
-						if hum2 and hum2.RigType == Enum.HumanoidRigType.R15 then
-							local desc = hum2:FindFirstChildOfClass("HumanoidDescription")
-							local ok = pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-							if not ok and desc then
-								local nm = (emoteUiById[animId] and emoteUiById[animId].Name) or ("Emote "..tostring(animId))
-								pcall(function() desc:AddEmote(nm, animId) end)
-								pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-							end
-						end
-					else
-						if playingAnimationId == animId then
-							stopCurrentAnimation()
-						else
-							playAnimation(animId, "1")
-						end
-					end
-				end,
-				description = "Emotion: " .. tostring(animId),
-			}
-		end
-		-- Refresh bind labels on existing Emotions/Ragebait rows.
-		if emoteUiById then
-			for animId, ui in pairs(emoteUiById) do
-				if ui and ui.Bind then
-					pcall(function()
-						ui.Bind.Text = emotionKeyBinds[animId] and bindKeyToName(emotionKeyBinds[animId]) or "⌨"
-					end)
-				end
-			end
-		end
-		if animationUiById then
-			for animId, ui in pairs(animationUiById) do
-				if ui and ui.Bind then
-					pcall(function()
-						ui.Bind.Text = emotionKeyBinds[animId] and bindKeyToName(emotionKeyBinds[animId]) or "⌨"
-					end)
-				end
-			end
-		end
-	end
+	-- Binds (Binds tab + emotion binds) are REMOVED on mobile: nothing to
+	-- restore, and stale binds from old configs must stay dead.
+	featureBinds = featureBinds or {}
+	emotionKeyBinds = emotionKeyBinds or {}
 
 	-- Restore extracted buttons (before toggles, so saveConfig sees them).
 	-- Each entry is isolated: one broken button must not abort the whole restore.
@@ -29756,17 +29518,7 @@ function restoreFullConfig()
 	if T.korbloxEnabled then korbloxEnabled = false; enableKorblox(); if btn.korbloxBtn then setToggleState(btn.korbloxBtn, true, "Korblox: ON", "Korblox: OFF") end end
 	if T.headlessEnabled then headlessEnabled = false; enableHeadless(); if btn.headlessBtn then setToggleState(btn.headlessBtn, true, "Headless: ON", "Headless: OFF") end end
 	if T.headlessAllHatsEnabled then headlessAllHatsEnabled = false; enableHeadlessAllHats(); if btn.headlessAllHatsBtn then setToggleState(btn.headlessAllHatsBtn, true, "Headless (All Hats): ON", "Headless (All Hats): OFF") end end
-	if T.crosshairEnabled then crosshairEnabled = false; enableCrosshair(); if btn.crosshairBtn then setToggleState(btn.crosshairBtn, true, "Adrenalin.win Crosshair: ON", "Adrenalin.win Crosshair: OFF") end end
-	-- Always restore the last keyboard position from config, even when Keystroke is currently
-	-- off, so that whenever it is enabled (now or later by hand) it returns to where it last was.
-	if c.keystrokePos then
-		local p = c.keystrokePos
-		keystrokeSavedPos = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset)
-	end
-	if T.keystrokeEnabled then
-		keystrokeEnabled = false; enableKeystroke()
-		if btn.keystrokeBtn then setToggleState(btn.keystrokeBtn, true, "Keystroke: ON", "Keystroke: OFF") end
-	end
+	-- Crosshair/Keystroke REMOVED on mobile: never auto-enable from config.
 	if T.shadersEnabled then shadersEnabled = false; enableShaders(); if btn.shadersBtn then setToggleState(btn.shadersBtn, true, "Shaders: ON", "Shaders: OFF") end end
 
 	-- Restore Autofarm settings (speed, target, after-farm toggles, webhook,
