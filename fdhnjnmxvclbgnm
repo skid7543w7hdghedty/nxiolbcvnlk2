@@ -4959,6 +4959,8 @@ function removeDetachedEmote(animationId, skipSave)
 	if not skipSave then pcall(saveConfig) end
 end
 
+-- MOBILE: single-finger drag owner shared by Buttons popups + detached emotes
+AdrenalinPopupDragOwner = nil
 function createDetachedEmote(animationId, animationName, savedPos, skipSave, savedLocked)
 	if not popupBtnGui then return end
 	if detachedEmotes[animationId] then return end
@@ -5007,8 +5009,8 @@ function createDetachedEmote(animationId, animationName, savedPos, skipSave, sav
 	btn.BorderSizePixel = 0
 	btn.ClipsDescendants = true
 	btn.Parent = frame
-	btn.MouseButton1Click:Connect(function() playSoundFile(clickSoundPath) end)
-	if addBtnPressAnim then addBtnPressAnim(btn) end
+	-- MOBILE V3: click sound only on real tap (was MouseButton1Click on every press, incl. drags)
+	-- MOBILE V3: no press-scale on draggable emote pill (felt like clicks while dragging)
 	local btnTSC = Instance.new("UITextSizeConstraint")
 	btnTSC.MaxTextSize = 17
 	btnTSC.MinTextSize = 9
@@ -5055,96 +5057,144 @@ function createDetachedEmote(animationId, animationName, savedPos, skipSave, sav
 		pcall(saveConfig)
 	end)
 
-	local dragging, moved, justDragged, startPos, framePos, dragIpt = false, false, false, nil, nil, nil
-	-- Drag handlers live on the inner button so the whole pill can be moved by holding
-	-- it (important on touch screens). The U/L button locks dragging exactly like the
-	-- other extracted buttons. A small threshold + justDragged flag keeps a normal tap
-	-- playing the emote and stops a drag from triggering it.
-	table.insert(d.conns, btn.InputBegan:Connect(function(ipt)
-		if popupDragLocked or lockBtn.Text == "L" then return end
-		if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then
-			dragging = true; moved = false; startPos = ipt.Position; framePos = frame.Position; dragIpt = ipt
+	frame.Active = true
+	btn.Active = true
+	pcall(function() btn.AutoButtonColor = false end)
+	pcall(function() btn.Selectable = false end)
+	-- MOBILE V3: TAP plays/stops emote (works even when locked), DRAG moves (move>12px OR hold>0.32s)
+	local eHold, eDragging, eMoved, eLong = false, false, false, false
+	local eStartPos, eStartFrame, eStartTime = nil, nil, 0
+	local eSuppressUntil = 0
+	local eId = "emote_" .. tostring(animationId)
+	local E_TAP, E_LONG, E_SUPPRESS = 12, 0.32, 0.4
+	local function eLocked()
+		return popupDragLocked or lockBtn.Text == "L"
+	end
+	local function eHit(pos, pad)
+		pad = pad or 20
+		local ok, ap, asz = pcall(function() return frame.AbsolutePosition, frame.AbsoluteSize end)
+		if not ok or not ap or not asz then return false end
+		return pos.X >= ap.X - pad and pos.Y >= ap.Y - pad and pos.X <= ap.X + asz.X + pad and pos.Y <= ap.Y + asz.Y + pad
+	end
+	local function eVisual(on)
+		pcall(function() if borderStroke then borderStroke.Thickness = on and 3 or 1.5 end end)
+	end
+	local function eClaim()
+		if AdrenalinPopupDragOwner == nil then AdrenalinPopupDragOwner = eId; return true end
+		return AdrenalinPopupDragOwner == eId
+	end
+	local function eRelease()
+		if AdrenalinPopupDragOwner == eId then AdrenalinPopupDragOwner = nil end
+	end
+	local function eBegin(pos, slide)
+		if os.clock() < eSuppressUntil then return end
+		if slide and AdrenalinPopupDragOwner ~= nil and AdrenalinPopupDragOwner ~= eId then return end
+		eHold = true; eDragging = false; eMoved = false; eLong = false
+		eStartPos = pos; eStartFrame = frame.Position; eStartTime = os.clock()
+		local myT = eStartTime
+		task.delay(E_LONG, function()
+			if eHold and not eDragging and eStartTime == myT and not eLocked() then if eClaim() then eDragging = true; eLong = true; eVisual(true) end end
+		end)
+	end
+	frame.InputBegan:Connect(function(ipt)
+		if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then eBegin(ipt.Position, false) end
+	end)
+	btn.InputBegan:Connect(function(ipt)
+		if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then eBegin(ipt.Position, false) end
+	end)
+	local function eMove(pos)
+		if not eHold or eLocked() then return end
+		if not eStartPos or not eStartFrame then return end
+		local delta = pos - eStartPos
+		if delta.Magnitude >= E_TAP then eMoved = true end
+		if eMoved and not eDragging then if eClaim() then eDragging = true; eVisual(true) else eHold = false; return end end
+		if eDragging then
+			local vp = Vector2.new(800, 600)
+			pcall(function() vp = workspace.CurrentCamera.ViewportSize end)
+			local sz = frame.AbsoluteSize
+			local nx = math.clamp(eStartFrame.X.Offset + delta.X, 0, math.max(0, vp.X - sz.X))
+			local ny = math.clamp(eStartFrame.Y.Offset + delta.Y, 0, math.max(0, vp.Y - sz.Y))
+			frame.Position = UDim2.new(eStartFrame.X.Scale, nx, eStartFrame.Y.Scale, ny)
 		end
-	end))
-	table.insert(d.conns, btn.InputChanged:Connect(function(ipt)
-		if ipt.UserInputType == Enum.UserInputType.MouseMovement or ipt.UserInputType == Enum.UserInputType.Touch then
-			dragIpt = ipt
-		end
-	end))
+	end
 	table.insert(d.conns, UserInputService.InputChanged:Connect(function(ipt)
-		if popupDragLocked or lockBtn.Text == "L" then return end
-		if ipt == dragIpt and dragging then
-			local delta = ipt.Position - startPos
-			if delta.Magnitude >= 5 then moved = true end
-			if moved then
-				frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
-			end
-		end
+		if ipt.UserInputType == Enum.UserInputType.Touch or ipt.UserInputType == Enum.UserInputType.MouseMovement then eMove(ipt.Position) end
 	end))
-	table.insert(d.conns, btn.InputEnded:Connect(function(ipt)
-		if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then
-			-- Touch screens often emit BOTH Touch and MouseButton1 InputEnded for a
-			-- single tap; without this guard one tap would toggle twice (play then
-			-- instantly replay), so the emote looks unstoppable.
-			local nowTap = os.clock()
-			if d.lastTapT and (nowTap - d.lastTapT) < 0.35 and ipt.UserInputType ~= d.lastTapType then
-				dragging = false; moved = false; dragIpt = nil
-				return
+	pcall(function() table.insert(d.conns, UserInputService.TouchMoved:Connect(function(t)
+		if not eHold and (AdrenalinPopupDragOwner == nil or AdrenalinPopupDragOwner == eId) and eHit(t.Position, 20) then eBegin(t.Position, true) end
+		eMove(t.Position)
+	end)) end)
+	pcall(function() table.insert(d.conns, UserInputService.TouchStarted:Connect(function(t)
+		if not eHold and (AdrenalinPopupDragOwner == nil or AdrenalinPopupDragOwner == eId) and eHit(t.Position, 20) then eBegin(t.Position, true) end
+	end)) end)
+	local function eTap()
+		pcall(function() playSoundFile(clickSoundPath) end)
+		if playingAnimationId == animationId then
+			stopCurrentAnimation()
+		else
+			local stoppedEmote = false
+			if d.emoteTrack then
+				local stillPlaying = false
+				pcall(function() stillPlaying = d.emoteTrack.IsPlaying end)
+				if stillPlaying then pcall(function() d.emoteTrack:Stop() end); stoppedEmote = true end
+				d.emoteTrack = nil
 			end
-			d.lastTapT = nowTap
-			d.lastTapType = ipt.UserInputType
-			local wasDragged = dragging and moved
-			dragging = false; moved = false; dragIpt = nil
-			if wasDragged then
-				pcall(saveConfig)
-			else
-				-- Toggle: second press stops the emote/animation instead of replaying it
-				if playingAnimationId == animationId then
-					stopCurrentAnimation()
-				else
-					local stoppedEmote = false
-					if d.emoteTrack then
-						local stillPlaying = false
-						pcall(function() stillPlaying = d.emoteTrack.IsPlaying end)
-						if stillPlaying then
-							pcall(function() d.emoteTrack:Stop() end)
-							stoppedEmote = true
-						end
-						d.emoteTrack = nil
-					end
-					if not stoppedEmote then
-						local char2 = player.Character
-						local hum2 = char2 and char2:FindFirstChildOfClass("Humanoid")
-						if hum2 and hum2.RigType == Enum.HumanoidRigType.R15 then
-							local desc = hum2:FindFirstChildOfClass("HumanoidDescription")
-							local isEmote = false
-							if emoteOrder then for _, e in ipairs(emoteOrder) do if e.id == animationId then isEmote = true; break end end end
-							local track
-							local ok = false
-							if isEmote then
-								ok = pcall(function() track = hum2:PlayEmoteAndGetAnimTrackById(animationId) end)
-								if not ok and desc then
-									local nm = (emoteUiById[animationId] and emoteUiById[animationId].Name) or ("Emote "..tostring(animationId))
-									pcall(function() desc:AddEmote(nm, animationId) end)
-									pcall(function() track = hum2:PlayEmoteAndGetAnimTrackById(animationId) end)
-								end
-							end
-							if not track then
-								local spd = (emoteUiById[animationId] and emoteUiById[animationId].Box and emoteUiById[animationId].Box.Text) or (animationUiById[animationId] and animationUiById[animationId].Box and animationUiById[animationId].Box.Text) or "1"
-								pcall(function() playAnimation(animationId, spd) end)
-							elseif track then
-								d.emoteTrack = track
-								local s = tonumber((emoteUiById[animationId] and emoteUiById[animationId].Box and emoteUiById[animationId].Box.Text) or "1") or 1
-								pcall(function() track:AdjustSpeed(s) end)
-							end
-						elseif hum2 then
-							notify("Emotions", "R15 required", 2)
-						end
-					end
-					updateDetachedEmoteVisual(animationId)
+			if not stoppedEmote then
+				local char2 = player.Character
+				local hum2 = char2 and char2:FindFirstChildOfClass("Humanoid")
+				if hum2 and hum2.RigType == Enum.HumanoidRigType.R15 then
+local desc = hum2:FindFirstChildOfClass("HumanoidDescription")
+local isEmote = false
+if emoteOrder then for _, e in ipairs(emoteOrder) do if e.id == animationId then isEmote = true; break end end end
+local track
+local ok = false
+if isEmote then
+ok = pcall(function() track = hum2:PlayEmoteAndGetAnimTrackById(animationId) end)
+if not ok and desc then
+local nm = (emoteUiById[animationId] and emoteUiById[animationId].Name) or ("Emote "..tostring(animationId))
+pcall(function() desc:AddEmote(nm, animationId) end)
+pcall(function() track = hum2:PlayEmoteAndGetAnimTrackById(animationId) end)
+end
+end
+if not track then
+local spd = (emoteUiById[animationId] and emoteUiById[animationId].Box and emoteUiById[animationId].Box.Text) or (animationUiById[animationId] and animationUiById[animationId].Box and animationUiById[animationId].Box.Text) or "1"
+pcall(function() playAnimation(animationId, spd) end)
+elseif track then
+d.emoteTrack = track
+					local s = tonumber((emoteUiById[animationId] and emoteUiById[animationId].Box and emoteUiById[animationId].Box.Text) or (animationUiById[animationId] and animationUiById[animationId].Box and animationUiById[animationId].Box.Text) or "1") or 1
+pcall(function() track:AdjustSpeed(s) end)
+end
+				elseif hum2 then
+notify("Emotions", "R15 required", 2)
 				end
 			end
+			updateDetachedEmoteVisual(animationId)
 		end
+	end
+	local function eFinish()
+		if not eHold then return end
+		eHold = false
+		local wasDrag = eDragging and (eMoved or eLong)
+		eDragging = false; eMoved = false; eLong = false
+		eVisual(false)
+		if wasDrag then
+			eSuppressUntil = os.clock() + E_SUPPRESS
+			eRelease()
+			pcall(saveConfig)
+		else
+			eRelease()
+			eTap()
+		end
+	end
+	table.insert(d.conns, UserInputService.InputEnded:Connect(function(ipt)
+		if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then eFinish() end
+	end))
+	pcall(function() table.insert(d.conns, UserInputService.TouchEnded:Connect(function() eFinish() end)) end)
+	table.insert(d.conns, btn.InputEnded:Connect(function(ipt)
+		if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then eFinish() end
+	end))
+	table.insert(d.conns, frame.InputEnded:Connect(function(ipt)
+		if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then eFinish() end
 	end))
 
 	if ui and ui.PopOut then ui.PopOut.Text = "★" end
@@ -5918,7 +5968,7 @@ titleBar.Position = UDim2.new(0, 10, 0, 0)
 titleBar.BackgroundTransparency = 1
 titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleBar.TextXAlignment = Enum.TextXAlignment.Left
-titleBar.Text = "Adrenalin.win V4.26.9.26 — Murder Mystery 2"
+titleBar.Text = "Adrenalin.win V4.3.10.26 — Murder Mystery 2"
 titleBar.Font = Enum.Font.SourceSansBold
 titleBar.TextSize = 13
 titleBar.Parent = topBar
@@ -31066,26 +31116,33 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			borderCorner.Parent = popupBorder
 
 			local function fpsPingMakeDraggable(dragFrame)
-				-- MOBILE V2 03.10.2026: TouchMoved + clamp, no input== compare
-				local d = false
-				local dm = false
-				local ds, sp
+				-- MOBILE V3: TouchMoved/slide-on + single-finger owner + clamp. No tap action here.
+				local d, dm, ds, sp, claimed = false, false, nil, nil, false
 				local TH = 12
+				local fId = "fps"; pcall(function() fId = "fps_" .. tostring(popupBorder:GetDebugId()) end)
 				pcall(function() popupBorder.Active = true end)
 				pcall(function() dragFrame.Active = true end)
-				local function beginP(pos)
-					d = true; dm = false; ds = pos; sp = popupBorder.Position
+				local function fBegin(pos, slide)
+					if popupDragLocked then return end
+					if slide and AdrenalinPopupDragOwner ~= nil and AdrenalinPopupDragOwner ~= fId then return end
+					d = true; dm = false; claimed = false; ds = pos; sp = popupBorder.Position
+				end
+				local function fHit(pos, pad)
+					pad = pad or 20
+					local ok, ap, asz = pcall(function() return popupBorder.AbsolutePosition, popupBorder.AbsoluteSize end)
+					if not ok or not ap or not asz then return false end
+					return pos.X >= ap.X - pad and pos.Y >= ap.Y - pad and pos.X <= ap.X + asz.X + pad and pos.Y <= ap.Y + asz.Y + pad
 				end
 				dragFrame.InputBegan:Connect(function(ipt)
-					if popupDragLocked then return end
-					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then beginP(ipt.Position) end
+					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then fBegin(ipt.Position, false) end
 				end)
-				local function moveP(pos)
-					if not d then return end
-					if popupDragLocked then return end
-					if not ds or not sp then return end
+				local function fMove(pos)
+					if not d or popupDragLocked or not ds or not sp then return end
 					local delta = pos - ds
 					if delta.Magnitude >= TH then dm = true end
+					if dm and not claimed then
+						if AdrenalinPopupDragOwner == nil then AdrenalinPopupDragOwner = fId; claimed = true else d = false; dm = false; return end
+					end
 					if dm then
 						local vp = Vector2.new(800, 600)
 						pcall(function() vp = workspace.CurrentCamera.ViewportSize end)
@@ -31096,18 +31153,24 @@ for bindOrder, feature in ipairs(btnFeatures) do
 					end
 				end
 				local moveConn = UserInputService.InputChanged:Connect(function(ipt)
-					if ipt.UserInputType == Enum.UserInputType.Touch or ipt.UserInputType == Enum.UserInputType.MouseMovement then moveP(ipt.Position) end
+					if ipt.UserInputType == Enum.UserInputType.Touch or ipt.UserInputType == Enum.UserInputType.MouseMovement then fMove(ipt.Position) end
 				end)
-				pcall(function() UserInputService.TouchMoved:Connect(function(t) moveP(t.Position) end) end)
-				local function finishP()
-					if d then local was = dm; d = false; dm = false; if was then pcall(saveConfig) end end
+				pcall(function() UserInputService.TouchMoved:Connect(function(t)
+					if not d and not popupDragLocked and fHit(t.Position, 20) then fBegin(t.Position, true) end
+					fMove(t.Position)
+				end) end)
+				pcall(function() UserInputService.TouchStarted:Connect(function(t)
+					if not d and not popupDragLocked and fHit(t.Position, 20) then fBegin(t.Position, true) end
+				end) end)
+				local function fFinish()
+					if d then local was = dm; d = false; dm = false; if claimed then if AdrenalinPopupDragOwner == fId then AdrenalinPopupDragOwner = nil end; claimed = false end; if was then pcall(saveConfig) end end
 				end
 				local endConn = UserInputService.InputEnded:Connect(function(ipt)
-					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then finishP() end
+					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then fFinish() end
 				end)
-				pcall(function() UserInputService.TouchEnded:Connect(function() finishP() end) end)
+				pcall(function() UserInputService.TouchEnded:Connect(function() fFinish() end) end)
 				dragFrame.InputEnded:Connect(function(ipt)
-					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then finishP() end
+					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then fFinish() end
 				end)
 				local conns = {moveConn, endConn}
 				local wrapper = {}
@@ -31287,24 +31350,17 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		popupBtn.Active = true
 		pcall(function() popupBtn.AutoButtonColor = false end)
 		pcall(function() popupBtn.Selectable = false end)
-		-- MOBILE V2: TAP toggles, DRAG (move>12px OR hold>0.32s) moves, no press on drag
-		local holdActive = false
-		local holdDragging = false
-		local holdMoved = false
-		local holdLong = false
-		local holdStartPos = nil
-		local holdStartFrame = nil
-		local holdStartTime = 0
-		local suppressUntil = 0
-		local lastToggleT = 0
-		local TAP_DIST = 12
-		local LONG_T = 0.32
-		local SUPPRESS_T = 0.4
+		-- MOBILE V3: TAP toggles (even when drag-locked), DRAG moves (move>12px OR hold>0.32s). Single-finger owner + slide-on pad 20 for tiny buttons.
+		local holdActive, holdDragging, holdMoved, holdLong = false, false, false, false
+		local holdStartPos, holdStartFrame, holdStartTime = nil, nil, 0
+		local suppressUntil, lastToggleT = 0, 0
+		local myBid = "btn_" .. tostring(feature.name)
+		local TAP_DIST, LONG_T, SUPPRESS_T = 12, 0.32, 0.4
 		local function popupIsLocked()
 			return popupDragLocked or (popupLockBtn and popupLockBtn.Text == "L")
 		end
 		local function popupHit(pos, pad)
-			pad = pad or 8
+			pad = pad or 20
 			local ok, ap, asz = pcall(function() return popupBorder.AbsolutePosition, popupBorder.AbsoluteSize end)
 			if not ok or not ap or not asz then return false end
 			return pos.X >= ap.X - pad and pos.Y >= ap.Y - pad and pos.X <= ap.X + asz.X + pad and pos.Y <= ap.Y + asz.Y + pad
@@ -31312,32 +31368,38 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		local function dragVisual(on)
 			pcall(function() if borderStroke then borderStroke.Thickness = on and 3 or 1.5 end end)
 		end
-		local function beginCandidate(pos)
-			if popupIsLocked() then return end
+		local function claimDrag()
+			if AdrenalinPopupDragOwner == nil then AdrenalinPopupDragOwner = myBid; return true end
+			return AdrenalinPopupDragOwner == myBid
+		end
+		local function releaseDrag()
+			if AdrenalinPopupDragOwner == myBid then AdrenalinPopupDragOwner = nil end
+		end
+		local function beginCandidate(pos, slide)
 			if os.clock() < suppressUntil then return end
+			if slide and AdrenalinPopupDragOwner ~= nil and AdrenalinPopupDragOwner ~= myBid then return end
 			holdActive = true; holdDragging = false; holdMoved = false; holdLong = false
 			holdStartPos = pos; holdStartFrame = popupBorder.Position; holdStartTime = os.clock()
 			local myT = holdStartTime
 			task.delay(LONG_T, function()
-				if holdActive and not holdDragging and holdStartTime == myT and not popupIsLocked() then holdDragging = true; holdLong = true; dragVisual(true) end
+				if holdActive and not holdDragging and holdStartTime == myT and not popupIsLocked() then if claimDrag() then holdDragging = true; holdLong = true; dragVisual(true) end end
 			end)
 		end
 		popupBorder.InputBegan:Connect(function(ipt)
-			if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then beginCandidate(ipt.Position) end
+			if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then beginCandidate(ipt.Position, false) end
 		end)
 		popupBtn.InputBegan:Connect(function(ipt)
-			if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then beginCandidate(ipt.Position) end
+			if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then beginCandidate(ipt.Position, false) end
 		end)
 		pcall(function() UserInputService.TouchStarted:Connect(function(t)
-			if holdActive or popupIsLocked() then return end
-			if popupHit(t.Position, 8) then beginCandidate(t.Position) end
+			if not holdActive and popupHit(t.Position, 20) then beginCandidate(t.Position, true) end
 		end) end)
 		local function onMove(pos)
 			if not holdActive or popupIsLocked() then return end
 			if not holdStartPos or not holdStartFrame then return end
 			local delta = pos - holdStartPos
 			if delta.Magnitude >= TAP_DIST then holdMoved = true end
-			if holdMoved and not holdDragging then holdDragging = true; dragVisual(true) end
+			if holdMoved and not holdDragging then if claimDrag() then holdDragging = true; dragVisual(true) else holdActive = false; return end end
 			if holdDragging then
 				local vp = Vector2.new(800, 600)
 				pcall(function() vp = workspace.CurrentCamera.ViewportSize end)
@@ -31350,7 +31412,10 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		local popupDragConn = UserInputService.InputChanged:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then onMove(input.Position) end
 		end)
-		pcall(function() UserInputService.TouchMoved:Connect(function(t) onMove(t.Position) end) end)
+		pcall(function() UserInputService.TouchMoved:Connect(function(t)
+			if not holdActive and popupHit(t.Position, 20) then beginCandidate(t.Position, true) end
+			onMove(t.Position)
+		end) end)
 		local function finishPopup()
 			if not holdActive then return end
 			holdActive = false
@@ -31359,9 +31424,10 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			dragVisual(false)
 			if wasDrag then
 				suppressUntil = os.clock() + SUPPRESS_T
+				releaseDrag()
 				pcall(saveConfig)
 			else
-				if popupIsLocked() then return end
+				releaseDrag()
 				if os.clock() < suppressUntil then return end
 				if os.clock() - lastToggleT < 0.3 then return end
 				lastToggleT = os.clock()
