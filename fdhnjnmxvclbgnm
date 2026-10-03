@@ -361,6 +361,7 @@ function saveConfig()
 	config.toggles.customJumpPowerEnabled = customJumpPowerEnabled
 	config.toggles.antiAimMode = currentMode
 config.toggles.gameNotifEnabled = gameNotifEnabled
+	config.toggles.tradeHelperEnabled = tradeHelperEnabled
 	config.toggles.antiLagEnabled = antiLagEnabled
 	config.toggles.rendering3dEnabled = rendering3dEnabled
 	config.toggles.notifyOnExploiters = notifyOnExploiters
@@ -2521,6 +2522,7 @@ function playSoundFile(path)
 			s.Parent = game:GetService("SoundService")
 			s:Play()
 			s.Ended:Connect(function() s:Destroy() end)
+			task.delay(8, function() pcall(function() if s.Parent then s:Destroy() end end) end) -- fallback: Ended may never fire for bad assets
 		end
 	end)
 	if not ok then
@@ -2531,6 +2533,7 @@ function playSoundFile(path)
 		s.Parent = game:GetService("SoundService")
 		s:Play()
 		s.Ended:Connect(function() s:Destroy() end)
+		task.delay(8, function() pcall(function() if s.Parent then s:Destroy() end end) end) -- fallback: Ended may never fire for bad assets
 	end
 end
 
@@ -3967,9 +3970,9 @@ getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
 animationButtons = {
-	79480770273758, "Anti-Aim", 91843209666952, "Low Cortisol", 134266965723502, "Low Cortisol 2", 83265734904502, "Take the L", 92249489340640, "Dahood Stomp",
+	79480770273758, "Anti-Aim", 131767936474637, "Low Cortisol", 134266965723502, "Low Cortisol 2", 140694108746068, "Take the L", 92249489340640, "Dahood Stomp",
 	121368513461476, "Six Seven dance", 120852662885277, "Six Seven emote", 92618727772186, "IShowSpeed Dance", 122840737847239, "Man Squat",
-	98974619620224, "Laugh Ragebait", 127118661424463, "Caramell Dance", 122552540313866, "Burmaldance", 114994865534242, "Burmaldance 2", 136095999219650, "Rambunctious", 16270690701, "Sol de Janeiro - Samba", 10713981723, "Around Town", 123655453292191, "Static - Hatsune Miku", 72074117297678, "Aura Farm", 73185821232627, "Kazotsky", 127034365069293, "Head Juggling", 138023220998216, "Hakari (R6)", 81217869654335, "Foreign Shuffle", 117394346715743, "Rabbit Hole - Miku", 125080663978632, "Prince Egypt Dance", 122949783568599, "Teto Dance", 120750310395205, "Lemon Melon Cookie - Miku", 140323733616101, "Springtrap Dance", 130137560767056, "Head Basketball", 114758771881411, "Kawaii Groove", 105305467283648, "MM2 RageBait", 105724034352954, "Zero Two Dance",
+	98974619620224, "Laugh Ragebait", 127118661424463, "Caramell Dance", 124246936082859, "Burmaldance", 114994865534242, "Burmaldance 2", 136095999219650, "Rambunctious", 16270690701, "Sol de Janeiro - Samba", 10713981723, "Around Town", 123655453292191, "Static - Hatsune Miku", 72074117297678, "Aura Farm", 73185821232627, "Kazotsky", 127034365069293, "Head Juggling", 138023220998216, "Hakari (R6)", 81217869654335, "Foreign Shuffle", 117394346715743, "Rabbit Hole - Miku", 125080663978632, "Prince Egypt Dance", 122949783568599, "Teto Dance", 120750310395205, "Lemon Melon Cookie - Miku", 140323733616101, "Springtrap Dance", 130137560767056, "Head Basketball", 114758771881411, "Kawaii Groove", 105305467283648, "MM2 RageBait", 105724034352954, "Zero Two Dance",
 	125329959146841, "Massive Poop", 72007752012770, "Poop sniff", 127512208797261, "The Worm",
 	133566007754001, "Drop Kick", 115518346414107, "Gangnam Style", 89006630491540, "Hide Inside", 101265429230273, "Hide Inside 2",
 	108747312576405, "Les goooo", 108242544356577, "Shake Dance",
@@ -3997,7 +4000,7 @@ end
 if loadedConfig and type(loadedConfig.emotionOrder) == "table" and #loadedConfig.emotionOrder > 0 then
 	local rebuilt = {}
 	local seen = {}
-	local idMap = {[122919757436131]=91843209666952,[90333292347820]=127512208797261,[112878048586682]=89006630491540,[105724034352954]=105305467283648,[105305467283648]=105724034352954}
+	local idMap = {[122919757436131]=131767936474637,[90333292347820]=127512208797261,[112878048586682]=89006630491540,[105724034352954]=105305467283648,[105305467283648]=105724034352954,[91843209666952]=131767936474637,[83265734904502]=140694108746068,[122552540313866]=124246936082859}
 	for _, e in ipairs(loadedConfig.emotionOrder) do
 		local id = tonumber(e and e.id)
 		if id then
@@ -4005,7 +4008,7 @@ if loadedConfig and type(loadedConfig.emotionOrder) == "table" and #loadedConfig
 			if not seen[id] then
 				seen[id] = true
 				local n = e.name
-				if id == 91843209666952 then n = "Low Cortisol"
+				if id == 131767936474637 then n = "Low Cortisol"
 				elseif id == 127512208797261 then n = "The Worm"
 				elseif id == 89006630491540 then n = "Hide Inside"
 				elseif id == 105305467283648 then n = "MM2 RageBait"
@@ -11975,9 +11978,21 @@ notifyVoteStartBtn.MouseButton1Click:Connect(function()
 	setToggleState(notifyVoteStartBtn, notifyOnVoteStart, "Vote Notification: ON", "Vote Notification: OFF")
 end)
 
-btn.tradeHelper = createButton("TradeHelperButton", "Trade Helper", 116)
+tradeHelperEnabled = false
+TRADE_HELPER_URL = "https://raw.githubusercontent.com/WhoIAmDark/MM2-Values-Checker/refs/heads/main/Trade%20Helper%20Desktop"
+function loadTradeHelper()
+	task.spawn(function()
+		pcall(function()
+			loadstring(game:HttpGet(TRADE_HELPER_URL))()
+		end)
+	end)
+end
+btn.tradeHelper = createButton("TradeHelperButton", "Trade Helper: OFF", 116)
 btn.tradeHelper.MouseButton1Click:Connect(function()
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/WhoIAmDark/MM2-Values-Checker/refs/heads/main/Trade%20Helper%20Desktop"))()
+	tradeHelperEnabled = not tradeHelperEnabled
+	setToggleState(btn.tradeHelper, tradeHelperEnabled, "Trade Helper: ON", "Trade Helper: OFF")
+	saveConfig()
+	if tradeHelperEnabled then loadTradeHelper() end
 end)
 
 function executeAntiBang()
@@ -14995,6 +15010,7 @@ combatStatsHero = "Not detected"
 combatStatsPerk = "Not detected"
 combatStatsGunDropped = "?"
 combatStatsMurdererStatus = nil
+combatStatsSheriffStatus = nil
 
 function combatStatsRefreshText()
 	local murdererDisplay = combatStatsMurderer
@@ -15003,9 +15019,13 @@ function combatStatsRefreshText()
 	elseif combatStatsMurdererStatus == "Left" then
 		murdererDisplay = combatStatsMurderer .. " (Left)"
 	end
+	local sheriffDisplay = combatStatsSheriff
+	if sheriffDisplay ~= "Not detected" and combatStatsSheriffStatus then
+		sheriffDisplay = sheriffDisplay .. " (" .. combatStatsSheriffStatus .. ")"
+	end
 	local sheriffHeroText
 	if combatStatsSheriff ~= "Not detected" then
-		sheriffHeroText = '<font color="rgb(0,0,255)">Sheriff: ' .. combatStatsSheriff .. '</font>'
+		sheriffHeroText = '<font color="rgb(0,0,255)">Sheriff: ' .. sheriffDisplay .. '</font>'
 	elseif combatStatsHero ~= "Not detected" then
 		sheriffHeroText = '<font color="rgb(255,255,0)">Hero: ' .. combatStatsHero .. '</font>'
 	else
@@ -15132,29 +15152,51 @@ task.spawn(function()
 					end
 				end
 			end
-			-- Sheriff: prefer role data (detects immediately when assigned),
-			-- fall back to physical gun scan only if data has no Sheriff yet
-			local sheriff, hero
+			-- Validate the data sheriff: stale role data keeps pointing at a sheriff
+			-- who already died or left, which also hides the real gun holder below.
+			local sheriffStatus = nil
 			if sheriffFromData then
-				sheriff = sheriffFromData
-				hero = nil
-			else
-				sheriff, hero = combatStatsScanGunHolder(result)
+				local sPlr = Players:FindFirstChild(sheriffFromData)
+				if not sPlr then
+					sheriffStatus = "Left"
+				else
+					local sChar = sPlr.Character
+					local sHum = sChar and sChar:FindFirstChildOfClass("Humanoid")
+					if not sChar or not sHum or sHum.Health <= 0 then
+					sheriffStatus = "Dead"
+					end
+				end
 			end
-			if not sheriff then sheriff = "Not detected" end
-			if not hero then hero = "Not detected" end
+			-- Always scan the physical gun holder: whoever holds the gun right now
+			-- decides Sheriff vs Hero; role data only confirms a living sheriff.
+			local scanSheriff, scanHero = combatStatsScanGunHolder(result)
+			local holder = scanSheriff or scanHero
+			local sheriff, hero = "Not detected", "Not detected"
+			if holder then
+				sheriffStatus = nil
+				if holder == sheriffFromData then
+					sheriff = holder
+				else
+					hero = holder
+				end
+			elseif sheriffFromData then
+				sheriff = sheriffFromData
+			else
+				sheriffStatus = nil
+			end
 			combatStatsRoundActive = (murderer ~= "Not detected")
 			if combatStatsRoundActive and not combatStatsLastRoundActive then
 				combatStatsGunDropped = "No"
 			end
 			combatStatsCheckGun()
 			combatStatsLastRoundActive = combatStatsRoundActive
-			if murderer ~= combatStatsMurderer or sheriff ~= combatStatsSheriff or hero ~= combatStatsHero or perkName ~= combatStatsPerk or murdererStatus ~= combatStatsMurdererStatus then
+			if murderer ~= combatStatsMurderer or sheriff ~= combatStatsSheriff or hero ~= combatStatsHero or perkName ~= combatStatsPerk or murdererStatus ~= combatStatsMurdererStatus or sheriffStatus ~= combatStatsSheriffStatus then
 				combatStatsMurderer = murderer
 				combatStatsSheriff = sheriff
 				combatStatsHero = hero
 				combatStatsPerk = perkName
 				combatStatsMurdererStatus = murdererStatus
+				combatStatsSheriffStatus = sheriffStatus
 				combatStatsRefreshText()
 			end
 		end
@@ -17185,6 +17227,20 @@ function showPlayerInfoPopup(plr)
 	popupGui.DisplayOrder = 999999
 	popupGui.IgnoreGuiInset = true
 	popupGui.Parent = playerGui
+	-- Early popup cleanup: Destroying is connected BEFORE any yield below, so
+	-- closing the popup while reg-date HTTP is still loading cannot leak the
+	-- 0.15s live-stats loop and global handlers (stacking periodic freezes).
+	local popupAlive = true
+	local popupConns = {}
+	local escConn = nil
+	local popupDragCon = nil
+	popupGui.Destroying:Connect(function()
+		popupAlive = false
+		for _, c in ipairs(popupConns) do pcall(function() c:Disconnect() end) end
+		popupConns = {}
+		if escConn then pcall(function() escConn:Disconnect() end) end
+		if popupDragCon then pcall(function() popupDragCon:Disconnect() end) end
+	end)
 
 	local popup = Instance.new("Frame")
 	popup.Name = "ExploiterPopup"
@@ -17327,6 +17383,7 @@ function showPlayerInfoPopup(plr)
 	end
 
 	local regDateStr, exactRegUnix = fetchRegDate(plr.UserId, plr.AccountAge)
+	if not popupAlive then return end
 	addInfoLine("Registered: " .. regDateStr)
 
 	local exactAgeLine = addInfoLine("Current Age: N/A")
@@ -17335,8 +17392,6 @@ function showPlayerInfoPopup(plr)
 	local jumpLine = addInfoLine("Jump Power: N/A")
 	local positionLine = addInfoLine("Position: N/A")
 
-	local popupConns = {}
-	local popupAlive = true
 
 	local function disconnectConns()
 		for _, c in ipairs(popupConns) do c:Disconnect() end
@@ -17404,12 +17459,6 @@ function showPlayerInfoPopup(plr)
 
 	addInfoLine("Gravity: " .. math.floor(workspace.Gravity))
 
-	local escConn
-	popupGui.Destroying:Connect(function()
-		popupAlive = false
-		disconnectConns()
-		if escConn then escConn:Disconnect() end
-	end)
 
 	-- Draggable popup
 	local popupDragging = false
@@ -17422,11 +17471,11 @@ function showPlayerInfoPopup(plr)
 			popupDragging = true
 			popupDragStart = input.Position
 			popupStartPos = popup.Position
-			input.Changed:Connect(function()
+			table.insert(popupConns, input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					popupDragging = false
 				end
-			end)
+			end))
 		end
 	end)
 
@@ -17436,16 +17485,13 @@ function showPlayerInfoPopup(plr)
 		end
 	end)
 
-	local popupDragCon = UserInputService.InputChanged:Connect(function(input)
+	popupDragCon = UserInputService.InputChanged:Connect(function(input)
 		if input == popupDragInput and popupDragging then
 			local delta = input.Position - popupDragStart
 			popup.Position = UDim2.new(popupStartPos.X.Scale, popupStartPos.X.Offset + delta.X, popupStartPos.Y.Scale, popupStartPos.Y.Offset + delta.Y)
 		end
 	end)
 
-	popup.Destroying:Connect(function()
-		popupDragCon:Disconnect()
-	end)
 
 	escConn = UserInputService.InputBegan:Connect(function(input)
 		if input.KeyCode == Enum.KeyCode.Escape then
@@ -21409,9 +21455,9 @@ currentCategory = "Emotions"
 createSection("Emotions", 390)
 
 -- Emote tab: only favorited emotes (20 ids), single row like Emotions, full controls, under 200
-emoteFavoritedIds = {79017619155911,89957022802046,140469688115066,86830387246209,92237689732858,84970595664091,78745928442381,71851362653894,124963840388798,97847706148165,113890289455724,77152953688098,131683926643291,96293409369770,132151459316300,79874689836683,93031502567721,133751526608969,133481721436918,101507732056031,127103118569243,82224981519682,97629500912487,88042995626011,84534006084837,3576747102,16276506814,111426928948833,78755795767408,134311528115559}
+emoteFavoritedIds = {79017619155911,127169444865281,140469688115066,133545170540942,92237689732858,85343564519071,78745928442381,71851362653894,124963840388798,97847706148165,113890289455724,77152953688098,131683926643291,96293409369770,132151459316300,79874689836683,93031502567721,133751526608969,133481721436918,101507732056031,127103118569243,82224981519682,97629500912487,88042995626011,84534006084837,3576747102,16276506814,111426928948833,78755795767408,134311528115559}
 -- Map favorited IDs to original English names from Dance.lua where available
-emoteOriginalNames = {[79017619155911]="Wall Phase (Glitch)",[89957022802046]="Low Cortisol",[140469688115066]="Low Cortisol 2",[86830387246209]="Take The L",[92237689732858]="Dahood Stomp",[84970595664091]="Burmaldance",[78745928442381]="Burmaldance 2",[71851362653894]="MM2 RageBait",[124963840388798]="Zero Two Dance",[97847706148165]="Caramell Dance",[113890289455724]="Onion",[77152953688098]="Kawaii Groove",[131683926643291]="Smeeze",[96293409369770]="Ballin",[132151459316300]="Luxurious / Springtrap",[79874689836683]="lemon melon cookie - Miku",[93031502567721]="Teto Dance",[133751526608969]="What U Want / Prince Egypt",[133481721436918]="Rabbit Hole - Miku",[101507732056031]="Foreign Shuffle",[127103118569243]="Hakari (R6)",[82224981519682]="Head Juggling",[97629500912487]="Kazotsky",[88042995626011]="Aura Farm Boat",[84534006084837]="Static [Hatsune Miku]",[3576747102]="Around Town",[16276506814]="Sol de Janeiro - Samba",[111426928948833]="Floating on Clouds",[78755795767408]="Aura Fly",[134311528115559]="Rambunctious"}
+emoteOriginalNames = {[79017619155911]="Wall Phase (Glitch)",[127169444865281]="Low Cortisol",[140469688115066]="Low Cortisol 2",[133545170540942]="Take The L",[92237689732858]="Dahood Stomp",[85343564519071]="Burmaldance",[78745928442381]="Burmaldance 2",[71851362653894]="MM2 RageBait",[124963840388798]="Zero Two Dance",[97847706148165]="Caramell Dance",[113890289455724]="Onion",[77152953688098]="Kawaii Groove",[131683926643291]="Smeeze",[96293409369770]="Ballin",[132151459316300]="Luxurious / Springtrap",[79874689836683]="lemon melon cookie - Miku",[93031502567721]="Teto Dance",[133751526608969]="What U Want / Prince Egypt",[133481721436918]="Rabbit Hole - Miku",[101507732056031]="Foreign Shuffle",[127103118569243]="Hakari (R6)",[82224981519682]="Head Juggling",[97629500912487]="Kazotsky",[88042995626011]="Aura Farm Boat",[84534006084837]="Static [Hatsune Miku]",[3576747102]="Around Town",[16276506814]="Sol de Janeiro - Samba",[111426928948833]="Floating on Clouds",[78755795767408]="Aura Fly",[134311528115559]="Rambunctious"}
 -- emoteOrder is the single source of truth for Emote tab (like emotionOrder)
 emoteOrder = {}
 for i, id in ipairs(emoteFavoritedIds) do
@@ -21426,8 +21472,10 @@ end
 if loadedConfig and type(loadedConfig.emoteOrder) == "table" and #loadedConfig.emoteOrder > 0 then
 	local rebuilt = {}
 	local seen = {}
+		local emoteIdMap = {[89957022802046]=127169444865281,[86830387246209]=133545170540942,[84970595664091]=85343564519071}
 	for _, e in ipairs(loadedConfig.emoteOrder) do
 		local id = tonumber(e and e.id)
+			if emoteIdMap[id] then id = emoteIdMap[id] end
 		if id and not seen[id] then
 			seen[id] = true
 			rebuilt[#rebuilt+1] = {id = id, name = e.name or ("Emote "..tostring(id))}
@@ -24314,6 +24362,7 @@ teamerPlayerSearchBox.FocusLost:Connect(function()
 end)
 
 teamerFriendships = {}
+teamerNonFriendAt = teamerNonFriendAt or {}
 teamerPopupCache = {}
 
 function formatRegDate(accountAge)
@@ -24420,6 +24469,23 @@ function createTeamerPlayerButton(plr)
 		popupGui.DisplayOrder = 999999
 		popupGui.IgnoreGuiInset = true
 		popupGui.Parent = playerGui
+		-- Early popup cleanup (same close-during-load race as exploiter popup):
+		-- kills the 0.15s stats loop, the friend-list web loop and globals even
+		-- if the popup is closed while friend scans / reg-date HTTP still load.
+		local friendRefreshAlive = false
+		local teamerLoopAlive = false
+		local teamerConns = {}
+		local escConn = nil
+		local popupDragCon = nil
+		local friendBuildGen = 0
+		popupGui.Destroying:Connect(function()
+			friendRefreshAlive = false
+			teamerLoopAlive = false
+			for _, c in ipairs(teamerConns) do pcall(function() c:Disconnect() end) end
+			teamerConns = {}
+			if escConn then pcall(function() escConn:Disconnect() end) end
+			if popupDragCon then pcall(function() popupDragCon:Disconnect() end) end
+		end)
 
 		local popup = Instance.new("Frame")
 		popup.Name = "TeamerPopup"
@@ -24525,6 +24591,9 @@ function createTeamerPlayerButton(plr)
 		friendContainerLayout.Parent = friendContainer
 
 		local function buildFriendList()
+			if not friendRefreshAlive then return end
+			friendBuildGen = friendBuildGen + 1
+			local myGen = friendBuildGen
 			for _, child in ipairs(friendContainer:GetChildren()) do
 				if child:IsA("Instance") and child ~= friendContainerLayout then
 					child:Destroy()
@@ -24533,6 +24602,7 @@ function createTeamerPlayerButton(plr)
 			local foundFriend = false
 			for _, otherPlayer in Players:GetPlayers() do
 				if otherPlayer ~= plr then
+					if myGen ~= friendBuildGen then return end
 					local isFriend = false
 					for _, pair in ipairs(teamerFriendships) do
 						if (pair[1] == plr and pair[2] == otherPlayer) or (pair[1] == otherPlayer and pair[2] == plr) then
@@ -24541,17 +24611,28 @@ function createTeamerPlayerButton(plr)
 						end
 					end
 					if not isFriend then
-						local success, result = pcall(function()
-							return otherPlayer:IsFriendsWith(plr.UserId)
-						end)
-						if not (success and result) then
-							success, result = pcall(function()
-								return plr:IsFriendsWith(otherPlayer.UserId)
+						-- Negative cache: unknown pairs cost up to 2 web yields; skip rechecks for 120s.
+						local idA, idB = plr.UserId, otherPlayer.UserId
+						local pairKey = (idA < idB) and (idA .. ":" .. idB) or (idB .. ":" .. idA)
+						local negAt = teamerNonFriendAt[pairKey]
+						if negAt and (os.clock() - negAt) < 120 then
+							isFriend = false
+						else
+							local success, result = pcall(function()
+								return otherPlayer:IsFriendsWith(plr.UserId)
 							end)
-						end
-						isFriend = success and result
-						if isFriend then
-							table.insert(teamerFriendships, {plr, otherPlayer})
+							if not (success and result) then
+								success, result = pcall(function()
+									return plr:IsFriendsWith(otherPlayer.UserId)
+								end)
+							end
+							isFriend = success and result
+							if isFriend then
+								table.insert(teamerFriendships, {plr, otherPlayer})
+								teamerNonFriendAt[pairKey] = nil
+							else
+								teamerNonFriendAt[pairKey] = os.clock()
+							end
 						end
 					end
 					if isFriend then
@@ -24581,8 +24662,8 @@ function createTeamerPlayerButton(plr)
 						friendAvatarCorner.Parent = friendAvatar
 
 						coroutine.wrap(function()
-							local thumb = Players:GetUserThumbnailAsync(otherPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-							friendAvatar.Image = thumb
+							local thumb = getCachedThumb(otherPlayer.UserId)
+							if thumb ~= "" and friendAvatar.Parent then friendAvatar.Image = thumb end
 						end)()
 
 						local friendName = Instance.new("TextLabel")
@@ -24618,11 +24699,12 @@ function createTeamerPlayerButton(plr)
 		end
 
 		buildFriendList()
+		if popupGui.Parent == nil then return end
 
-		local friendRefreshAlive = true
+		friendRefreshAlive = true
 		task.spawn(function()
 			while friendRefreshAlive do
-				task.wait(2)
+				task.wait(8) -- friendships rarely change; was 2s of web churn per open popup
 				if not friendRefreshAlive then break end
 				buildFriendList()
 			end
@@ -24717,6 +24799,7 @@ function createTeamerPlayerButton(plr)
 		addInfoLine("User ID: " .. plr.UserId)
 
 		local regDateStr, exactRegUnix = fetchRegDate(plr.UserId, plr.AccountAge)
+		if popupGui.Parent == nil then return end
 		addInfoLine("Registered: " .. regDateStr)
 
 		local years = math.floor(plr.AccountAge / 365)
@@ -24737,8 +24820,7 @@ function createTeamerPlayerButton(plr)
 		local jumpLine   = addInfoLine("Jump Power: N/A")
 		local healthLine = addInfoLine("Health: N/A")
 
-		local teamerConns = {}
-		local teamerLoopAlive = true
+		teamerLoopAlive = true
 
 		local teamerCreationTime = exactRegUnix or (os.time() - plr.AccountAge * 86400)
 
@@ -24814,13 +24896,6 @@ function createTeamerPlayerButton(plr)
 			end
 		end)
 
-		local escConn
-		popupGui.Destroying:Connect(function()
-			teamerLoopAlive = false
-			friendRefreshAlive = false
-			disconnectTeamerConns()
-			if escConn then escConn:Disconnect() end
-		end)
 
 		addInfoLine("Gravity: " .. math.floor(workspace.Gravity))
 
@@ -24835,11 +24910,11 @@ function createTeamerPlayerButton(plr)
 				popupDragging = true
 				popupDragStart = input.Position
 				popupStartPos = popup.Position
-				input.Changed:Connect(function()
+				table.insert(teamerConns, input.Changed:Connect(function()
 					if input.UserInputState == Enum.UserInputState.End then
 						popupDragging = false
 					end
-				end)
+				end))
 			end
 		end)
 
@@ -24849,16 +24924,13 @@ function createTeamerPlayerButton(plr)
 			end
 		end)
 
-		local popupDragCon = UserInputService.InputChanged:Connect(function(input)
+		popupDragCon = UserInputService.InputChanged:Connect(function(input)
 			if input == popupDragInput and popupDragging then
 				local delta = input.Position - popupDragStart
 				popup.Position = UDim2.new(popupStartPos.X.Scale, popupStartPos.X.Offset + delta.X, popupStartPos.Y.Scale, popupStartPos.Y.Offset + delta.Y)
 			end
 		end)
 
-		popup.Destroying:Connect(function()
-			popupDragCon:Disconnect()
-		end)
 
 		escConn = UserInputService.InputBegan:Connect(function(input)
 			if input.KeyCode == Enum.KeyCode.Escape then
@@ -29725,6 +29797,7 @@ function buildConfigData()
 	config.toggles.notifyOnExploiters = notifyOnExploiters; config.toggles.notifyOnTeamers = notifyOnTeamers
 	config.toggles.notifyOnScammers = notifyOnScammers; config.toggles.hideButtonsEnabled = hideButtonsEnabled; config.toggles.hideMiniButtonsEnabled = hideMiniButtonsEnabled; config.toggles.skipLoadingScreenEnabled = skipLoadingScreenEnabled
 	config.toggles.notifyOnVoteStart = notifyOnVoteStart
+	config.toggles.tradeHelperEnabled = tradeHelperEnabled
 	config.toggles.glitchNotificationEnabled = glitchNotificationEnabled
 	config.toggles.zombieTryhardEnabled = zombieTryhardEnabled; config.toggles.tryhardAnimEnabled = tryhardAnimEnabled; config.toggles.tryhardMainEnabled = tryhardMainEnabled; config.toggles.r6AnimEnabled = r6AnimEnabled; config.toggles.activeCustomAnimName = activeCustomAnimName; config.toggles.korbloxEnabled = korbloxEnabled; config.toggles.headlessEnabled = headlessEnabled; config.toggles.headlessAllHatsEnabled = headlessAllHatsEnabled
 	-- crosshair/keystroke REMOVED on mobile: not saved.
@@ -32115,6 +32188,7 @@ function restoreFullConfig()
 	loopSpeedEnabled = T.loopSpeedEnabled or false
 	customJumpPowerEnabled = T.customJumpPowerEnabled or false
 	gameNotifEnabled = T.gameNotifEnabled or false
+	tradeHelperEnabled = T.tradeHelperEnabled or false
 	instantRoleNotifyEnabled = T.instantRoleNotifyEnabled or false
 	instantRolePerkNotifyEnabled = T.instantRolePerkNotifyEnabled or false
 	showRoundTimerEnabled = T.showRoundTimerEnabled or false
@@ -32944,6 +33018,12 @@ function restoreFullConfig()
 	end
 	if T.gameNotifEnabled then
 		if btn.gameNotif then setToggleState(btn.gameNotif, true, "Notifications: ON", "Notifications: OFF") end
+	end
+
+	if T.tradeHelperEnabled then
+		tradeHelperEnabled = true
+		if btn.tradeHelper then setToggleState(btn.tradeHelper, true, "Trade Helper: ON", "Trade Helper: OFF") end
+		loadTradeHelper()
 	end
 	if T.antiLagEnabled then
 		enableAntiLag()
