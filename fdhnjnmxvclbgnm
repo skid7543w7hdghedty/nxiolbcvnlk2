@@ -5918,7 +5918,7 @@ titleBar.Position = UDim2.new(0, 10, 0, 0)
 titleBar.BackgroundTransparency = 1
 titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleBar.TextXAlignment = Enum.TextXAlignment.Left
-titleBar.Text = "Adrenalin.win V4.3.10.26 — Murder Mystery 2"
+titleBar.Text = "Adrenalin.win V4.26.9.26 — Murder Mystery 2"
 titleBar.Font = Enum.Font.SourceSansBold
 titleBar.TextSize = 13
 titleBar.Parent = topBar
@@ -30062,7 +30062,7 @@ createSection("Buttons", 900)
 popupBtnGui = Instance.new("ScreenGui")
 popupBtnGui.Name = "AdrenalinPopupBtns"
 popupBtnGui.ResetOnSpawn = false
-popupBtnGui.DisplayOrder = 999999
+popupBtnGui.DisplayOrder = 9000 -- MOBILE FIX 03.10.2026: popups under main menu (was 999999, blocked menu taps)
 popupBtnGui.IgnoreGuiInset = true
 popupBtnGui.Parent = playerGui
 
@@ -31066,49 +31066,53 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			borderCorner.Parent = popupBorder
 
 			local function fpsPingMakeDraggable(dragFrame)
-				-- MOBILE FIX 03.10.2026: robust touch-drag. No 'input == dragIpt' compare (it stutters on touch),
-				-- global InputEnded so release outside button can't stick, TH=10 for finger jitter.
+				-- MOBILE V2 03.10.2026: TouchMoved + clamp, no input== compare
 				local d = false
 				local dm = false
 				local ds, sp
-				local TH = 10
+				local TH = 12
 				pcall(function() popupBorder.Active = true end)
 				pcall(function() dragFrame.Active = true end)
+				local function beginP(pos)
+					d = true; dm = false; ds = pos; sp = popupBorder.Position
+				end
 				dragFrame.InputBegan:Connect(function(ipt)
 					if popupDragLocked then return end
-					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then
-						d = true; dm = false; ds = ipt.Position; sp = popupBorder.Position
-					end
+					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then beginP(ipt.Position) end
 				end)
-				local moveConn = UserInputService.InputChanged:Connect(function(ipt)
-					if popupDragLocked then return end
+				local function moveP(pos)
 					if not d then return end
-					if ipt.UserInputType == Enum.UserInputType.Touch or ipt.UserInputType == Enum.UserInputType.MouseMovement then
-						local delta = ipt.Position - ds
-						if delta.Magnitude >= TH then dm = true end
-						if dm then
-							popupBorder.Position = UDim2.new(sp.X.Scale, sp.X.Offset + delta.X, sp.Y.Scale, sp.Y.Offset + delta.Y)
-						end
+					if popupDragLocked then return end
+					if not ds or not sp then return end
+					local delta = pos - ds
+					if delta.Magnitude >= TH then dm = true end
+					if dm then
+						local vp = Vector2.new(800, 600)
+						pcall(function() vp = workspace.CurrentCamera.ViewportSize end)
+						local sz = popupBorder.AbsoluteSize
+						local nx = math.clamp(sp.X.Offset + delta.X, 0, math.max(0, vp.X - sz.X))
+						local ny = math.clamp(sp.Y.Offset + delta.Y, 0, math.max(0, vp.Y - sz.Y))
+						popupBorder.Position = UDim2.new(sp.X.Scale, nx, sp.Y.Scale, ny)
 					end
+				end
+				local moveConn = UserInputService.InputChanged:Connect(function(ipt)
+					if ipt.UserInputType == Enum.UserInputType.Touch or ipt.UserInputType == Enum.UserInputType.MouseMovement then moveP(ipt.Position) end
 				end)
+				pcall(function() UserInputService.TouchMoved:Connect(function(t) moveP(t.Position) end) end)
+				local function finishP()
+					if d then local was = dm; d = false; dm = false; if was then pcall(saveConfig) end end
+				end
 				local endConn = UserInputService.InputEnded:Connect(function(ipt)
-					if ipt.UserInputType ~= Enum.UserInputType.MouseButton1 and ipt.UserInputType ~= Enum.UserInputType.Touch then return end
-					if d then
-						local wasDragged = dm
-						d = false; dm = false
-						if wasDragged then saveConfig() end
-					end
+					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then finishP() end
 				end)
+				pcall(function() UserInputService.TouchEnded:Connect(function() finishP() end) end)
 				dragFrame.InputEnded:Connect(function(ipt)
-					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then
-						if d and dm then pcall(saveConfig) end
-						d = false; dm = false
-					end
+					if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then finishP() end
 				end)
+				local conns = {moveConn, endConn}
 				local wrapper = {}
 				function wrapper:Disconnect()
-					pcall(function() moveConn:Disconnect() end)
-					pcall(function() endConn:Disconnect() end)
+					for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 				end
 				return wrapper
 			end
@@ -31239,7 +31243,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		popupBtn.BorderSizePixel = 0
 		popupBtn.ClipsDescendants = true
 		popupBtn.Parent = popupBorder
-		-- MOBILE FIX 03.10.2026: no press-scale on draggable popup (was addBtnPressAnim(popupBtn)) - it felt like clicks while dragging
+		-- MOBILE FIX: no press-scale on draggable popup (felt like clicks while dragging)
 		local popupBtnTSC = Instance.new("UITextSizeConstraint")
 		popupBtnTSC.MaxTextSize = 17
 		popupBtnTSC.MinTextSize = 9
@@ -31281,79 +31285,100 @@ for bindOrder, feature in ipairs(btnFeatures) do
 
 		popupBorder.Active = true
 		popupBtn.Active = true
-		local popupDragging = false
-		local popupDidMove = false
-		local popupDragStart
-		local popupBtnStartPos
-		local POPUP_DRAG_THRESHOLD = 10
-		
+		pcall(function() popupBtn.AutoButtonColor = false end)
+		pcall(function() popupBtn.Selectable = false end)
+		-- MOBILE V2: TAP toggles, DRAG (move>12px OR hold>0.32s) moves, no press on drag
+		local holdActive = false
+		local holdDragging = false
+		local holdMoved = false
+		local holdLong = false
+		local holdStartPos = nil
+		local holdStartFrame = nil
+		local holdStartTime = 0
+		local suppressUntil = 0
+		local lastToggleT = 0
+		local TAP_DIST = 12
+		local LONG_T = 0.32
+		local SUPPRESS_T = 0.4
 		local function popupIsLocked()
 			return popupDragLocked or (popupLockBtn and popupLockBtn.Text == "L")
 		end
-		
-		local function popupBeginDrag(input)
+		local function popupHit(pos, pad)
+			pad = pad or 8
+			local ok, ap, asz = pcall(function() return popupBorder.AbsolutePosition, popupBorder.AbsoluteSize end)
+			if not ok or not ap or not asz then return false end
+			return pos.X >= ap.X - pad and pos.Y >= ap.Y - pad and pos.X <= ap.X + asz.X + pad and pos.Y <= ap.Y + asz.Y + pad
+		end
+		local function dragVisual(on)
+			pcall(function() if borderStroke then borderStroke.Thickness = on and 3 or 1.5 end end)
+		end
+		local function beginCandidate(pos)
 			if popupIsLocked() then return end
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				popupDragging = true
-				popupDidMove = false
-				popupDragStart = input.Position
-				popupBtnStartPos = popupBorder.Position
+			if os.clock() < suppressUntil then return end
+			holdActive = true; holdDragging = false; holdMoved = false; holdLong = false
+			holdStartPos = pos; holdStartFrame = popupBorder.Position; holdStartTime = os.clock()
+			local myT = holdStartTime
+			task.delay(LONG_T, function()
+				if holdActive and not holdDragging and holdStartTime == myT and not popupIsLocked() then holdDragging = true; holdLong = true; dragVisual(true) end
+			end)
+		end
+		popupBorder.InputBegan:Connect(function(ipt)
+			if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then beginCandidate(ipt.Position) end
+		end)
+		popupBtn.InputBegan:Connect(function(ipt)
+			if ipt.UserInputType == Enum.UserInputType.MouseButton1 or ipt.UserInputType == Enum.UserInputType.Touch then beginCandidate(ipt.Position) end
+		end)
+		pcall(function() UserInputService.TouchStarted:Connect(function(t)
+			if holdActive or popupIsLocked() then return end
+			if popupHit(t.Position, 8) then beginCandidate(t.Position) end
+		end) end)
+		local function onMove(pos)
+			if not holdActive or popupIsLocked() then return end
+			if not holdStartPos or not holdStartFrame then return end
+			local delta = pos - holdStartPos
+			if delta.Magnitude >= TAP_DIST then holdMoved = true end
+			if holdMoved and not holdDragging then holdDragging = true; dragVisual(true) end
+			if holdDragging then
+				local vp = Vector2.new(800, 600)
+				pcall(function() vp = workspace.CurrentCamera.ViewportSize end)
+				local sz = popupBorder.AbsoluteSize
+				local nx = math.clamp(holdStartFrame.X.Offset + delta.X, 0, math.max(0, vp.X - sz.X))
+				local ny = math.clamp(holdStartFrame.Y.Offset + delta.Y, 0, math.max(0, vp.Y - sz.Y))
+				popupBorder.Position = UDim2.new(holdStartFrame.X.Scale, nx, holdStartFrame.Y.Scale, ny)
 			end
 		end
-		
-		-- MOBILE FIX 03.10.2026: drag handles on WHOLE pill (border+button), not only inner TextButton,
-		-- so finger can leave button area without freezes. No 'input == popupDragInput' compare.
-		popupBorder.InputBegan:Connect(popupBeginDrag)
-		popupBtn.InputBegan:Connect(popupBeginDrag)
-		
 		local popupDragConn = UserInputService.InputChanged:Connect(function(input)
-			if not popupDragging then return end
-			if popupIsLocked() then return end
-			if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then
-				local delta = input.Position - popupDragStart
-				if delta.Magnitude >= POPUP_DRAG_THRESHOLD then
-					popupDidMove = true
-				end
-				if popupDidMove then
-					popupBorder.Position = UDim2.new(popupBtnStartPos.X.Scale, popupBtnStartPos.X.Offset + delta.X, popupBtnStartPos.Y.Scale, popupBtnStartPos.Y.Offset + delta.Y)
-				end
-			end
+			if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then onMove(input.Position) end
 		end)
-		
-		-- MOBILE FIX: global InputEnded (release outside button can't stick, no false clicks).
-		-- Toggle ONLY here when it was a tap (dragging and not moved). First handler wins, second is no-op.
+		pcall(function() UserInputService.TouchMoved:Connect(function(t) onMove(t.Position) end) end)
+		local function finishPopup()
+			if not holdActive then return end
+			holdActive = false
+			local wasDrag = holdDragging and (holdMoved or holdLong)
+			holdDragging = false; holdMoved = false; holdLong = false
+			dragVisual(false)
+			if wasDrag then
+				suppressUntil = os.clock() + SUPPRESS_T
+				pcall(saveConfig)
+			else
+				if popupIsLocked() then return end
+				if os.clock() < suppressUntil then return end
+				if os.clock() - lastToggleT < 0.3 then return end
+				lastToggleT = os.clock()
+				playClickSound()
+				feature.toggle()
+			end
+		end
 		local popupEndConn = UserInputService.InputEnded:Connect(function(input)
-			if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-			if popupDragging then
-				local wasDragged = popupDidMove
-				popupDragging = false
-				popupDidMove = false
-				if wasDragged then
-					saveConfig()
-				else
-					playClickSound()
-					feature.toggle()
-				end
-			end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then finishPopup() end
 		end)
-		
+		pcall(function() UserInputService.TouchEnded:Connect(function() finishPopup() end) end)
 		popupBtn.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				if popupDragging then
-					local wasDragged = popupDidMove
-					popupDragging = false
-					popupDidMove = false
-					if wasDragged then
-						saveConfig()
-					else
-						playClickSound()
-						feature.toggle()
-					end
-				end
-			end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then finishPopup() end
 		end)
-		
-		-- wrapper so old remove-code (data.dragConn:Disconnect()) still works, disconnects both conns
+		popupBorder.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then finishPopup() end
+		end)
 		do
 			local _move, _ended = popupDragConn, popupEndConn
 			local wrapper = {}
