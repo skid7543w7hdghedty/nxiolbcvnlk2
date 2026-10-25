@@ -191,6 +191,24 @@ MARK_SOUND_DIR = SOUNDS_DIR .. "/Mark"
 UNMARK_SOUND_DIR = SOUNDS_DIR .. "/Unmark"
 ROUND_START_SOUND_DIR = SOUNDS_DIR .. "/RoundStart"
 VOTE_START_SOUND_DIR = SOUNDS_DIR .. "/VoteStart"
+-- Tab icons: Adrenalin.win/Icons/<TabName>/<any file>.png|jpg|jpeg
+-- Each subfolder name strictly matches a tab name; the file inside is picked in Settings.
+ICONS_DIR = CONFIG_FOLDER .. "/Icons"
+TAB_ICON_FOLDERS = {"Main", "Player", "Visuals", "Combat", "Sheriff", "Murderer", "Reset", "Glitch", "Trolling", "Teleports", "Utilities", "Teamers", "Exploiters", "Scammers", "Autofarm", "Emotions", "Ragebait", "Animations", "Changer", "Skybox", "Buttons", "Settings"}
+-- Top-bar icons: strict subfolders under Icons/ (one per button).
+TOP_ICON_FOLDERS = {"Lock", "Search", "Minimize", "Close"}
+-- Top-bar icon slots: key -> folder + legacy lucide name (used only to
+-- seed the folder with a default on fresh installs) + Settings row label.
+TOP_ICON_SLOTS = {
+	{key = "Lock", folder = "Lock", legacy = "lock", label = "Top Icon: Lock"},
+	{key = "LockOpen", folder = "Lock", legacy = "lock-open", label = "Top Icon: Lock (Locked)"},
+	{key = "Search", folder = "Search", legacy = "search", label = "Top Icon: Search"},
+	{key = "MinimizeOpen", folder = "Minimize", legacy = "eye-off", label = "Top Icon: Minimize (Open)"},
+	{key = "MinimizeClosed", folder = "Minimize", legacy = "eye", label = "Top Icon: Minimize (Closed)"},
+	{key = "Close", folder = "Close", legacy = "power", label = "Top Icon: Close"},
+	{key = "MiniLock", folder = "Lock", legacy = "lock", label = "Mini Lock Icon"},
+	{key = "MiniLockOpen", folder = "Lock", legacy = "lock-open", label = "Mini Lock Icon (Locked)"},
+}
 CONFIG_PATH = MAIN_DIR .. "/config.json"
 loadedConfig = {}
 isApplyingConfig = false
@@ -233,6 +251,17 @@ function ensureFolder()
 	pcall(function() makefolder(UNMARK_SOUND_DIR) end)
 	pcall(function() makefolder(ROUND_START_SOUND_DIR) end)
 	pcall(function() makefolder(VOTE_START_SOUND_DIR) end)
+	pcall(function() makefolder(ICONS_DIR) end)
+	if TAB_ICON_FOLDERS then
+		for _, tabName in ipairs(TAB_ICON_FOLDERS) do
+			pcall(function() makefolder(ICONS_DIR .. "/" .. tabName) end)
+		end
+	end
+	if TOP_ICON_FOLDERS then
+		for _, topName in ipairs(TOP_ICON_FOLDERS) do
+			pcall(function() makefolder(ICONS_DIR .. "/" .. topName) end)
+		end
+	end
 end
 
 function saveConfig()
@@ -296,6 +325,8 @@ function saveConfig()
 	config.values.settingsTranspCollapsed = settingsTranspCollapsed or false
 	config.values.settingsSizeCollapsed = settingsSizeCollapsed or false
 	config.values.settingsRgbCollapsed = settingsRgbCollapsed or false
+	config.values.settingsTabIconsCollapsed = settingsTabIconsCollapsed or false
+	config.values.settingsTopIconsCollapsed = settingsTopIconsCollapsed or false
 	if ESP_DEFAULT_COLOR then
 		config.values.espColorInnocentR = math.floor(ESP_DEFAULT_COLOR.R * 255)
 		config.values.espColorInnocentG = math.floor(ESP_DEFAULT_COLOR.G * 255)
@@ -601,6 +632,7 @@ config.toggles.autofarmServerHopEnabled = autofarmServerHopEnabled
 		config.values.sidebarBgColorB = math.floor(sidebarBgColor.B * 255)
 	end
 	config.values.popupBgTransparency = popupBgTransparency
+	config.values.miniLockBgTransparency = miniLockBgTransparency
 	config.values.toggleButtonSize = toggleButtonSize
 	config.values.mainMenuWidth = mainMenuWidth
 	config.values.mainMenuHeight = mainMenuHeight
@@ -624,6 +656,9 @@ config.values.loadingAnimStyle = loadingAnimStyle
 	config.values.loadingScreenTime = loadingScreenTime
 	config.values.menuAppearStyle = menuAppearStyle
 config.values.mainBgImageUrl = mainBgImageUrl
+config.values.tabIcons = tabIconPaths
+config.values.tabActiveIcons = tabIconActivePaths
+config.values.topIcons = topIconPaths
 	config.values.useDevicePaths = useDevicePaths
 	config.values.clickSoundPath = clickSoundPath
 	config.values.toggleSoundPath = toggleSoundPath
@@ -2760,6 +2795,10 @@ settingsSizeHeader = nil
 settingsSizeCollapseBtn = nil
 settingsRgbHeader = nil
 settingsRgbCollapseBtn = nil
+settingsTabIconsCollapsed = false
+settingsTopIconsCollapsed = false
+settingsTabIconsCollapseBtn = nil
+settingsTopIconsCollapseBtn = nil
 
 -- Applies Settings tab group collapse states. Group rows hide when their
 -- group is collapsed; headers and everything else always stay visible.
@@ -2776,6 +2815,7 @@ function applySettingsGroupsCollapse()
 	if menuStrokeTranspRow then menuStrokeTranspRow.Visible = transpVis end
 	if popupStrokeTranspRow then popupStrokeTranspRow.Visible = transpVis end
 	if funcStrokeTranspRow then funcStrokeTranspRow.Visible = transpVis end
+	if miniLockTranspRow then miniLockTranspRow.Visible = transpVis end
 	if settingsSizeCollapseBtn then settingsSizeCollapseBtn.Text = settingsSizeCollapsed and "+" or "-" end
 	local sizeVis = not settingsSizeCollapsed
 	if toggleSizeRow then toggleSizeRow.Visible = sizeVis end
@@ -2821,6 +2861,20 @@ function applySettingsGroupsCollapse()
 	if btnTextRow then btnTextRow.Visible = rgbVis end
 	if btnActiveBgRow then btnActiveBgRow.Visible = rgbVis end
 	if btnActiveTextRow then btnActiveTextRow.Visible = rgbVis end
+	if settingsTabIconsCollapseBtn then settingsTabIconsCollapseBtn.Text = settingsTabIconsCollapsed and "+" or "-" end
+	if tabIconRows then
+		local tabIconsVis = not settingsTabIconsCollapsed
+		for _, row in pairs(tabIconRows) do
+			if row then row.Visible = tabIconsVis end
+		end
+	end
+	if settingsTopIconsCollapseBtn then settingsTopIconsCollapseBtn.Text = settingsTopIconsCollapsed and "+" or "-" end
+	if topIconRows then
+		local topIconsVis = not settingsTopIconsCollapsed
+		for _, row in pairs(topIconRows) do
+			if row then row.Visible = topIconsVis end
+		end
+	end
 end
 
 -- Per-role gate for an ESP part ("outlines" / "skeleton" / "health").
@@ -2956,7 +3010,8 @@ end
 ESP_MAP_NAMES = {
 	"Hotel", "Factory", "BioLab", "Mansion2", "House2",
 	"Workplace", "Hospital3", "MilBase", "Bank2", "Office3",
-	"ResearchFacility"
+	"ResearchFacility", "Farmhouse", "Manor", "VampireCastle",
+	"HauntedHouse2", "Spaceship", "Barn", "Mineshaft"
 }
 
 function espGetRoleColor(plr)
@@ -4125,6 +4180,89 @@ function notify(title, text, duration)
 	end)
 end
 
+-- Modal confirm dialog (black theme): Cancel closes it, Confirm runs onConfirm.
+function confirmAction(title, message, onConfirm)
+	pcall(function()
+		local old = player.PlayerGui:FindFirstChild("AdrenalinConfirmGui")
+		if old then old:Destroy() end
+	end)
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "AdrenalinConfirmGui"
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 9999999
+	gui.IgnoreGuiInset = true
+	gui.Parent = player.PlayerGui
+	local dim = Instance.new("Frame")
+	dim.Size = UDim2.new(1, 0, 1, 0)
+	dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	dim.BackgroundTransparency = 0.4
+	dim.BorderSizePixel = 0
+	dim.Parent = gui
+	local box = Instance.new("Frame")
+	box.AnchorPoint = Vector2.new(0.5, 0.5)
+	box.Position = UDim2.new(0.5, 0, 0.5, 0)
+	box.Size = UDim2.new(0, 300, 0, 150)
+	box.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	box.BorderSizePixel = 0
+	box.Parent = gui
+	Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
+	local stroke = Instance.new("UIStroke", box)
+	stroke.Thickness = 1
+	stroke.Color = Color3.fromRGB(80, 80, 80)
+	local titleLbl = Instance.new("TextLabel")
+	titleLbl.Size = UDim2.new(1, -20, 0, 26)
+	titleLbl.Position = UDim2.new(0, 10, 0, 10)
+	titleLbl.BackgroundTransparency = 1
+	titleLbl.Text = title
+	titleLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+	titleLbl.Font = Enum.Font.SourceSansBold
+	titleLbl.TextSize = 16
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	titleLbl.Parent = box
+	local msgLbl = Instance.new("TextLabel")
+	msgLbl.Size = UDim2.new(1, -20, 0, 52)
+	msgLbl.Position = UDim2.new(0, 10, 0, 38)
+	msgLbl.BackgroundTransparency = 1
+	msgLbl.Text = message
+	msgLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+	msgLbl.Font = Enum.Font.SourceSans
+	msgLbl.TextSize = 14
+	msgLbl.TextXAlignment = Enum.TextXAlignment.Left
+	msgLbl.TextYAlignment = Enum.TextYAlignment.Top
+	msgLbl.TextWrapped = true
+	msgLbl.Parent = box
+	local cancelBtn = Instance.new("TextButton")
+	cancelBtn.Size = UDim2.new(0.5, -15, 0, 36)
+	cancelBtn.Position = UDim2.new(0, 10, 1, -46)
+	cancelBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	cancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	cancelBtn.Text = "Cancel"
+	cancelBtn.Font = Enum.Font.SourceSansBold
+	cancelBtn.TextSize = 15
+	cancelBtn.BorderSizePixel = 1
+	cancelBtn.BorderColor3 = Color3.fromRGB(80, 80, 80)
+	cancelBtn.Parent = box
+	Instance.new("UICorner", cancelBtn).CornerRadius = UDim.new(0, 6)
+	local okBtn = Instance.new("TextButton")
+	okBtn.Size = UDim2.new(0.5, -15, 0, 36)
+	okBtn.Position = UDim2.new(0.5, 5, 1, -46)
+	okBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	okBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+	okBtn.Text = "Confirm"
+	okBtn.Font = Enum.Font.SourceSansBold
+	okBtn.TextSize = 15
+	okBtn.BorderSizePixel = 0
+	okBtn.Parent = box
+	Instance.new("UICorner", okBtn).CornerRadius = UDim.new(0, 6)
+	cancelBtn.MouseButton1Click:Connect(function()
+		pcall(function() gui:Destroy() end)
+	end)
+	okBtn.MouseButton1Click:Connect(function()
+		pcall(function() gui:Destroy() end)
+		if onConfirm then pcall(onConfirm) end
+	end)
+end
+
 function countSelectedTargets()
 	local count = 0
 	for _ in pairs(selectedTargets) do
@@ -5032,6 +5170,8 @@ function createDetachedEmote(animationId, animationName, savedPos, skipSave, sav
 	lockBtn.AutoButtonColor = false
 	lockBtn.BorderSizePixel = 0
 	lockBtn.Parent = frame
+	lockBtn.BackgroundTransparency = miniLockBgTransparency
+	pcall(function() refreshMiniLockBtn(lockBtn, false) end)
 	lockBtn.MouseButton1Click:Connect(function() playSoundFile(clickSoundPath) end)
 
 	local lockCorner = Instance.new("UICorner")
@@ -5045,6 +5185,7 @@ function createDetachedEmote(animationId, animationName, savedPos, skipSave, sav
 	if savedLocked then
 		lockBtn.Text = "L"
 		lockBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+		pcall(function() refreshMiniLockBtn(lockBtn, true) end)
 	end
 
 	lockBtn.MouseButton1Click:Connect(function()
@@ -5055,6 +5196,7 @@ function createDetachedEmote(animationId, animationName, savedPos, skipSave, sav
 			lockBtn.Text = "L"
 			lockBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
 		end
+		pcall(function() refreshMiniLockBtn(lockBtn, lockBtn.Text == "L") end)
 		pcall(saveConfig)
 	end)
 
@@ -5663,6 +5805,23 @@ skipLoadingScreenEnabled = false -- Instant Load: skip the splash entirely (Sett
 menuAppearStyle = 1
 menuAppearStyles = {"None", "Fade In", "Scale Up", "Slide Down", "Bounce", "Blur Reveal"}
 mainBgImageUrl = ""
+-- Tab icons: selected file per tab (path inside Icons/<TabName>/ or URL). Persisted in config.
+tabIconPaths = {}
+if loadedConfig and loadedConfig.values and type(loadedConfig.values.tabIcons) == "table" then
+	tabIconPaths = loadedConfig.values.tabIcons
+end
+tabIconFilesCache = {}
+-- Tab icons (active state): selected ON file per tab (also from Icons/<TabName>/). Persisted in config.
+tabIconActivePaths = {}
+if loadedConfig and loadedConfig.values and type(loadedConfig.values.tabActiveIcons) == "table" then
+	tabIconActivePaths = loadedConfig.values.tabActiveIcons
+end
+-- Top-bar icons: selected file per slot (path inside Icons/<Folder>/ or URL). Persisted in config.
+topIconPaths = {}
+if loadedConfig and loadedConfig.values and type(loadedConfig.values.topIcons) == "table" then
+	topIconPaths = loadedConfig.values.topIcons
+end
+topIconFilesCache = {}
 clickSoundPath = ""
 toggleSoundPath = ""
 startupSoundPath = ""
@@ -6026,16 +6185,18 @@ lockButton.Parent = topBar
 	lockIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 	lockIcon.Parent = lockButton
 	function refreshLockButtonIcon()
-		local name = isFrameLocked and "lock-open" or "lock"
+		local slot = isFrameLocked and "LockOpen" or "Lock"
 		local asset = nil
-		pcall(function() asset = lucideIconAsset(name) end)
+		pcall(function()
+			if topIconAsset then asset = topIconAsset(slot) end
+		end)
 		if asset and asset ~= "" then
 			lockButton.Text = ""
 			lockIcon.Image = asset
 			lockIcon.Visible = true
 		else
 			lockIcon.Visible = false
-			lockButton.Text = (lucideIconFallbacks and lucideIconFallbacks[name]) or (isFrameLocked and "U" or "L")
+			lockButton.Text = (lucideIconFallbacks and lucideIconFallbacks[isFrameLocked and "lock-open" or "lock"]) or (isFrameLocked and "U" or "L")
 		end
 	end
 	refreshLockButtonIcon()
@@ -6065,14 +6226,21 @@ lockButton.Parent = topBar
 	searchIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 	searchIcon.Visible = false
 	searchIcon.Parent = searchBtn
-	task.spawn(function()
+	function refreshSearchButtonIcon()
 		local asset = nil
-		pcall(function() asset = lucideIconAsset("search") end)
+		pcall(function()
+			if topIconAsset then asset = topIconAsset("Search") end
+		end)
 		if asset and asset ~= "" then
 			searchBtn.Text = ""
 			searchIcon.Image = asset
 			searchIcon.Visible = true
+		else
+			searchIcon.Visible = false
 		end
+	end
+	task.spawn(function()
+		refreshSearchButtonIcon()
 	end)
 	searchBox = Instance.new("TextBox")
 	searchBox.Name = "SearchBox"
@@ -6141,7 +6309,7 @@ lockButton.Parent = topBar
 			if child == toggleBgRow or child == mainBgRow or child == bgTranspRow
 				or child == tabBgTranspRow or child == tabBackgroundTranspRow or child == mainPanelsTranspRow
 				or child == tabStrokeTranspRow or child == menuStrokeTranspRow
-				or child == popupStrokeTranspRow or child == funcStrokeTranspRow then return false end
+				or child == popupStrokeTranspRow or child == funcStrokeTranspRow or child == miniLockTranspRow then return false end
 		end
 		if settingsSizeCollapsed then
 			if child == toggleSizeRow or child == mainSizeRow or child == tabTextSizeRow
@@ -6164,6 +6332,17 @@ lockButton.Parent = topBar
 				or child == inputBgRow or child == inputTextRow
 				or child == btnBgRow or child == btnTextRow
 				or child == btnActiveBgRow or child == btnActiveTextRow then return false end
+		end
+		-- Collapsed icon groups stay hidden (section labels always visible).
+		if settingsTabIconsCollapsed and tabIconRows then
+			for _, row in pairs(tabIconRows) do
+				if child == row then return false end
+			end
+		end
+		if settingsTopIconsCollapsed and topIconRows then
+			for _, row in pairs(topIconRows) do
+				if child == row then return false end
+			end
 		end
 		return true
 	end
@@ -6229,10 +6408,12 @@ minimizeButton.Parent = topBar
 	minCorner.Parent = minimizeButton
 
 	function refreshMinimizeButtonIcon()
-		-- Open menu (contentVisible) -> eye-off (press to hide); closed -> eye (press to show).
-		local name = contentVisible and "eye-off" or "eye"
+		-- Open menu (contentVisible) -> Icons/Minimize (press to hide); closed -> Icons/Minimize (press to show).
+		local slot = contentVisible and "MinimizeOpen" or "MinimizeClosed"
 		local asset = nil
-		pcall(function() asset = lucideIconAsset(name) end)
+		pcall(function()
+			if topIconAsset then asset = topIconAsset(slot) end
+		end)
 		if asset and asset ~= "" then
 			minimizeButton.Text = ""
 			minimizeIcon.Image = asset
@@ -6276,14 +6457,21 @@ closeIcon.BorderSizePixel = 0
 closeIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 closeIcon.Visible = false
 closeIcon.Parent = closeButton
-pcall(function()
-	local asset = lucideIconAsset("power")
-	if asset and asset ~= "" then
-		closeIcon.Image = asset
-		closeIcon.Visible = true
-		closeButton.Text = ""
+	function refreshCloseButtonIcon()
+		local asset = nil
+		pcall(function()
+			if topIconAsset then asset = topIconAsset("Close") end
+		end)
+		if asset and asset ~= "" then
+			closeIcon.Image = asset
+			closeIcon.Visible = true
+			closeButton.Text = ""
+		else
+			closeIcon.Visible = false
+			closeButton.Text = "X"
+		end
 	end
-end)
+	pcall(refreshCloseButtonIcon)
 
 -- LEFT SIDEBAR
 leftSidebar = Instance.new("ScrollingFrame")
@@ -7239,7 +7427,170 @@ function createShapeDropdown(rowParent, rowOrder, rowName, labelText, selectName
 	return sel
 end
 
--- Tab icons (lucide 24x24 PNGs in Adrenalin.win/Icons/):
+-- Tab icons (per-tab folders): Adrenalin.win/Icons/<TabName>/<file>.png|jpg|jpeg
+-- File names inside are free; the active file per tab is chosen in Settings
+-- (same idea as Background Image / sounds) and stored in tabIconPaths.
+function findTabIconFiles(tabName)
+	local files = {}
+	if not tabName or tabName == "" then return files end
+	local ok, result = pcall(function() return listfiles(ICONS_DIR .. "/" .. tabName) end)
+	if ok and type(result) == "table" then
+		for _, path in ipairs(result) do
+			local lower = string.lower(path)
+			if lower:match("%.png$") or lower:match("%.jpg$") or lower:match("%.jpeg$") then
+				table.insert(files, path)
+			end
+		end
+	end
+	table.sort(files)
+	return files
+end
+
+function tabIconAsset(tabName)
+	local sel = tabIconPaths and tabIconPaths[tabName]
+	if not sel or sel == "" then return nil end
+	return resolveImageAsset(sel)
+end
+
+function tabIconActiveAsset(tabName)
+	local sel = tabIconActivePaths and tabIconActivePaths[tabName]
+	if not sel or sel == "" then return nil end
+	return resolveImageAsset(sel)
+end
+
+function findTabIconIndex(tabName)
+	local sel = tabIconPaths and tabIconPaths[tabName]
+	local files = findTabIconFiles(tabName)
+	tabIconFilesCache[tabName] = files
+	if not sel or sel == "" then return files, 0 end
+	for i, path in ipairs(files) do
+		if path == sel then return files, i end
+	end
+	return files, 0
+end
+
+function findTabIconActiveIndex(tabName)
+	local sel = tabIconActivePaths and tabIconActivePaths[tabName]
+	local files = findTabIconFiles(tabName)
+	tabIconFilesCache[tabName] = files
+	if not sel or sel == "" then return files, 0 end
+	for i, path in ipairs(files) do
+		if path == sel then return files, i end
+	end
+	return files, 0
+end
+
+-- Top-bar icons (per-button folders): Adrenalin.win/Icons/<Folder>/<file>.png|jpg|jpeg
+-- File names inside are free; the active file per slot is chosen in Settings
+-- (same idea as tab icons) and stored in topIconPaths.
+function findTopIconFiles(folder)
+	local files = {}
+	if not folder or folder == "" then return files end
+	local ok, result = pcall(function() return listfiles(ICONS_DIR .. "/" .. folder) end)
+	if ok and type(result) == "table" then
+		for _, path in ipairs(result) do
+			local lower = string.lower(path)
+			if lower:match("%.png$") or lower:match("%.jpg$") or lower:match("%.jpeg$") then
+				table.insert(files, path)
+			end
+		end
+	end
+	table.sort(files)
+	return files
+end
+
+function topIconAsset(slotKey)
+	local sel = topIconPaths and topIconPaths[slotKey]
+	if not sel or sel == "" then return nil end
+	return resolveImageAsset(sel)
+end
+
+function findTopIconIndex(slotKey, folder)
+	local sel = topIconPaths and topIconPaths[slotKey]
+	local files = findTopIconFiles(folder)
+	topIconFilesCache[slotKey] = files
+	if not sel or sel == "" then return files, 0 end
+	for i, path in ipairs(files) do
+		if path == sel then return files, i end
+	end
+	return files, 0
+end
+
+-- Mini lock buttons on extracted / detached pills (Text "U"/"L" stays the
+-- state carrier everywhere; the icon only overlays it and hides the glyph).
+function refreshMiniLockBtn(lockBtn, isLocked)
+	if not lockBtn then return end
+	local img = lockBtn:FindFirstChild("MiniLockIcon")
+	if not img then
+		img = Instance.new("ImageLabel")
+		img.Name = "MiniLockIcon"
+		img.Size = UDim2.new(1, -6, 1, -6)
+		img.Position = UDim2.new(0, 3, 0, 3)
+		img.BackgroundTransparency = 1
+		img.BorderSizePixel = 0
+		img.Visible = false
+		img.Parent = lockBtn
+	end
+	local asset = nil
+	pcall(function()
+		if topIconAsset then asset = topIconAsset(isLocked and "MiniLockOpen" or "MiniLock") end
+	end)
+	if asset and asset ~= "" then
+		img.Image = asset
+		img.Visible = true
+		pcall(function() lockBtn.TextTransparency = 1 end)
+	else
+		img.Visible = false
+		pcall(function() lockBtn.TextTransparency = 0 end)
+	end
+end
+
+-- Re-applies Icons/Lock/ files to every extracted / detached mini lock button.
+function refreshMiniLockIcons()
+	pcall(function()
+		if extractedButtons then
+			for _, data in pairs(extractedButtons) do
+				if data and data.popupLockBtn then
+					refreshMiniLockBtn(data.popupLockBtn, data.popupLockBtn.Text == "L")
+				end
+			end
+		end
+	end)
+	pcall(function()
+		if detachedEmotes then
+			for _, d in pairs(detachedEmotes) do
+				if d and d.popupLockBtn then
+					refreshMiniLockBtn(d.popupLockBtn, d.popupLockBtn.Text == "L")
+				end
+			end
+		end
+	end)
+end
+
+-- Seeds Icons/<Folder>/ with the default lucide icon when the folder is empty,
+-- so top buttons have images on fresh installs while keeping the strict folder structure.
+function ensureTopIconDefault(slotKey, folder, legacyName)
+	if topIconPaths and topIconPaths[slotKey] and topIconPaths[slotKey] ~= "" then return end
+	local files = findTopIconFiles(folder)
+	if #files > 0 then
+		if not topIconPaths then topIconPaths = {} end
+		if not topIconPaths[slotKey] or topIconPaths[slotKey] == "" then
+			local pickIdx = slotKey:match("Open$") and 2 or 1
+			topIconPaths[slotKey] = files[pickIdx] or files[1]
+		end
+		return
+	end
+	pcall(function()
+		local data = game:HttpGet("https://unpkg.com/lucide-static@" .. tostring(lucideIconVersion or "0.469.0") .. "/icons/" .. legacyName .. ".png")
+		local dest = ICONS_DIR .. "/" .. folder .. "/" .. legacyName .. ".png"
+		writefile(dest, data)
+		if not topIconPaths then topIconPaths = {} end
+		topIconPaths[slotKey] = dest
+	end)
+end
+
+-- Legacy default tab icon names (flat Icons/ folder). No longer used:
+-- tab icons now come strictly from Icons/<TabName>/ via Settings (tabIconPaths).
 -- { inactiveWhite, activeBlack }. Tabs without an entry stay text-only.
 tabIconMap = {
 	Visuals = {"scan-eye", "scan-eye2"},
@@ -7267,17 +7618,25 @@ tabIconMap = {
 	Reset = {"rotate-ccw", "rotate-ccw2"},
 }
 
--- Swaps every tab icon to its active (black) / inactive (white) variant.
--- Tabs without image files keep text only (icon hidden).
+-- Uses the ON file when the tab is active, OFF otherwise (both from Icons/<TabName>/).
+-- Each state falls back to the other state's file when its own is empty.
 function refreshTabIcons()
 	if not categories then return end
 	for fullName, catData in pairs(categories) do
 		local icon = catData.icon
-		local pair = tabIconMap[fullName]
-		if icon and pair then
+		if icon then
 			local asset = nil
 			pcall(function()
-				asset = lucideIconAsset(catData.isActive and pair[2] or pair[1])
+				local offAsset, onAsset = nil, nil
+				if tabIconAsset then offAsset = tabIconAsset(fullName) end
+				if tabIconActiveAsset then onAsset = tabIconActiveAsset(fullName) end
+				if catData.isActive then
+					asset = onAsset
+					if (not asset or asset == "") then asset = offAsset end
+				else
+					asset = offAsset
+					if (not asset or asset == "") then asset = onAsset end
+				end
 			end)
 			if asset and asset ~= "" then
 				icon.Image = asset
@@ -7335,7 +7694,8 @@ function createCategoryButton(shortName, layoutOrder)
 	btn.Parent = leftSidebar
 
 	local tabIcon = nil
-	if tabIconMap[fullName] then
+	-- Every tab gets an icon slot; the image comes from Icons/<TabName>/ (Settings tab).
+	if true then
 		tabIcon = Instance.new("ImageLabel")
 		tabIcon.Name = fullName .. "TabIcon"
 		tabIcon.Size = UDim2.new(0, 24, 0, 24)
@@ -8619,7 +8979,9 @@ autoGrabGunMagnets = {}
 autoGrabGunTargets = {
 	Hotel = true, Factory = true, BioLab = true, Mansion2 = true,
 	House2 = true, Workplace = true, Hospital = true, MilBase = true,
-	Bank2 = true, Office3 = true, PoliceStation = true, ResearchFacility = true
+	Bank2 = true, Office3 = true, PoliceStation = true, ResearchFacility = true,
+	Farmhouse = true, Manor = true, VampireCastle = true, HauntedHouse2 = true,
+	Spaceship = true, Barn = true, Mineshaft = true
 }
 
 function autoGrabGetRoot()
@@ -10527,9 +10889,9 @@ end)
 -- Map Vote Dupe (3 buttons) — Utilities tab
 -- ============================================
 voteMapCoords = {
-	CFrame.new(25, 507, 49),   -- Map 1
-	CFrame.new(14, 507, 52),   -- Map 2
-	CFrame.new(2, 507, 48),    -- Map 3
+	CFrame.new(617, 466, 29),   -- Map 1
+	CFrame.new(618, 466, 38),   -- Map 2
+	CFrame.new(617, 466, 47),   -- Map 3
 }
 
 voteDupeActive = false
@@ -11356,7 +11718,7 @@ btn.tpLobby.MouseButton1Click:Connect(function()
 	local myChar = player.Character
 	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	if myHrp then
-		myHrp.CFrame = CFrame.new(14, 505, -57)
+		myHrp.CFrame = CFrame.new(527, 461, 37)
 		notify("Teleported", "Teleported to Lobby", 2)
 	else
 		notify("Error", "Character not found", 2)
@@ -11368,8 +11730,20 @@ btn.tpVoteMap.MouseButton1Click:Connect(function()
 	local myChar = player.Character
 	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	if myHrp then
-		myHrp.CFrame = CFrame.new(14, 507, 35)
+		myHrp.CFrame = CFrame.new(610, 466, 37)
 		notify("Teleported", "Teleported to VoteMap", 2)
+	else
+		notify("Error", "Character not found", 2)
+	end
+end)
+
+btn.tpAboveLobby = createButton("TpAboveLobbyButton", "TP Above Lobby", 111.5)
+btn.tpAboveLobby.MouseButton1Click:Connect(function()
+	local myChar = player.Character
+	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	if myHrp then
+		myHrp.CFrame = CFrame.new(537, 563, 38)
+		notify("Teleported", "Teleported above Lobby", 2)
 	else
 		notify("Error", "Character not found", 2)
 	end
@@ -11509,14 +11883,21 @@ tpMapCoords = {
 	Bank2 = Vector3.new(-34, 295, 8952),
 	Mansion2 = Vector3.new(-61, 272, 8970),
 	Factory = Vector3.new(18, 274, 8878),
-	BioLab = Vector3.new(603, 269, 9622),
-	Office3 = Vector3.new(-1, 305, 8968),
-	ResearchFacility = Vector3.new(-108, 292, 8946),
+	BioLab = Vector3.new(-50, 284, 8928),
+	Office3 = Vector3.new(-6, 905, 2909),
+	ResearchFacility = Vector3.new(-64, 287, 8916),
 	Hospital3 = Vector3.new(-16, 300, 8963),
 	House2 = Vector3.new(49, 265, 9057),
 	MilBase = Vector3.new(85, 202, 9195),
-	Workplace = Vector3.new(19, 292, 8936),
-	PoliceStation = Vector3.new(-31, 289, 8927),
+	Workplace = Vector3.new(23, 892, 2934),
+	PoliceStation = Vector3.new(-60, 874, 2945),
+	Farmhouse = Vector3.new(12, 273, 8953),
+	Manor = Vector3.new(-17, 277, 8928),
+	VampireCastle = Vector3.new(-114, 321, 9003),
+	HauntedHouse2 = Vector3.new(9, 243, 8938),
+	Spaceship = Vector3.new(2, 282, 9045),
+	Barn = Vector3.new(-58, 218, 8937),
+	Mineshaft = Vector3.new(-13, 304, 8870),
 	Hotel2014 = Vector3.new(509, 8, 835),
 	Office2014 = Vector3.new(605, 4, 602),
 	Hospital2014 = Vector3.new(483, 8, 514)
@@ -11563,17 +11944,24 @@ end)
 -- TP Above Map
 tpAboveMapCoords = {
 	Hotel = Vector3.new(-1, 330, 9000),
-	Office3 = Vector3.new(-44, 328, 9050),
+	Office3 = Vector3.new(-33, 928, 2962),
 	Factory = Vector3.new(-10, 333, 8888),
-	ResearchFacility = Vector3.new(-47, 330, 9060),
+	ResearchFacility = Vector3.new(-1, 325, 9028),
 	Hospital3 = Vector3.new(-10, 317, 8972),
 	Mansion2 = Vector3.new(-10, 291, 9035),
 	House2 = Vector3.new(10, 293, 8939),
 	MilBase = Vector3.new(5, 318, 9075),
-	Workplace = Vector3.new(-3, 319, 9002),
-	PoliceStation = Vector3.new(-14, 307, 8934),
+	Workplace = Vector3.new(-3, 919, 2997),
+	PoliceStation = Vector3.new(8, 907, 3062),
 	Bank2 = Vector3.new(-5, 328, 9008),
-	BioLab = Vector3.new(539, 322, 9856),
+	BioLab = Vector3.new(-66, 322, 9107),
+	Farmhouse = Vector3.new(-4, 374, 8959),
+	Manor = Vector3.new(-53, 338, 8977),
+	VampireCastle = Vector3.new(-155, 379, 9005),
+	HauntedHouse2 = Vector3.new(15, 422, 9017),
+	Spaceship = Vector3.new(17, 341, 9043),
+	Barn = Vector3.new(-48, 481, 9034),
+	Mineshaft = Vector3.new(-50, 362, 8920),
 	Hotel2014 = Vector3.new(401, 37, 837),
 	Office2014 = Vector3.new(597, 17, 648),
 	Hospital2014 = Vector3.new(436, 19, 421)
@@ -11828,10 +12216,10 @@ function autoTpToTarget()
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 	if autoTpTarget == 1 then
-		hrp.CFrame = CFrame.new(14, 505, -57)
+		hrp.CFrame = CFrame.new(527, 461, 37)
 		notify("Auto TP", "Teleported to Lobby", 2)
 	elseif autoTpTarget == 2 then
-		hrp.CFrame = CFrame.new(14, 507, 35)
+		hrp.CFrame = CFrame.new(610, 466, 37)
 		notify("Auto TP", "Teleported to VoteMap", 2)
 	elseif autoTpTarget == 3 then
 		for mapName, coords in pairs(tpAboveMapCoords) do
@@ -17713,7 +18101,7 @@ function refreshSavedExploiters()
 		deleteBtn.Name = name .. "DelBtn"
 		deleteBtn.Size = UDim2.new(0, 24, 0, 24)
 		deleteBtn.Position = UDim2.new(1, -28, 0.5, -12)
-		deleteBtn.BackgroundColor3 = Color3.fromRGB(40, 10, 10)
+		deleteBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		deleteBtn.BorderSizePixel = 0
 		deleteBtn.Text = "X"
 		deleteBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
@@ -17726,18 +18114,20 @@ function refreshSavedExploiters()
 		deleteBtnCorner.Parent = deleteBtn
 
 		deleteBtn.MouseButton1Click:Connect(function()
-			markedExploiters[name] = nil
-			saveExploiters()
-			refreshSavedExploiters()
-			refreshExploiterList()
-			notify("Exploiters", name .. " removed", 2)
+			confirmAction("Delete exploiter?", '"' .. name .. '" will be removed from the list.', function()
+				markedExploiters[name] = nil
+				saveExploiters()
+				refreshSavedExploiters()
+				refreshExploiterList()
+				notify("Exploiters", name .. " removed", 2)
+			end)
 		end)
 
 		deleteBtn.MouseEnter:Connect(function()
 			deleteBtn.BackgroundColor3 = Color3.fromRGB(80, 20, 20)
 		end)
 		deleteBtn.MouseLeave:Connect(function()
-			deleteBtn.BackgroundColor3 = Color3.fromRGB(40, 10, 10)
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		end)
 
 		yPos += 36
@@ -18515,7 +18905,7 @@ function refreshSavedScammers()
 		deleteBtn.Name = name .. "ScammerDelBtn"
 		deleteBtn.Size = UDim2.new(0, 24, 0, 24)
 		deleteBtn.Position = UDim2.new(1, -28, 0.5, -12)
-		deleteBtn.BackgroundColor3 = Color3.fromRGB(50, 0, 15)
+		deleteBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		deleteBtn.BorderSizePixel = 0
 		deleteBtn.Text = "X"
 		deleteBtn.TextColor3 = Color3.fromRGB(180, 50, 50)
@@ -18528,18 +18918,20 @@ function refreshSavedScammers()
 		deleteBtnCorner.Parent = deleteBtn
 
 		deleteBtn.MouseButton1Click:Connect(function()
-			markedScammers[name] = nil
-			saveScammers()
-			refreshSavedScammers()
-			refreshScammerList()
-			notify("Scammers", name .. " removed", 2)
+			confirmAction("Delete scammer?", '"' .. name .. '" will be removed from the list.', function()
+				markedScammers[name] = nil
+				saveScammers()
+				refreshSavedScammers()
+				refreshScammerList()
+				notify("Scammers", name .. " removed", 2)
+			end)
 		end)
 
 		deleteBtn.MouseEnter:Connect(function()
 			deleteBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 30)
 		end)
 		deleteBtn.MouseLeave:Connect(function()
-			deleteBtn.BackgroundColor3 = Color3.fromRGB(50, 0, 15)
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		end)
 
 		yPos += 36
@@ -18755,8 +19147,8 @@ autofarmSessionStart = nil         -- os.clock() when the farming session starte
 TeleportService = game:GetService("TeleportService")
 autofarmServerHopEnabled = false
 -- Rejoin on Kick: separate from Server Hop When Alone. Detects a server-side kick
--- via GuiService.ErrorMessageChanged (the Hop.lua trick) and teleports straight
--- back into the game. Can be toggled on/off independently.
+-- via GuiService.ErrorMessageChanged (the Hop.lua trick) and rejoins the SAME
+-- server (same JobId). Can be toggled on/off independently.
 rejoinOnKickEnabled = (loadedConfig and loadedConfig.toggles and loadedConfig.toggles.rejoinOnKickEnabled ~= nil) and loadedConfig.toggles.rejoinOnKickEnabled or false
 autoReexecuteOnRejoin = (loadedConfig and loadedConfig.autoReexecuteOnRejoin ~= nil) and loadedConfig.autoReexecuteOnRejoin or true
 AUTOFARM_SCRIPT_URL = (loadedConfig.values and loadedConfig.values.autofarmScriptUrl) or ""
@@ -19181,9 +19573,9 @@ function autofarmDoEndTeleport()
 	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	if not myHrp then return end
 	if mode == "Lobby" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(-12, -67, -11))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(527, 461, 37))
 	elseif mode == "VoteMap" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(-1, -65, -79))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(610, 466, 37))
 	elseif mode == "Map" then
 		pcall(tpToMap)
 	elseif mode == "Above Map" then
@@ -19289,9 +19681,9 @@ function autofarmDoAvoidMurdererTp()
 	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	if not myHrp then return end
 	if mode == "Lobby" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(-12, -67, -11))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(527, 461, 37))
 	elseif mode == "VoteMap" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(-1, -65, -79))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(610, 466, 37))
 	elseif mode == "Map" then
 		pcall(tpToMap)
 	elseif mode == "Above Map" then
@@ -19318,9 +19710,9 @@ function autofarmDoStuckTp()
 	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	if not myHrp then return end
 	if mode == "Lobby" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(-12, -67, -11))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(527, 461, 37))
 	elseif mode == "VoteMap" then
-		pcall(doInstantTp, myHrp, myChar, CFrame.new(-1, -65, -79))
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(610, 466, 37))
 	elseif mode == "Map" then
 		pcall(tpToMap)
 	elseif mode == "Above Map" then
@@ -19745,7 +20137,7 @@ function setAutofarmEnabled(state, target, silent)
 			local char = player.Character
 			local hrp = char and char:FindFirstChild("HumanoidRootPart")
 			if hrp then
-				pcall(doInstantTp, hrp, char, CFrame.new(-12, -67, -11))
+				pcall(doInstantTp, hrp, char, CFrame.new(527, 461, 37))
 			end
 		end
 	end
@@ -19770,9 +20162,9 @@ function autofarmDoPreTp()
 	autofarmPreTpHold = true
 	local fixedCF = nil
 	if mode == "Lobby" then
-		fixedCF = CFrame.new(-12, -67, -11)
+		fixedCF = CFrame.new(527, 461, 37)
 	elseif mode == "VoteMap" then
-		fixedCF = CFrame.new(-1, -65, -79)
+		fixedCF = CFrame.new(610, 466, 37)
 	elseif mode == "Map" then
 		pcall(tpToMap)
 	elseif mode == "Above Map" then
@@ -21358,7 +21750,8 @@ autofarmServerHopBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Rejoin on Kick: detects a server-side kick (error message shown by the game)
--- and teleports straight back. Independent of Server Hop When Alone — can be
+-- and rejoins the SAME server (same JobId via TeleportToPlaceInstance).
+-- Independent of Server Hop When Alone — can be
 -- enabled even when alone-hopping is off. Uses the Hop.lua mechanism:
 -- GuiService.ErrorMessageChanged fires when the game kicks the player.
 local function setupRejoinOnKick()
@@ -21377,16 +21770,22 @@ local function setupRejoinOnKick()
 			if autoReexecuteOnRejoin then
 				pcall(autofarmQueueRejoin)
 			end
-			-- Glitch Server: rejoin the EXACT same server after Rejoin Delay instead of a random one.
+			-- Rejoin on Kick: always rejoin the SAME server (same JobId).
+			-- Glitch Server case has priority, otherwise use the current JobId.
 			if glitchRejoinSameServer and glitchRejoinJobId then
 				local job = glitchRejoinJobId
 				glitchRejoinSameServer = false
 				glitchRejoinJobId = nil
 				task.wait(glitchRejoinDelay or 15)
-				pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, job) end)
+				pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, job, player) end)
 				return
 			end
+			local sameJobId = game.JobId
 			task.wait(1)
+			if sameJobId and sameJobId ~= "" then
+				local okSame = pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, sameJobId, player) end)
+				if okSame then return end
+			end
 			pcall(function() TeleportService:Teleport(game.PlaceId, player) end)
 		end
 	end)
@@ -21696,15 +22095,17 @@ function rebuildEmote()
 		end
 		applySearchRowVisible()
 		delBtn.MouseButton1Click:Connect(function()
-			if isEmoteDetached(animationId) then removeDetachedEmote(animationId, true) end
-			for i = 1, #emoteOrder do
-				if emoteOrder[i].id == animationId then
-					table.remove(emoteOrder, i)
-					break
+			confirmAction("Delete emote?", '"' .. animationName .. '" will be removed.', function()
+				if isEmoteDetached(animationId) then removeDetachedEmote(animationId, true) end
+				for i = 1, #emoteOrder do
+					if emoteOrder[i].id == animationId then
+						table.remove(emoteOrder, i)
+						break
+					end
 				end
-			end
-			saveEmoteOrder()
-			rebuildEmote()
+				saveEmoteOrder()
+				rebuildEmote()
+			end)
 		end)
 		upBtn.MouseButton1Click:Connect(function()
 			for i = 1, #emoteOrder do
@@ -22003,15 +22404,17 @@ function rebuildEmotions()
 
 		-- Delete emotion (both built-in and user-added entries)
 		delBtn.MouseButton1Click:Connect(function()
-			if isEmoteDetached(animationId) then removeDetachedEmote(animationId, true) end
-			for i = 1, #emotionOrder do
-				if emotionOrder[i].id == animationId then
-					table.remove(emotionOrder, i)
-					break
+			confirmAction("Delete emotion?", '"' .. animationName .. '" will be removed.', function()
+				if isEmoteDetached(animationId) then removeDetachedEmote(animationId, true) end
+				for i = 1, #emotionOrder do
+					if emotionOrder[i].id == animationId then
+						table.remove(emotionOrder, i)
+						break
+					end
 				end
-			end
-			saveEmotionOrder()
-			rebuildEmotions()
+				saveEmotionOrder()
+				rebuildEmotions()
+			end)
 		end)
 
 		-- Move emotion up (reorder)
@@ -22418,12 +22821,14 @@ function rebuildCustomAnims()
 		end)
 
 		delBtn.MouseButton1Click:Connect(function()
-			if activeCustomAnimName == e.name then disableCustomAnim() end
-			for i = 1, #customAnims do
-				if customAnims[i].name == e.name then table.remove(customAnims, i); break end
-			end
-			pcall(saveConfig)
-			rebuildCustomAnims()
+			confirmAction("Delete animation?", '"' .. e.name .. '" will be removed.', function()
+				if activeCustomAnimName == e.name then disableCustomAnim() end
+				for i = 1, #customAnims do
+					if customAnims[i].name == e.name then table.remove(customAnims, i); break end
+				end
+				pcall(saveConfig)
+				rebuildCustomAnims()
+			end)
 		end)
 
 		customAnimUi[e.name] = row
@@ -22904,7 +23309,7 @@ function createAvatarPicker(opts)
             local delBtn = Instance.new("TextButton")
             delBtn.Size = UDim2.new(0, 28, 0, 24)
             delBtn.Position = UDim2.new(1, -32, 0.5, -12)
-            delBtn.BackgroundColor3 = Color3.fromRGB(60, 0, 0)
+            delBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
             delBtn.Text = "X"
             delBtn.TextColor3 = Color3.fromRGB(255, 120, 120)
             delBtn.Font = Enum.Font.SourceSansBold
@@ -22913,10 +23318,12 @@ function createAvatarPicker(opts)
             local dc = Instance.new("UICorner"); dc.CornerRadius = UDim.new(0, 6); dc.Parent = delBtn
             local thisName = name
             delBtn.MouseButton1Click:Connect(function()
-                savedAvatars[thisName] = nil
-                if state.selectedName == thisName then state.selectedName = nil end
-                saveConfig()
-                refresh()
+                confirmAction("Delete avatar?", '"' .. thisName .. '" will be removed.', function()
+                    savedAvatars[thisName] = nil
+                    if state.selectedName == thisName then state.selectedName = nil end
+                    saveConfig()
+                    refresh()
+                end)
             end)
 
             local clickArea = Instance.new("TextButton")
@@ -23498,7 +23905,7 @@ function createSkyboxPicker(opts)
 			local delBtn = Instance.new("TextButton")
 			delBtn.Size = UDim2.new(0, 28, 0, 24)
 			delBtn.Position = UDim2.new(1, -32, 0.5, -12)
-			delBtn.BackgroundColor3 = Color3.fromRGB(60, 0, 0)
+			delBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 			delBtn.Text = "X"
 			delBtn.TextColor3 = Color3.fromRGB(255, 120, 120)
 			delBtn.Font = Enum.Font.SourceSansBold
@@ -23507,11 +23914,13 @@ function createSkyboxPicker(opts)
 			local dc = Instance.new("UICorner"); dc.CornerRadius = UDim.new(0, 6); dc.Parent = delBtn
 			local thisName = name
 			delBtn.MouseButton1Click:Connect(function()
-				savedSkyboxes[thisName] = nil
-				if state.selectedName == thisName then state.selectedName = nil end
-				skyboxSaveConfig()
-				refresh()
-				notify("Skybox", "Deleted: " .. thisName, 2)
+				confirmAction("Delete skybox?", '"' .. thisName .. '" will be removed.', function()
+					savedSkyboxes[thisName] = nil
+					if state.selectedName == thisName then state.selectedName = nil end
+					skyboxSaveConfig()
+					refresh()
+					notify("Skybox", "Deleted: " .. thisName, 2)
+				end)
 			end)
 
 			local clickArea = Instance.new("TextButton")
@@ -23910,11 +24319,15 @@ bindableFeatures = {
 	end},
 	{name = "TP to Lobby", defaultKey = nil, getState = function() return false end, callback = function()
 		local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
-		if h then h.CFrame = CFrame.new(14, 505, -57); notify("Teleported", "Teleported to Lobby", 2) else notify("Error", "Character not found", 2) end
+		if h then h.CFrame = CFrame.new(527, 461, 37); notify("Teleported", "Teleported to Lobby", 2) else notify("Error", "Character not found", 2) end
 	end},
 	{name = "TP to VoteMap", defaultKey = nil, getState = function() return false end, callback = function()
 		local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
-		if h then h.CFrame = CFrame.new(14, 507, 35); notify("Teleported", "Teleported to VoteMap", 2) else notify("Error", "Character not found", 2) end
+		if h then h.CFrame = CFrame.new(610, 466, 37); notify("Teleported", "Teleported to VoteMap", 2) else notify("Error", "Character not found", 2) end
+	end},
+	{name = "TP Above Lobby", defaultKey = nil, getState = function() return false end, callback = function()
+		local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
+		if h then h.CFrame = CFrame.new(537, 563, 38); notify("Teleported", "Teleported above Lobby", 2) else notify("Error", "Character not found", 2) end
 	end},
 	{name = "TP to Map", defaultKey = nil, getState = function() return false end, callback = function()
 		tpToMap()
@@ -25337,8 +25750,8 @@ teamerMarkButton = Instance.new("TextButton")
 teamerMarkButton.Name = "TeamerMarkButton"
 teamerMarkButton.Size = UDim2.new(0.5, -12, 0, 34)
 teamerMarkButton.Position = UDim2.new(0, 8, 0, 140)
-teamerMarkButton.BackgroundColor3 = Color3.fromRGB(40, 25, 0)
-teamerMarkButton.TextColor3 = Color3.fromRGB(255, 200, 100)
+teamerMarkButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+teamerMarkButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 teamerMarkButton.Text = "MARK"
 teamerMarkButton.Font = Enum.Font.SourceSansBold
 teamerMarkButton.TextSize = 16
@@ -25352,7 +25765,7 @@ teamerUnmarkButton = Instance.new("TextButton")
 teamerUnmarkButton.Name = "TeamerUnmarkButton"
 teamerUnmarkButton.Size = UDim2.new(0.5, -12, 0, 34)
 teamerUnmarkButton.Position = UDim2.new(0.5, 4, 0, 140)
-teamerUnmarkButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+teamerUnmarkButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 teamerUnmarkButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 teamerUnmarkButton.Text = "UNMARK"
 teamerUnmarkButton.Font = Enum.Font.SourceSansBold
@@ -25764,7 +26177,7 @@ function refreshSavedTeamers()
 		deleteBtn.Name = name .. "DelBtn"
 		deleteBtn.Size = UDim2.new(0, 24, 0, 24)
 		deleteBtn.Position = UDim2.new(1, -28, 0.5, -12)
-		deleteBtn.BackgroundColor3 = Color3.fromRGB(40, 25, 0)
+		deleteBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		deleteBtn.BorderSizePixel = 0
 		deleteBtn.Text = "X"
 		deleteBtn.TextColor3 = Color3.fromRGB(255, 180, 50)
@@ -25777,17 +26190,19 @@ function refreshSavedTeamers()
 		deleteBtnCorner.Parent = deleteBtn
 
 		deleteBtn.MouseButton1Click:Connect(function()
-			markedTeamers[name] = nil
-			saveTeamers()
-			refreshSavedTeamers()
-			notify("Teamers", name .. " removed", 2)
+			confirmAction("Delete teamer?", '"' .. name .. '" will be removed from the list.', function()
+				markedTeamers[name] = nil
+				saveTeamers()
+				refreshSavedTeamers()
+				notify("Teamers", name .. " removed", 2)
+			end)
 		end)
 
 		deleteBtn.MouseEnter:Connect(function()
 			deleteBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 10)
 		end)
 		deleteBtn.MouseLeave:Connect(function()
-			deleteBtn.BackgroundColor3 = Color3.fromRGB(40, 25, 0)
+			deleteBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		end)
 
 		yPos += 36
@@ -29725,6 +30140,398 @@ local voteStartInputC = Instance.new("UICorner")
 voteStartInputC.CornerRadius = UDim.new(0, 6)
 voteStartInputC.Parent = voteStartSoundInput
 
+-- ============== Tab Icons (Icons/<TabName>/) ==============
+-- One row per tab (same UX as Background Image / sounds): TextBox for a
+-- path/URL plus < / > to cycle files inside Icons/<TabName>/ and Scan to
+-- rescan the folder. File names inside are free.
+tabIconSectionLabel = Instance.new("TextLabel")
+tabIconSectionLabel.Name = "TabIconsSectionLabel"
+tabIconSectionLabel.Size = UDim2.new(1, 0, 0, 24)
+tabIconSectionLabel.BackgroundTransparency = 1
+tabIconSectionLabel.Text = "Tab Icons (Icons/<Tab>)"
+tabIconSectionLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+tabIconSectionLabel.TextXAlignment = Enum.TextXAlignment.Left
+tabIconSectionLabel.Font = Enum.Font.SourceSansBold
+tabIconSectionLabel.TextSize = 15
+tabIconSectionLabel.LayoutOrder = 729
+tabIconSectionLabel.Parent = categoryFrames["Settings"]
+settingsTabIconsCollapseBtn = Instance.new("TextButton")
+settingsTabIconsCollapseBtn.Name = "TabIconsCollapseBtn"
+settingsTabIconsCollapseBtn.Size = UDim2.new(0, 26, 0, 24)
+settingsTabIconsCollapseBtn.Position = UDim2.new(1, -26, 0, 0)
+settingsTabIconsCollapseBtn.BackgroundTransparency = 1
+settingsTabIconsCollapseBtn.Text = "-"
+settingsTabIconsCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+settingsTabIconsCollapseBtn.Font = Enum.Font.SourceSansBold
+settingsTabIconsCollapseBtn.TextSize = 18
+settingsTabIconsCollapseBtn.Parent = tabIconSectionLabel
+settingsTabIconsCollapseBtn.MouseButton1Click:Connect(function()
+	settingsTabIconsCollapsed = not settingsTabIconsCollapsed
+	applySettingsGroupsCollapse()
+	saveConfig()
+end)
+
+tabIconInputs = {}
+tabIconActiveInputs = {}
+tabIconRows = {}
+local function makeTabIconRow(tabName, isActive, order)
+	local suffix = isActive and " (ON)" or " (OFF)"
+	local rowKey = tabName .. (isActive and "_ON" or "_OFF")
+	local row = Instance.new("Frame")
+	row.Name = "TabIconRow_" .. rowKey
+	row.Size = UDim2.new(1, 0, 0, 42)
+	row.BackgroundTransparency = 1
+	row.LayoutOrder = order
+	row.Parent = categoryFrames["Settings"]
+	tabIconRows[rowKey] = row
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -176, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = "Icon: " .. tabName .. suffix
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.Font = Enum.Font.SourceSansBold
+	label.TextSize = 15
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = row
+
+	local paths = isActive and tabIconActivePaths or tabIconPaths
+	local input = Instance.new("TextBox")
+	input.Name = "TabIconInput_" .. rowKey
+	input.Size = UDim2.new(0, 90, 1, 0)
+	input.Position = UDim2.new(1, -172, 0, 0)
+	input.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	input.TextColor3 = Color3.fromRGB(255, 255, 255)
+	input.Text = (paths and paths[tabName]) or ""
+	input.PlaceholderText = "URL or filename"
+	input.Font = Enum.Font.SourceSansBold
+	input.TextSize = 12
+	input.TextXAlignment = Enum.TextXAlignment.Left
+	input.ClipsDescendants = true
+	input.ClearTextOnFocus = false
+	input.Parent = row
+	Instance.new("UICorner", input).CornerRadius = UDim.new(0, 6)
+	if isActive then tabIconActiveInputs[tabName] = input else tabIconInputs[tabName] = input end
+
+	local function applyPath(newPath)
+		if isActive then
+			if not tabIconActivePaths then tabIconActivePaths = {} end
+			tabIconActivePaths[tabName] = newPath
+		else
+			if not tabIconPaths then tabIconPaths = {} end
+			tabIconPaths[tabName] = newPath
+		end
+		tabIconFilesCache[tabName] = findTabIconFiles(tabName)
+		input.Text = newPath
+		refreshTabIcons()
+		saveConfig()
+	end
+	input.FocusLost:Connect(function()
+		applyPath(input.Text)
+	end)
+
+	local prev = Instance.new("TextButton")
+	prev.Size = UDim2.new(0, 16, 0, 20)
+	prev.Position = UDim2.new(1, -78, 0.5, -10)
+	prev.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	prev.TextColor3 = Color3.fromRGB(255, 255, 255)
+	prev.Text = "<"
+	prev.Font = Enum.Font.SourceSansBold
+	prev.TextSize = 14
+	prev.BorderSizePixel = 1
+	prev.BorderColor3 = Color3.fromRGB(80, 80, 80)
+	prev.Parent = row
+	Instance.new("UICorner", prev).CornerRadius = UDim.new(0, 2)
+	prev.MouseButton1Click:Connect(function()
+		local files, pos
+		if isActive then files, pos = findTabIconActiveIndex(tabName)
+		else files, pos = findTabIconIndex(tabName) end
+		if #files == 0 then return end
+		pos = pos - 1
+		if pos < 1 then pos = #files end
+		applyPath(files[pos])
+	end)
+
+	local nxt = Instance.new("TextButton")
+	nxt.Size = UDim2.new(0, 16, 0, 20)
+	nxt.Position = UDim2.new(1, -58, 0.5, -10)
+	nxt.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	nxt.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nxt.Text = ">"
+	nxt.Font = Enum.Font.SourceSansBold
+	nxt.TextSize = 14
+	nxt.BorderSizePixel = 1
+	nxt.BorderColor3 = Color3.fromRGB(80, 80, 80)
+	nxt.Parent = row
+	Instance.new("UICorner", nxt).CornerRadius = UDim.new(0, 2)
+	nxt.MouseButton1Click:Connect(function()
+		local files, pos
+		if isActive then files, pos = findTabIconActiveIndex(tabName)
+		else files, pos = findTabIconIndex(tabName) end
+		if #files == 0 then return end
+		pos = pos + 1
+		if pos > #files then pos = 1 end
+		applyPath(files[pos])
+	end)
+
+	local scan = Instance.new("TextButton")
+	scan.Size = UDim2.new(0, 38, 1, 0)
+	scan.Position = UDim2.new(1, -40, 0, 0)
+	scan.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	scan.TextColor3 = Color3.fromRGB(255, 255, 255)
+	scan.Text = "Scan"
+	scan.Font = Enum.Font.SourceSansBold
+	scan.TextSize = 13
+	scan.BorderSizePixel = 1
+	scan.BorderColor3 = Color3.fromRGB(80, 80, 80)
+	scan.Parent = row
+	Instance.new("UICorner", scan).CornerRadius = UDim.new(0, 4)
+	scan.MouseButton1Click:Connect(function()
+		local files = findTabIconFiles(tabName)
+		tabIconFilesCache[tabName] = files
+		if #files > 0 then
+			local cur = isActive and tabIconActivePaths and tabIconActivePaths[tabName] or (not isActive and tabIconPaths and tabIconPaths[tabName])
+			if not cur or cur == "" then
+				applyPath(files[1])
+			end
+		end
+	end)
+end
+do
+	local order = 729.01
+	for _, tabName in ipairs(TAB_ICON_FOLDERS) do
+		makeTabIconRow(tabName, false, order)
+		order = order + 0.01
+		makeTabIconRow(tabName, true, order)
+		order = order + 0.01
+	end
+end
+
+function refreshTabIconInputs()
+	if tabIconInputs then
+		for tabName, input in pairs(tabIconInputs) do
+			if input and input.Parent then
+				input.Text = (tabIconPaths and tabIconPaths[tabName]) or ""
+			end
+		end
+	end
+	if tabIconActiveInputs then
+		for tabName, input in pairs(tabIconActiveInputs) do
+			if input and input.Parent then
+				input.Text = (tabIconActivePaths and tabIconActivePaths[tabName]) or ""
+			end
+		end
+	end
+end
+
+-- Auto-pick files per tab state when nothing is chosen yet (same idea as bg auto-detect):
+-- OFF takes the first file, ON the second one (or the first when there is only one).
+do
+	local iconsChanged = false
+	if not tabIconPaths then tabIconPaths = {} end
+	if not tabIconActivePaths then tabIconActivePaths = {} end
+	if TAB_ICON_FOLDERS then
+		for _, tabName in ipairs(TAB_ICON_FOLDERS) do
+			local offEmpty = not tabIconPaths[tabName] or tabIconPaths[tabName] == ""
+			local onEmpty = not tabIconActivePaths[tabName] or tabIconActivePaths[tabName] == ""
+			if offEmpty or onEmpty then
+				local files = findTabIconFiles(tabName)
+				tabIconFilesCache[tabName] = files
+				if #files > 0 then
+					if offEmpty then tabIconPaths[tabName] = files[1]; iconsChanged = true end
+					if onEmpty then tabIconActivePaths[tabName] = files[#files > 1 and 2 or 1]; iconsChanged = true end
+				end
+			end
+		end
+	end
+	if iconsChanged then pcall(saveConfig) end
+	pcall(refreshTabIcons)
+end
+
+-- ============== Top-Bar Icons (Icons/<Folder>/) ==============
+-- One row per top-menu button state (same UX as tab icons): TextBox for a
+-- path/URL plus < / > to cycle files inside Icons/<Folder>/ and Scan to
+-- rescan the folder. File names inside are free.
+topIconSectionLabel = Instance.new("TextLabel")
+topIconSectionLabel.Name = "TopIconsSectionLabel"
+topIconSectionLabel.Size = UDim2.new(1, 0, 0, 24)
+topIconSectionLabel.BackgroundTransparency = 1
+topIconSectionLabel.Text = "Top-Bar Icons (Icons/<Folder>)"
+topIconSectionLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+topIconSectionLabel.TextXAlignment = Enum.TextXAlignment.Left
+topIconSectionLabel.Font = Enum.Font.SourceSansBold
+topIconSectionLabel.TextSize = 15
+topIconSectionLabel.LayoutOrder = 729.60
+topIconSectionLabel.Parent = categoryFrames["Settings"]
+settingsTopIconsCollapseBtn = Instance.new("TextButton")
+settingsTopIconsCollapseBtn.Name = "TopIconsCollapseBtn"
+settingsTopIconsCollapseBtn.Size = UDim2.new(0, 26, 0, 24)
+settingsTopIconsCollapseBtn.Position = UDim2.new(1, -26, 0, 0)
+settingsTopIconsCollapseBtn.BackgroundTransparency = 1
+settingsTopIconsCollapseBtn.Text = "-"
+settingsTopIconsCollapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+settingsTopIconsCollapseBtn.Font = Enum.Font.SourceSansBold
+settingsTopIconsCollapseBtn.TextSize = 18
+settingsTopIconsCollapseBtn.Parent = topIconSectionLabel
+settingsTopIconsCollapseBtn.MouseButton1Click:Connect(function()
+	settingsTopIconsCollapsed = not settingsTopIconsCollapsed
+	applySettingsGroupsCollapse()
+	saveConfig()
+end)
+
+topIconInputs = {}
+topIconRows = {}
+function refreshTopButtons()
+	pcall(refreshLockButtonIcon)
+	pcall(refreshSearchButtonIcon)
+	pcall(refreshMinimizeButtonIcon)
+	pcall(refreshCloseButtonIcon)
+	pcall(refreshMiniLockIcons)
+end
+do
+	local baseOrder = 729.61
+	for idx, slot in ipairs(TOP_ICON_SLOTS) do
+		local row = Instance.new("Frame")
+		row.Name = "TopIconRow_" .. slot.key
+		row.Size = UDim2.new(1, 0, 0, 42)
+		row.BackgroundTransparency = 1
+		row.LayoutOrder = baseOrder + idx * 0.01
+		row.Parent = categoryFrames["Settings"]
+		topIconRows[slot.key] = row
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, -176, 1, 0)
+		label.BackgroundTransparency = 1
+		label.Text = slot.label
+		label.TextColor3 = Color3.fromRGB(255, 255, 255)
+		label.Font = Enum.Font.SourceSansBold
+		label.TextSize = 15
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Parent = row
+
+		local input = Instance.new("TextBox")
+		input.Name = "TopIconInput_" .. slot.key
+		input.Size = UDim2.new(0, 90, 1, 0)
+		input.Position = UDim2.new(1, -172, 0, 0)
+		input.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		input.TextColor3 = Color3.fromRGB(255, 255, 255)
+		input.Text = (topIconPaths and topIconPaths[slot.key]) or ""
+		input.PlaceholderText = "URL or filename"
+		input.Font = Enum.Font.SourceSansBold
+		input.TextSize = 12
+		input.TextXAlignment = Enum.TextXAlignment.Left
+		input.ClipsDescendants = true
+		input.ClearTextOnFocus = false
+		input.Parent = row
+		Instance.new("UICorner", input).CornerRadius = UDim.new(0, 6)
+		topIconInputs[slot.key] = input
+
+		local curKey, curFolder = slot.key, slot.folder
+		input.FocusLost:Connect(function()
+			if not topIconPaths then topIconPaths = {} end
+			topIconPaths[curKey] = input.Text
+			topIconFilesCache[curKey] = findTopIconFiles(curFolder)
+			refreshTopButtons()
+			saveConfig()
+		end)
+
+		local prev = Instance.new("TextButton")
+		prev.Size = UDim2.new(0, 16, 0, 20)
+		prev.Position = UDim2.new(1, -78, 0.5, -10)
+		prev.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		prev.TextColor3 = Color3.fromRGB(255, 255, 255)
+		prev.Text = "<"
+		prev.Font = Enum.Font.SourceSansBold
+		prev.TextSize = 14
+		prev.BorderSizePixel = 1
+		prev.BorderColor3 = Color3.fromRGB(80, 80, 80)
+		prev.Parent = row
+		Instance.new("UICorner", prev).CornerRadius = UDim.new(0, 2)
+		prev.MouseButton1Click:Connect(function()
+			local files, pos = findTopIconIndex(curKey, curFolder)
+			if #files == 0 then return end
+			pos = pos - 1
+			if pos < 1 then pos = #files end
+			if not topIconPaths then topIconPaths = {} end
+			topIconPaths[curKey] = files[pos]
+			input.Text = files[pos]
+			refreshTopButtons()
+			saveConfig()
+		end)
+
+		local nxt = Instance.new("TextButton")
+		nxt.Size = UDim2.new(0, 16, 0, 20)
+		nxt.Position = UDim2.new(1, -58, 0.5, -10)
+		nxt.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		nxt.TextColor3 = Color3.fromRGB(255, 255, 255)
+		nxt.Text = ">"
+		nxt.Font = Enum.Font.SourceSansBold
+		nxt.TextSize = 14
+		nxt.BorderSizePixel = 1
+		nxt.BorderColor3 = Color3.fromRGB(80, 80, 80)
+		nxt.Parent = row
+		Instance.new("UICorner", nxt).CornerRadius = UDim.new(0, 2)
+		nxt.MouseButton1Click:Connect(function()
+			local files, pos = findTopIconIndex(curKey, curFolder)
+			if #files == 0 then return end
+			pos = pos + 1
+			if pos > #files then pos = 1 end
+			if not topIconPaths then topIconPaths = {} end
+			topIconPaths[curKey] = files[pos]
+			input.Text = files[pos]
+			refreshTopButtons()
+			saveConfig()
+		end)
+
+		local scan = Instance.new("TextButton")
+		scan.Size = UDim2.new(0, 38, 1, 0)
+		scan.Position = UDim2.new(1, -40, 0, 0)
+		scan.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		scan.TextColor3 = Color3.fromRGB(255, 255, 255)
+		scan.Text = "Scan"
+		scan.Font = Enum.Font.SourceSansBold
+		scan.TextSize = 13
+		scan.BorderSizePixel = 1
+		scan.BorderColor3 = Color3.fromRGB(80, 80, 80)
+		scan.Parent = row
+		Instance.new("UICorner", scan).CornerRadius = UDim.new(0, 4)
+		scan.MouseButton1Click:Connect(function()
+			local files = findTopIconFiles(curFolder)
+			topIconFilesCache[curKey] = files
+			if #files > 0 then
+				if not topIconPaths then topIconPaths = {} end
+				if not topIconPaths[curKey] or topIconPaths[curKey] == "" then
+					topIconPaths[curKey] = files[1]
+					input.Text = files[1]
+					refreshTopButtons()
+					saveConfig()
+				end
+			end
+		end)
+	end
+end
+
+function refreshTopIconInputs()
+	if not topIconInputs then return end
+	for slotKey, input in pairs(topIconInputs) do
+		if input and input.Parent then
+			input.Text = (topIconPaths and topIconPaths[slotKey]) or ""
+		end
+	end
+end
+
+-- Seed Icons/<Folder>/ with defaults on fresh installs (strict structure kept),
+-- then apply top-bar icons (topIconAsset is defined by now, unlike at top-bar build time).
+task.spawn(function()
+	if TOP_ICON_SLOTS then
+		for _, slot in ipairs(TOP_ICON_SLOTS) do
+			pcall(function() ensureTopIconDefault(slot.key, slot.folder, slot.legacy) end)
+		end
+	end
+	pcall(saveConfig)
+	pcall(refreshTopButtons)
+end)
+
 -- ============== Multi-Config System ==============
 currentCategory = "Settings"
 CONFIGS_DIR = "AdrenalinConfigs"
@@ -29830,7 +30637,7 @@ function buildConfigData()
 	config.values.mainPanelsTransparency = mainPanelsTransparency; config.values.sideTabWidth = sideTabWidth; config.values.sideTabHeight = sideTabHeight; config.values.sidebarPosition = sidebarPosition
 	config.values.tabShapeMode = tabShapeMode; config.values.menuShapeMode = menuShapeMode; config.values.popupShapeMode = popupShapeMode
 	config.values.tabStrokesEnabled = tabStrokesEnabled; config.values.popupStrokesEnabled = popupStrokesEnabled; config.values.menuStrokeEnabled = menuStrokeEnabled; config.values.funcStrokesEnabled = funcStrokesEnabled; config.values.tabStrokeThickness = tabStrokeThickness; config.values.funcStrokeThickness = funcStrokeThickness; config.values.funcCornerRadius = funcCornerRadius
-	config.values.popupBgTransparency = popupBgTransparency; config.values.toggleButtonSize = toggleButtonSize
+	config.values.popupBgTransparency = popupBgTransparency; config.values.miniLockBgTransparency = miniLockBgTransparency; config.values.toggleButtonSize = toggleButtonSize
 	config.values.tabTextSize = tabTextSize
 	config.values.mainMenuWidth = mainMenuWidth; config.values.mainMenuHeight = mainMenuHeight
 	config.values.popupBtnWidth = popupBtnWidth; config.values.popupBtnHeight = popupBtnHeight; config.values.shootMurdererBtnWidth = shootMurdererBtnWidth; config.values.shootMurdererBtnHeight = shootMurdererBtnHeight
@@ -29841,7 +30648,7 @@ function buildConfigData()
 	config.values.customFov = customFov; config.values.animationEnabled = animationEnabled
 	config.values.btnPressAnimationEnabled = btnPressAnimationEnabled; config.values.animationStyle = animationStyle
 	config.values.loadingAnimStyle = loadingAnimStyle; config.values.menuAppearStyle = menuAppearStyle; config.values.loadingScreenTime = loadingScreenTime
-	config.values.mainBgImageUrl = mainBgImageUrl; config.values.useDevicePaths = useDevicePaths
+	config.values.mainBgImageUrl = mainBgImageUrl; config.values.tabIcons = tabIconPaths; config.values.tabActiveIcons = tabIconActivePaths; config.values.topIcons = topIconPaths; config.values.useDevicePaths = useDevicePaths
 	config.values.clickSoundPath = clickSoundPath
 	config.values.toggleSoundPath = toggleSoundPath; config.values.startupSoundPath = startupSoundPath
 	config.values.sheriffDieSoundPath = sheriffDieSoundPath; config.values.murdererDieSoundPath = murdererDieSoundPath
@@ -29916,7 +30723,7 @@ config.values.explicitlyClearedSoundPaths = explicitlyClearedSoundPaths
 	if ESP_TRAP_COLOR then config.values.espColorTrapR = math.floor(ESP_TRAP_COLOR.R * 255); config.values.espColorTrapG = math.floor(ESP_TRAP_COLOR.G * 255); config.values.espColorTrapB = math.floor(ESP_TRAP_COLOR.B * 255) end
 	config.values.visualsRolesCollapsed = visualsRolesCollapsed or false; config.values.visualsPartsCollapsed = visualsPartsCollapsed or false; config.values.visualsColorsCollapsed = visualsColorsCollapsed or false
 	config.values.visualsOutlinesRolesCollapsed = visualsOutlinesRolesCollapsed or false; config.values.visualsSkeletonRolesCollapsed = visualsSkeletonRolesCollapsed or false; config.values.visualsHealthRolesCollapsed = visualsHealthRolesCollapsed or false
-	config.values.settingsTranspCollapsed = settingsTranspCollapsed or false; config.values.settingsSizeCollapsed = settingsSizeCollapsed or false; config.values.settingsRgbCollapsed = settingsRgbCollapsed or false
+	config.values.settingsTranspCollapsed = settingsTranspCollapsed or false; config.values.settingsSizeCollapsed = settingsSizeCollapsed or false; config.values.settingsRgbCollapsed = settingsRgbCollapsed or false; config.values.settingsTabIconsCollapsed = settingsTabIconsCollapsed or false; config.values.settingsTopIconsCollapsed = settingsTopIconsCollapsed or false
 	config.toggles.espOutlinesRoleInnocent = espOutlinesRoleInnocent; config.toggles.espOutlinesRoleSheriff = espOutlinesRoleSheriff
 	config.toggles.espOutlinesRoleMurderer = espOutlinesRoleMurderer; config.toggles.espOutlinesRoleDead = espOutlinesRoleDead
 	config.toggles.espSkeletonRoleInnocent = espSkeletonRoleInnocent; config.toggles.espSkeletonRoleSheriff = espSkeletonRoleSheriff
@@ -30288,9 +31095,11 @@ btnFeatures = {
 	 toggle = function() toggleLoopSpeed() end,
 	 getState = function() return loopSpeedEnabled end},
 	{name = "TP to Lobby",
-	 toggle = function() local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(14, 505, -57); notify("Teleported", "Teleported to Lobby", 2) else notify("Error", "Character not found", 2) end end},
+	 toggle = function() local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(527, 461, 37); notify("Teleported", "Teleported to Lobby", 2) else notify("Error", "Character not found", 2) end end},
 	{name = "TP to VoteMap",
-	 toggle = function() local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(14, 507, 35); notify("Teleported", "Teleported to VoteMap", 2) else notify("Error", "Character not found", 2) end end},
+	 toggle = function() local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(610, 466, 37); notify("Teleported", "Teleported to VoteMap", 2) else notify("Error", "Character not found", 2) end end},
+	{name = "TP Above Lobby",
+	 toggle = function() local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(537, 563, 38); notify("Teleported", "Teleported above Lobby", 2) else notify("Error", "Character not found", 2) end end},
 	{name = "TP to Map",
 	 toggle = function() tpToMap() end},
 	{name = "TP Above Map",
@@ -30382,6 +31191,7 @@ btnFeatures = {
 
 popupDragLocked = false
 popupBgTransparency = 0
+miniLockBgTransparency = 0
 popupBtnWidth = 204
 popupBtnHeight = 46
 fpsPingBtnWidth = 200
@@ -30505,6 +31315,63 @@ bgTranspInput.FocusLost:Connect(function()
 			data.btn.BackgroundTransparency = popupBgTransparency
 		end
 	end
+	saveConfig()
+end)
+
+-- Mini lock (U/L) buttons transparency on extracted / detached pills.
+function applyMiniLockTransparency()
+	for _, data in pairs(extractedButtons) do
+		if data and data.popupLockBtn then
+			data.popupLockBtn.BackgroundTransparency = miniLockBgTransparency
+		end
+	end
+	for _, d in pairs(detachedEmotes) do
+		if d and d.popupLockBtn then
+			d.popupLockBtn.BackgroundTransparency = miniLockBgTransparency
+		end
+	end
+end
+
+miniLockTranspRow = Instance.new("Frame")
+miniLockTranspRow.Size = UDim2.new(1, 0, 0, 42)
+miniLockTranspRow.BackgroundTransparency = 1
+miniLockTranspRow.LayoutOrder = 711.5
+miniLockTranspRow.Parent = categoryFrames["Settings"]
+
+miniLockTranspLabel = Instance.new("TextLabel")
+miniLockTranspLabel.Size = UDim2.new(1, -82, 1, 0)
+miniLockTranspLabel.BackgroundTransparency = 1
+miniLockTranspLabel.Text = "Mini Lock Transparency"
+miniLockTranspLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+miniLockTranspLabel.Font = Enum.Font.SourceSansBold
+miniLockTranspLabel.TextSize = 16
+miniLockTranspLabel.TextXAlignment = Enum.TextXAlignment.Left
+miniLockTranspLabel.Parent = miniLockTranspRow
+
+miniLockTranspInput = Instance.new("TextBox")
+miniLockTranspInput.Size = UDim2.new(0, 74, 1, 0)
+miniLockTranspInput.Position = UDim2.new(1, -78, 0, 0)
+miniLockTranspInput.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+miniLockTranspInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+miniLockTranspInput.Text = "0"
+miniLockTranspInput.PlaceholderText = "0-100"
+miniLockTranspInput.Font = Enum.Font.SourceSansBold
+miniLockTranspInput.TextSize = 15
+miniLockTranspInput.ClearTextOnFocus = false
+miniLockTranspInput.Parent = miniLockTranspRow
+
+miniLockTranspInputCorner = Instance.new("UICorner")
+miniLockTranspInputCorner.CornerRadius = UDim.new(0, 6)
+miniLockTranspInputCorner.Parent = miniLockTranspInput
+
+miniLockTranspInput.FocusLost:Connect(function()
+	local val = tonumber(miniLockTranspInput.Text)
+	if val and val >= 0 and val <= 100 then
+		miniLockBgTransparency = val / 100
+	else
+		miniLockTranspInput.Text = tostring(math.floor(miniLockBgTransparency * 100))
+	end
+	applyMiniLockTransparency()
 	saveConfig()
 end)
 
@@ -31397,6 +32264,8 @@ for bindOrder, feature in ipairs(btnFeatures) do
 		popupLockBtn.AutoButtonColor = false
 		popupLockBtn.BorderSizePixel = 0
 		popupLockBtn.Parent = popupBorder
+		popupLockBtn.BackgroundTransparency = miniLockBgTransparency
+		pcall(function() refreshMiniLockBtn(popupLockBtn, false) end)
 
 		local popupLockCorner = Instance.new("UICorner")
 		popupLockCorner.CornerRadius = UDim.new(0, 4)
@@ -31414,6 +32283,7 @@ for bindOrder, feature in ipairs(btnFeatures) do
 				popupLockBtn.Text = "U"
 				popupLockBtn.BackgroundColor3 = extractedBtnBgColor
 			end
+			pcall(function() refreshMiniLockBtn(popupLockBtn, popupLocked) end)
 		end)
 
 		popupBorder.Active = true
@@ -31612,23 +32482,25 @@ lockButton.MouseButton1Click:Connect(function()
 end)
 
 closeButton.MouseButton1Click:Connect(function()
-	mainGui:Destroy()
-	toggleGui:Destroy()
-	if popupBtnGui then popupBtnGui:Destroy() end
-	if airStrafeConnection then airStrafeConnection:Disconnect() airStrafeConnection = nil end
-	if airStrafeInputConnection then airStrafeInputConnection:Disconnect() airStrafeInputConnection = nil end
-	if autoDodgeConnection then autoDodgeConnection:Disconnect() autoDodgeConnection = nil end
-	if nanFlingConnection then nanFlingConnection:Disconnect() nanFlingConnection = nil end
-	autoResetPlayerEnabled = false
-	autoResetEveryoneEnabled = false
-	autoResetSheriffEnabled = false
-	autoResetMurdererEnabled = false
-	watchRoleLastMurderer = nil
-	watchRoleLastSheriff = nil
-	watchRoleLoopingSheriff = false
-	watchRoleLoopingMurderer = false
-	if voidReturnConn then voidReturnConn:Disconnect() voidReturnConn = nil end
-	getgenv().AdrenalinWinLoaded = nil
+	confirmAction("Close script?", "Close the Adrenalin.win menu?", function()
+		mainGui:Destroy()
+		toggleGui:Destroy()
+		if popupBtnGui then popupBtnGui:Destroy() end
+		if airStrafeConnection then airStrafeConnection:Disconnect() airStrafeConnection = nil end
+		if airStrafeInputConnection then airStrafeInputConnection:Disconnect() airStrafeInputConnection = nil end
+		if autoDodgeConnection then autoDodgeConnection:Disconnect() autoDodgeConnection = nil end
+		if nanFlingConnection then nanFlingConnection:Disconnect() nanFlingConnection = nil end
+		autoResetPlayerEnabled = false
+		autoResetEveryoneEnabled = false
+		autoResetSheriffEnabled = false
+		autoResetMurdererEnabled = false
+		watchRoleLastMurderer = nil
+		watchRoleLastSheriff = nil
+		watchRoleLoopingSheriff = false
+		watchRoleLoopingMurderer = false
+		if voidReturnConn then voidReturnConn:Disconnect() voidReturnConn = nil end
+		getgenv().AdrenalinWinLoaded = nil
+	end)
 end)
 
 -- Menu appear animation (after loading screen, all GUI elements built)
@@ -32095,6 +32967,8 @@ function restoreFullConfig()
 			if c.values.settingsTranspCollapsed ~= nil then settingsTranspCollapsed = c.values.settingsTranspCollapsed end
 			if c.values.settingsSizeCollapsed ~= nil then settingsSizeCollapsed = c.values.settingsSizeCollapsed end
 			if c.values.settingsRgbCollapsed ~= nil then settingsRgbCollapsed = c.values.settingsRgbCollapsed end
+			if c.values.settingsTabIconsCollapsed ~= nil then settingsTabIconsCollapsed = c.values.settingsTabIconsCollapsed end
+			if c.values.settingsTopIconsCollapsed ~= nil then settingsTopIconsCollapsed = c.values.settingsTopIconsCollapsed end
 			applySettingsGroupsCollapse()
 		end
 	end)
@@ -32174,6 +33048,8 @@ function restoreFullConfig()
 		if c.values.settingsTranspCollapsed ~= nil then settingsTranspCollapsed = c.values.settingsTranspCollapsed end
 		if c.values.settingsSizeCollapsed ~= nil then settingsSizeCollapsed = c.values.settingsSizeCollapsed end
 		if c.values.settingsRgbCollapsed ~= nil then settingsRgbCollapsed = c.values.settingsRgbCollapsed end
+		if c.values.settingsTabIconsCollapsed ~= nil then settingsTabIconsCollapsed = c.values.settingsTabIconsCollapsed end
+		if c.values.settingsTopIconsCollapsed ~= nil then settingsTopIconsCollapsed = c.values.settingsTopIconsCollapsed end
 	end
 	autoGrabGunEnabled = T.autoGrabGunEnabled or false
 	gunAuraEnabled = T.gunAuraEnabled or false
@@ -32338,6 +33214,7 @@ function restoreFullConfig()
 			extractedBtnActiveTextColor = Color3.fromRGB(c.values.extractedBtnActiveTextColorR, c.values.extractedBtnActiveTextColorG, c.values.extractedBtnActiveTextColorB)
 		end
 		if c.values.popupBgTransparency ~= nil then popupBgTransparency = c.values.popupBgTransparency end
+		if c.values.miniLockBgTransparency ~= nil then miniLockBgTransparency = c.values.miniLockBgTransparency end
 		if c.values.toggleButtonSize ~= nil then toggleButtonSize = c.values.toggleButtonSize end
 		if c.values.tabTextSize ~= nil then
 			tabTextSize = math.clamp(c.values.tabTextSize, 8, 20)
@@ -32402,6 +33279,18 @@ function restoreFullConfig()
 		if c.values.loadingScreenTime ~= nil then loadingScreenTime = c.values.loadingScreenTime; if loadingTimeInput then loadingTimeInput.Text = tostring(loadingScreenTime) end end
 		if c.values.menuAppearStyle ~= nil then menuAppearStyle = c.values.menuAppearStyle end
 		if c.values.mainBgImageUrl ~= nil then mainBgImageUrl = c.values.mainBgImageUrl end
+		if c.values.tabIcons ~= nil and type(c.values.tabIcons) == "table" then
+			if not tabIconPaths then tabIconPaths = {} end
+			for k, v in pairs(c.values.tabIcons) do tabIconPaths[k] = v end
+		end
+		if c.values.tabActiveIcons ~= nil and type(c.values.tabActiveIcons) == "table" then
+			if not tabIconActivePaths then tabIconActivePaths = {} end
+			for k, v in pairs(c.values.tabActiveIcons) do tabIconActivePaths[k] = v end
+		end
+		if c.values.topIcons ~= nil and type(c.values.topIcons) == "table" then
+			if not topIconPaths then topIconPaths = {} end
+			for k, v in pairs(c.values.topIcons) do topIconPaths[k] = v end
+		end
 		if c.values.useDevicePaths ~= nil then useDevicePaths = c.values.useDevicePaths end
 		if c.values.clickSoundPath ~= nil then clickSoundPath = c.values.clickSoundPath end
 		if c.values.toggleSoundPath ~= nil then toggleSoundPath = c.values.toggleSoundPath end
@@ -32578,6 +33467,10 @@ function restoreFullConfig()
 				if data.btn then data.btn.BackgroundTransparency = popupBgTransparency end
 			end
 		end
+		if miniLockTranspInput and c.values and c.values.miniLockBgTransparency ~= nil then
+			miniLockTranspInput.Text = tostring(math.floor(c.values.miniLockBgTransparency * 100))
+			applyMiniLockTransparency()
+		end
 		-- Apply animation state
 		if animToggleBtn then
 			setToggleState(animToggleBtn, animationEnabled, "Menu Animation: ON", "Menu Animation: OFF")
@@ -32598,6 +33491,10 @@ function restoreFullConfig()
 		if bgImageInput then
 			bgImageInput.Text = mainBgImageUrl
 		end
+		pcall(refreshTabIcons)
+		pcall(refreshTabIconInputs)
+		pcall(refreshTopIconInputs)
+		pcall(refreshTopButtons)
 		if useDevicePathsButton then
 			setToggleState(useDevicePathsButton, useDevicePaths, "Use Device Paths: ON", "Use Device Paths: OFF")
 		end
@@ -32838,6 +33735,7 @@ function restoreFullConfig()
 			if extractedButtons[name] and extractedButtons[name].popupLockBtn and btnData.locked then
 				extractedButtons[name].popupLockBtn.Text = "L"
 				extractedButtons[name].popupLockBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+				pcall(function() refreshMiniLockBtn(extractedButtons[name].popupLockBtn, true) end)
 			end
 		end
 	end
