@@ -194,7 +194,7 @@ VOTE_START_SOUND_DIR = SOUNDS_DIR .. "/VoteStart"
 -- Tab icons: Adrenalin.win/Icons/<TabName>/<any file>.png|jpg|jpeg
 -- Each subfolder name strictly matches a tab name; the file inside is picked in Settings.
 ICONS_DIR = CONFIG_FOLDER .. "/Icons"
-TAB_ICON_FOLDERS = {"Main", "Player", "Visuals", "Combat", "Sheriff", "Murderer", "Reset", "Glitch", "Trolling", "Teleports", "Utilities", "Trade", "Teamers", "Exploiters", "Scammers", "Autofarm", "Emotions", "Ragebait", "Animations", "Changer", "Skybox", "Binds", "Buttons", "Settings"}
+TAB_ICON_FOLDERS = {"Main", "Player", "Visuals", "Combat", "Sheriff", "Murderer", "Reset", "Glitch", "Trolling", "Teleports", "Utilities", "Trade", "Teamers", "Exploiters", "Scammers", "Autofarm", "Emotions", "Ragebait", "Animations", "Changer", "Skybox", "Buttons", "Settings"}
 -- Display order of the side tabs (Settings -> Side Tabs Order). Editable and
 -- persisted; defaults to the canonical TAB_ICON_FOLDERS order.
 tabOrder = {}
@@ -360,6 +360,7 @@ function saveConfigNow()
 	config.toggles.autoDodgeEnabled = autoDodgeEnabled
 	config.toggles.gunAuraEnabled = gunAuraEnabled
 	config.toggles.autoDeleteCoinsEnabled = autoDeleteCoinsEnabled
+	config.toggles.autoDeleteCoinsMode = autoDeleteCoinsMode
 	config.toggles.autoKillEveryoneEnabled = autoKillEveryoneEnabled
 	config.toggles.autoKillEveryoneNoFriendsEnabled = autoKillEveryoneNoFriendsEnabled
 	config.toggles.autoKillSheriffEnabled = autoKillSheriffEnabled
@@ -418,8 +419,6 @@ config.toggles.gameNotifEnabled = gameNotifEnabled
 	config.toggles.korbloxEnabled = korbloxEnabled
 	config.toggles.headlessEnabled = headlessEnabled
 	config.toggles.headlessAllHatsEnabled = headlessAllHatsEnabled
-	config.toggles.crosshairEnabled = crosshairEnabled
-	config.toggles.keystrokeEnabled = keystrokeEnabled
 	config.toggles.menuIconsEnabled = menuIconsEnabled
 	config.toggles.tabIconsEnabled = tabIconsEnabled
 	config.toggles.soundsEnabled = soundsEnabled
@@ -825,10 +824,6 @@ config.values.autofarmStuckTimeout = autofarmStuckTimeout
 	if toggleButton then
 		local p = toggleButton.Position
 		config.togglePos = {X = {Scale = p.X.Scale, Offset = p.X.Offset}, Y = {Scale = p.Y.Scale, Offset = p.Y.Offset}}
-	end
-	if keystrokeSavedPos then
-		local p = keystrokeSavedPos
-		config.keystrokePos = {X = {Scale = p.X.Scale, Offset = p.X.Offset}, Y = {Scale = p.Y.Scale, Offset = p.Y.Offset}}
 	end
 
 	if savedAvatars then
@@ -4386,63 +4381,6 @@ if loadedConfig and type(loadedConfig.emotionOrder) == "table" and #loadedConfig
 	if #final > 0 then emotionOrder = final end
 end
 
--- Load per-emotion keybinds from config
-if loadedConfig and type(loadedConfig.emotionKeyBinds) == "table" then
-	for idStr, keyCodeStr in pairs(loadedConfig.emotionKeyBinds) do
-		local id = tonumber(idStr)
-		if id and keyCodeStr then
-			local ok, kc = pcall(function()
-				local kc2 = Enum.KeyCode[keyCodeStr]
-				if kc2 then return kc2 end
-				return Enum.UserInputType[keyCodeStr]
-			end)
-			if ok and kc then
-				emotionKeyBinds[id] = kc
-			end
-		end
-	end
-end
-
--- Register saved emotion keybinds into the global keyBinds table.
--- NOTE: emote-ness is resolved lazily at press time (emoteOrder is built much
--- later in the file, so snapshotting it here would mark every restored bind
--- as a non-emote and R15 emotes would silently do nothing after a rejoin).
-function emotionIsEmote(animId)
-	if emoteOrder then
-		for _, e in ipairs(emoteOrder) do
-			if e.id == animId then return true end
-		end
-	end
-	return false
-end
-keyBinds = keyBinds or {}
-for animId, kc in pairs(emotionKeyBinds) do
-	keyBinds[kc] = {
-		callback = function()
-			if emotionIsEmote(animId) then
-				local char2 = player.Character
-				local hum2 = char2 and char2:FindFirstChildOfClass("Humanoid")
-				if hum2 and hum2.RigType == Enum.HumanoidRigType.R15 then
-					local desc = hum2:FindFirstChildOfClass("HumanoidDescription")
-					local ok = pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-					if not ok and desc then
-						local nm = (emoteUiById[animId] and emoteUiById[animId].Name) or ("Emote "..tostring(animId))
-						pcall(function() desc:AddEmote(nm, animId) end)
-						pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-					end
-				end
-			else
-				if playingAnimationId == animId then
-					stopCurrentAnimation()
-				else
-					playAnimation(animId, "1")
-				end
-			end
-		end,
-		description = "Emotion: " .. tostring(animId),
-	}
-end
-
 function notify(title, text, duration)
 	if not gameNotifActiveNotifs then gameNotifActiveNotifs = {} end
 	local notifGui = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild("GameNotifGui")
@@ -4509,7 +4447,7 @@ function notify(title, text, duration)
 		gameNotifRepositionAll()
 	end)
 	notifFrame.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			for i, f in ipairs(gameNotifActiveNotifs) do
 				if f == notifFrame then
 					table.remove(gameNotifActiveNotifs, i)
@@ -7797,7 +7735,6 @@ createCategoryScrollFrame("Ragebait")
 createCategoryScrollFrame("Animations")
 createCategoryScrollFrame("Changer")
 createCategoryScrollFrame("Skybox")
-createCategoryScrollFrame("Binds")
 createCategoryScrollFrame("Buttons")
 createCategoryScrollFrame("Settings")
 
@@ -8076,7 +8013,6 @@ tabIconMap = {
 	Changer = {"shirt", "shirt2"},
 	Ragebait = {"drama", "drama2"},
 	Buttons = {"joystick", "joystick2"},
-	Binds = {"keyboard", "keyboard2"},
 	Reset = {"rotate-ccw", "rotate-ccw2"},
 }
 
@@ -8134,7 +8070,6 @@ function createCategoryButton(shortName, layoutOrder)
 		["Emo"] = "Ragebait",
 		["Emt"] = "Emotions",
 		["Anim"] = "Animations",
-		["Bind"] = "Binds",
 		["Expl"] = "Exploiters",
 		["Main"] = "Main",
 		["Btn"] = "Buttons",
@@ -8267,7 +8202,6 @@ createCategoryButton("Emo", 7)
 createCategoryButton("Anim", 7.05)
 createCategoryButton("Changer", 7.5)
 createCategoryButton("Skybox", 7.6)
-createCategoryButton("Bind", 8)
 createCategoryButton("Btn", 9)
 createCategoryButton("Set", 10)
 refreshTabIcons()
@@ -8941,6 +8875,9 @@ end
 -- wiping the table here would silently break every saved emotion shortcut.
 keyBinds = keyBinds or {}
 featureBinds = {}
+-- Kept for backward compatibility with saved configs (the Binds tab itself is
+-- gone, but the toggle-state cache is still written/read on load).
+bindToggleStates = bindToggleStates or {}
 
 keyNameMap = {
 	[Enum.KeyCode.LeftBracket] = "[",
@@ -13465,8 +13402,18 @@ ui.bhopInput.FocusLost:Connect(function()
 end)
 
 -- Auto Remove Coins
+-- TWO MODES (picker below the toggle):
+--   Full    - destroys the map's CoinContainer itself (old behaviour). The
+--             container is gone, so coins do NOT respawn until the next round.
+--   Default - destroys each individual coin INSIDE the container the instant it
+--             appears. Removal is instant and cheap (no repeated full-workspace
+--             scans), and because the container survives, turning the feature
+--             OFF mid-round lets the coins respawn normally.
 autoDeleteCoinsEnabled = false
 autoDeleteCoinsConnections = {}
+autoDeleteCoinsMode = (loadedConfig and loadedConfig.toggles and loadedConfig.toggles.autoDeleteCoinsMode) or "Default"
+if autoDeleteCoinsMode ~= "Full" then autoDeleteCoinsMode = "Default" end
+autoDeleteCoinContainers = {}
 
 autoDeleteCoinsTargets = {
 	Hotel = true, Factory = true, BioLab = true, Mansion2 = true,
@@ -13506,11 +13453,41 @@ function tryRemoveCoin(instance)
 	return false
 end
 
+-- Default mode: remove every coin INSTANCE (never the container).
+function autoDeleteCoinsClearContainer(container)
+	if not container or not container.Parent then return end
+	for _, child in ipairs(container:GetChildren()) do
+		pcall(function() child:Destroy() end)
+	end
+end
+
+function autoDeleteCoinsRefreshContainers()
+	local alive = {}
+	for _, c in ipairs(autoDeleteCoinContainers) do
+		if c and c.Parent then table.insert(alive, c) end
+	end
+	autoDeleteCoinContainers = alive
+	if #autoDeleteCoinContainers == 0 then
+		local ok, found = pcall(function() return Workspace:FindFirstChild("CoinContainer", true) end)
+		if ok and found then table.insert(autoDeleteCoinContainers, found) end
+	end
+end
+
+function autoDeleteCoinsSweepDefault()
+	autoDeleteCoinsRefreshContainers()
+	for _, container in ipairs(autoDeleteCoinContainers) do
+		autoDeleteCoinsClearContainer(container)
+	end
+end
+
 function fullCoinScan()
 	local removed = 0
 	for _, descendant in ipairs(Workspace:GetDescendants()) do
 		if descendant.Name == "CoinContainer" then
-			if tryRemoveCoin(descendant) then
+			if autoDeleteCoinsMode == "Default" then
+				autoDeleteCoinsClearContainer(descendant)
+				removed += 1
+			elseif tryRemoveCoin(descendant) then
 				removed += 1
 			end
 		end
@@ -13520,13 +13497,34 @@ end
 
 function enableAutoDeleteCoins()
 	autoDeleteCoinsEnabled = true
+	autoDeleteCoinContainers = {}
 
 	fullCoinScan()
 
 	local descConn = Workspace.DescendantAdded:Connect(function(instance)
 		if not autoDeleteCoinsEnabled then return end
+		if autoDeleteCoinsMode == "Default" then
+			-- INSTANT per-coin removal: coins are direct children of the
+			-- container, so kill them on the spot (no defer -> no visible frame).
+			local par = instance.Parent
+			if par and par.Name == "CoinContainer" then
+				pcall(function() instance:Destroy() end)
+				return
+			end
+			if instance.Name == "CoinContainer" then
+				table.insert(autoDeleteCoinContainers, instance)
+				-- The container is usually populated in the same frame: clear it
+				-- once more after the map script has filled it.
+				task.defer(function()
+					if autoDeleteCoinsEnabled and autoDeleteCoinsMode == "Default" then
+						autoDeleteCoinsClearContainer(instance)
+					end
+				end)
+			end
+			return
+		end
 		task.defer(function()
-			if not autoDeleteCoinsEnabled then return end
+			if not autoDeleteCoinsEnabled or autoDeleteCoinsMode ~= "Full" then return end
 			if instance and instance.Parent then
 				if instance.Name == "CoinContainer" then
 					tryRemoveCoin(instance)
@@ -13552,9 +13550,13 @@ function enableAutoDeleteCoins()
 
 	task.spawn(function()
 		while autoDeleteCoinsEnabled do
-			task.wait(8)
+			task.wait(autoDeleteCoinsMode == "Default" and 0.15 or 8)
 			if autoDeleteCoinsEnabled then
-				fullCoinScan()
+				if autoDeleteCoinsMode == "Default" then
+					autoDeleteCoinsSweepDefault()
+				else
+					fullCoinScan()
+				end
 			end
 		end
 	end)
@@ -13578,12 +13580,30 @@ function toggleAutoDeleteCoins()
 	end
 end
 
+function autoDeleteCoinsModeLabel()
+	return "Coins Removal: " .. autoDeleteCoinsMode .. "  ▼"
+end
+
 currentCategory = "Player"
 btn.autoDeleteCoins = createButton("AutoDeleteCoinsButton", "Auto Remove Coins: OFF", 112)
 btn.autoDeleteCoins.MouseButton1Click:Connect(function()
 	toggleAutoDeleteCoins()
 	setToggleState(btn.autoDeleteCoins, autoDeleteCoinsEnabled, "Auto Remove Coins: ON", "Auto Remove Coins: OFF")
 	setExtractedBtnState("Auto Remove Coins", autoDeleteCoinsEnabled)
+end)
+
+-- Mode picker: Default = individual coins (they respawn when toggled off),
+-- Full = the whole coin container (no respawn until next round).
+btn.autoDeleteCoinsMode = createButton("AutoDeleteCoinsModeButton", autoDeleteCoinsModeLabel(), 112.05)
+btn.autoDeleteCoinsMode.MouseButton1Click:Connect(function()
+	autoDeleteCoinsMode = (autoDeleteCoinsMode == "Full") and "Default" or "Full"
+	btn.autoDeleteCoinsMode.Text = autoDeleteCoinsModeLabel()
+	-- Re-arm with the new mode without leaving the feature half-enabled.
+	if autoDeleteCoinsEnabled then
+		disableAutoDeleteCoins()
+		enableAutoDeleteCoins()
+	end
+	pcall(saveConfig)
 end)
 
 -- Auto Mute Coins: fully silence MM2 coin pickup / collect sounds
@@ -13998,6 +14018,17 @@ autofarmMapCoords = {
 	PoliceStation = Vector3.new(-5, 265, 9079)
 }
 
+-- First loaded map whose under-map farm spot is known. Used by the anti-void
+-- guard so a character that somehow slips below the platform is put back.
+function autofarmCurrentSpot()
+	for mapName, coords in pairs(autofarmMapCoords) do
+		if Workspace:FindFirstChild(mapName) then
+			return coords, mapName
+		end
+	end
+	return nil
+end
+
 -- Invisible platform under the map at the farm spot, so the character can't
 -- fall into the void while farming there. Anchored in the workspace (like the
 -- void baseplate) and reused across rounds; it only ever sits BELOW the map
@@ -14013,8 +14044,11 @@ function createAutofarmPlatform(mapName, coords)
 	end
 	local bp = Instance.new("Part")
 	bp.Name = name
-	bp.Size = Vector3.new(400, 1, 400)
-	bp.Position = Vector3.new(coords.X, coords.Y - 4, coords.Z)
+	-- 8 studs thick with its TOP surface right under the farm spot: the
+	-- character's root (kept collidable, see autofarmUpdateNoclip) lands on it
+	-- instead of falling through the map when the flight loop is not moving.
+	bp.Size = Vector3.new(400, 8, 400)
+	bp.Position = Vector3.new(coords.X, coords.Y - 5, coords.Z)
 	bp.Anchored = true
 	bp.Transparency = 1
 	bp.CanCollide = true
@@ -14040,8 +14074,11 @@ function tpToAutofarm()
 			createAutofarmPlatform(mapName, coords)
 			local targetCF = CFrame.new(coords)
 			pcall(function()
+				local root = myChar:FindFirstChild("HumanoidRootPart")
 				for _, p in ipairs(autofarmGetCharParts(myChar)) do
-					if p.CanCollide then p.CanCollide = false end
+					-- keep the root collidable: it is what rests on the invisible
+					-- platform and stops the character falling into the void.
+					if p ~= root and p.CanCollide then p.CanCollide = false end
 				end
 			end)
 			pcall(function() hum.PlatformStand = true end)
@@ -15088,283 +15125,6 @@ btn.headlessAllHatsBtn = createButton("HeadlessAllHatsButton", "Headless (All Ha
 btn.headlessAllHatsBtn.MouseButton1Click:Connect(function()
 	if headlessAllHatsEnabled then disableHeadlessAllHats() else enableHeadlessAllHats() end
 	setToggleState(btn.headlessAllHatsBtn, headlessAllHatsEnabled, "Headless (All Hats): ON", "Headless (All Hats): OFF")
-end)
-
--- Crosshair (toggleable)
-crosshairEnabled = false
-crosshairGui = nil
-
-function createCrosshair()
-	if crosshairGui then crosshairGui:Destroy() end
-	local player = game.Players.LocalPlayer
-	local mouse = player:GetMouse()
-	local RunService = game:GetService("RunService")
-	crosshairGui = Instance.new("ScreenGui")
-	crosshairGui.Name = "AdrenalinCrosshair"; crosshairGui.ResetOnSpawn = false; crosshairGui.Parent = player:WaitForChild("PlayerGui")
-	local container = Instance.new("Frame")
-	container.BackgroundTransparency = 1; container.Size = UDim2.new(0, 25, 0, 25); container.AnchorPoint = Vector2.new(0.5, 0.5); container.Parent = crosshairGui
-	local function makeLine(size, pos)
-		local f = Instance.new("Frame"); f.Size = size; f.Position = pos; f.BackgroundColor3 = Color3.new(1,1,1); f.BorderSizePixel = 0; f.ZIndex = 5; f.Parent = container
-		local s = Instance.new("UIStroke"); s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Color = Color3.new(0,0,0); s.Thickness = 1; s.Parent = f
-		return f
-	end
-	local top = makeLine(UDim2.new(0, 3, 0, 25), UDim2.new(0.5, -1.5, 0, 0))
-	local bottom = makeLine(UDim2.new(0, 3, 0, 25), UDim2.new(0.5, -1.5, 1, -25))
-	local left = makeLine(UDim2.new(0, 25, 0, 3), UDim2.new(0, 0, 0.5, -1.5))
-	local right = makeLine(UDim2.new(0, 25, 0, 3), UDim2.new(1, -25, 0.5, -1.5))
-	local textLabel = Instance.new("TextLabel"); textLabel.Text = "Adrenalin.win"; textLabel.Position = UDim2.new(0, 0, 0, 0); textLabel.TextColor3 = Color3.new(1,1,1); textLabel.Font = Enum.Font.Arcade; textLabel.TextScaled = true; textLabel.BackgroundTransparency = 1; textLabel.Size = UDim2.new(0, 150, 0, 23); textLabel.ZIndex = 10; textLabel.Parent = crosshairGui
-	local s2 = Instance.new("UIStroke"); s2.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual; s2.Color = Color3.new(0,0,0); s2.Thickness = 1; s2.Parent = textLabel
-	local time = 0; local rotProg = 0; local rotSpeed = 0.8; local smoothRot = 5
-	local conn = RunService.RenderStepped:Connect(function(dt)
-		if not (container and top and bottom and left and right and textLabel) then return end
-		time = time + dt; container.Position = UDim2.new(0, mouse.X, 0, mouse.Y); textLabel.Position = UDim2.new(0, mouse.X - 70, 0, mouse.Y + 50)
-		rotProg = (rotProg + rotSpeed * dt) % 1; smoothRot = smoothRot + ((rotProg * 360) - smoothRot) * 1; container.Rotation = smoothRot
-		local pulse = math.sin(time * 2.5) * 0.5 + 0.5; local len = -10 + (-30 - -10) * pulse * pulse
-		top.Size = UDim2.new(0, 3, 0, len); bottom.Size = UDim2.new(0, 3, 0, len); left.Size = UDim2.new(0, len, 0, 3); right.Size = UDim2.new(0, len, 0, 3)
-		top.Position = UDim2.new(0.5, -1.5, 0, 0); bottom.Position = UDim2.new(0.5, -1.5, 1, -len); left.Position = UDim2.new(0, 0, 0.5, -1.5); right.Position = UDim2.new(1, -len, 0.5, -1.5)
-		local r = math.sin(time * 0.6) * 0.5 + 0.5; local g = math.sin(time * 0.6 + 2) * 0.5 + 0.5; local b = math.sin(time * 0.6 + 4) * 0.5 + 0.5
-		local c = Color3.new(r, g, b); top.BackgroundColor3 = c; bottom.BackgroundColor3 = c; left.BackgroundColor3 = c; right.BackgroundColor3 = c; textLabel.TextColor3 = c
-	end)
-	return conn
-end
-
-local crosshairConn = nil
-
-function enableCrosshair()
-	if crosshairEnabled then return end
-	crosshairEnabled = true
-	crosshairConn = createCrosshair()
-end
-
-function disableCrosshair()
-	crosshairEnabled = false
-	if crosshairConn then crosshairConn:Disconnect() crosshairConn = nil end
-	if crosshairGui then crosshairGui:Destroy() crosshairGui = nil end
-end
-
-btn.crosshairBtn = createButton("CrosshairButton", "Adrenalin.win Crosshair: OFF", 118)
-btn.crosshairBtn.MouseButton1Click:Connect(function()
-	if crosshairEnabled then disableCrosshair() else enableCrosshair() end
-	setToggleState(btn.crosshairBtn, crosshairEnabled, "Adrenalin.win Crosshair: ON", "Adrenalin.win Crosshair: OFF")
-end)
-
--- Keystroke (toggleable with position saving)
-keystrokeEnabled = false
-keystrokeGui = nil
-keystrokeSavedPos = nil
-keystrokeConnections = nil
-
-function createKeystrokeUI()
-	if keystrokeGui then keystrokeGui:Destroy() end
-	local UserInputService = game:GetService("UserInputService")
-	local TweenService = game:GetService("TweenService")
-	local CoreGui = game:GetService("CoreGui")
-	keystrokeGui = Instance.new("ScreenGui"); keystrokeGui.Name = "AdrenalinKeystroke"; keystrokeGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; keystrokeGui.Parent = CoreGui
-	local Frame = Instance.new("Frame"); Frame.Parent = keystrokeGui; Frame.BackgroundColor3 = Color3.fromRGB(0,0,0); Frame.BackgroundTransparency = 0.4; Frame.BorderSizePixel = 0; Frame.Active = true
-	if keystrokeSavedPos then Frame.Position = keystrokeSavedPos else Frame.Position = UDim2.new(0.05,0,0.33,0) end
-	Instance.new("UICorner", Frame)
-	local UIStroke = Instance.new("UIStroke"); UIStroke.Parent = Frame; UIStroke.Thickness = 2; UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	task.spawn(function() while keystrokeGui and keystrokeGui.Parent do UIStroke.Color = Color3.fromHSV((tick()*0.05)%1,1,1); task.wait(0.05) end end)
-	local base_u = 26; local gap = 2; local main_y_offset = 9; local keys = {}; local max_x = 0; local nav_gap = 42
-	local row0 = {{"Esc",Enum.KeyCode.Escape},{"F1",Enum.KeyCode.F1},{"F2",Enum.KeyCode.F2},{"F3",Enum.KeyCode.F3},{"F4",Enum.KeyCode.F4},{"F5",Enum.KeyCode.F5},{"F6",Enum.KeyCode.F6},{"F7",Enum.KeyCode.F7},{"F8",Enum.KeyCode.F8},{"F9",Enum.KeyCode.F9},{"F10",Enum.KeyCode.F10},{"F11",Enum.KeyCode.F11},{"F12",Enum.KeyCode.F12}}
-	local cx = 0; local y = 0
-	for i, kd in ipairs(row0) do
-		if i > 1 then local ag = gap; local pn = row0[i-1][1]; if pn == "Esc" or pn == "F4" or pn == "F8" then ag = ag + 9 end; cx = cx + ag end
-		local kw = base_u; table.insert(keys,{Name=kd[1],KeyCode=kd[2],Position=UDim2.new(0,cx,0,y),Size=UDim2.new(0,kw,0,base_u),AllowGameProcessed=true}); cx = cx + kw; max_x = math.max(max_x,cx)
-	end
-	local main_kb_right = max_x
-	local nav_cluster_x = main_kb_right + nav_gap; cx = nav_cluster_x
-	for i,kd in ipairs({{"PS",Enum.KeyCode.Print},{"SL",Enum.KeyCode.ScrollLock},{"PB",Enum.KeyCode.Pause}}) do
-		if i > 1 then cx = cx + gap end; table.insert(keys,{Name=kd[1],KeyCode=kd[2],Position=UDim2.new(0,cx,0,0),Size=UDim2.new(0,base_u,0,base_u),AllowGameProcessed=true}); cx = cx + base_u
-	end
-	local rows = {
-		{{"`",Enum.KeyCode.Backquote},{"1",Enum.KeyCode.One},{"2",Enum.KeyCode.Two},{"3",Enum.KeyCode.Three},{"4",Enum.KeyCode.Four},{"5",Enum.KeyCode.Five},{"6",Enum.KeyCode.Six},{"7",Enum.KeyCode.Seven},{"8",Enum.KeyCode.Eight},{"9",Enum.KeyCode.Nine},{"0",Enum.KeyCode.Zero},{"-",Enum.KeyCode.Minus},{"=",Enum.KeyCode.Equals},{"Back",Enum.KeyCode.Backspace,2}},
-		{{"Tab",Enum.KeyCode.Tab,1.5},{"Q",Enum.KeyCode.Q},{"W",Enum.KeyCode.W},{"E",Enum.KeyCode.E},{"R",Enum.KeyCode.R},{"T",Enum.KeyCode.T},{"Y",Enum.KeyCode.Y},{"U",Enum.KeyCode.U},{"I",Enum.KeyCode.I},{"O",Enum.KeyCode.O},{"P",Enum.KeyCode.P},{"[",Enum.KeyCode.LeftBracket},{"]",Enum.KeyCode.RightBracket},{"\\",Enum.KeyCode.BackSlash,1.5}},
-		{{"Caps",Enum.KeyCode.CapsLock,1.75},{"A",Enum.KeyCode.A},{"S",Enum.KeyCode.S},{"D",Enum.KeyCode.D},{"F",Enum.KeyCode.F},{"G",Enum.KeyCode.G},{"H",Enum.KeyCode.H},{"J",Enum.KeyCode.J},{"K",Enum.KeyCode.K},{"L",Enum.KeyCode.L},{";",Enum.KeyCode.Semicolon},{"'",Enum.KeyCode.Quote},{"Enter",Enum.KeyCode.Return,2.25}},
-		{{"LShift",Enum.KeyCode.LeftShift,2.25},{"Z",Enum.KeyCode.Z},{"X",Enum.KeyCode.X},{"C",Enum.KeyCode.C},{"V",Enum.KeyCode.V},{"B",Enum.KeyCode.B},{"N",Enum.KeyCode.N},{"M",Enum.KeyCode.M},{",",Enum.KeyCode.Comma},{".",Enum.KeyCode.Period},{"/",Enum.KeyCode.Slash},{"RShift",Enum.KeyCode.RightShift,2.75}},
-		{{"LCtrl",Enum.KeyCode.LeftControl,1.25},{"Win",Enum.KeyCode.LeftSuper,1.25},{"LAlt",Enum.KeyCode.LeftAlt,1.25},{"Spacebar",Enum.KeyCode.Space,6.25},{"RAlt",Enum.KeyCode.RightAlt,1.25},{"Fn",nil,1.25},{"Menu",Enum.KeyCode.Menu,1.25},{"RCtrl",Enum.KeyCode.RightControl,1.25}},
-	}
-	local row_y_offset = main_y_offset + base_u + gap + 7
-	for ri, row in ipairs(rows) do
-		cx = 0; y = row_y_offset + (ri-1)*(base_u+gap)
-		for i,kd in ipairs(row) do
-			if i > 1 then cx = cx + gap end
-			local w = (kd[3] or 1) * base_u; table.insert(keys,{Name=kd[1],KeyCode=kd[2],Position=UDim2.new(0,cx,0,y),Size=UDim2.new(0,w,0,base_u),AllowGameProcessed=true}); cx = cx + w; max_x = math.max(max_x,cx)
-		end
-	end
-	local nav_row1_y = row_y_offset
-	cx = nav_cluster_x
-	for i,kd in ipairs({{"INS",Enum.KeyCode.Insert},{"HM",Enum.KeyCode.Home},{"PU",Enum.KeyCode.PageUp}}) do
-		if i > 1 then cx = cx + gap end; table.insert(keys,{Name=kd[1],KeyCode=kd[2],Position=UDim2.new(0,cx,0,nav_row1_y),Size=UDim2.new(0,base_u,0,base_u),AllowGameProcessed=true}); cx = cx + base_u
-	end
-	local nav_row2_y = row_y_offset + base_u + gap; cx = nav_cluster_x
-	for i,kd in ipairs({{"DEL",Enum.KeyCode.Delete},{"END",Enum.KeyCode.End},{"PD",Enum.KeyCode.PageDown}}) do
-		if i > 1 then cx = cx + gap end; table.insert(keys,{Name=kd[1],KeyCode=kd[2],Position=UDim2.new(0,cx,0,nav_row2_y),Size=UDim2.new(0,base_u,0,base_u),AllowGameProcessed=true}); cx = cx + base_u
-	end
-	local arrow_row1_y = row_y_offset + 3*(base_u+gap); local arrow_row2_y = row_y_offset + 4*(base_u+gap)
-	table.insert(keys,{Name="↑",KeyCode=Enum.KeyCode.Up,Position=UDim2.new(0,nav_cluster_x+base_u+gap,0,arrow_row1_y),Size=UDim2.new(0,base_u,0,base_u),AllowGameProcessed=true})
-	cx = nav_cluster_x
-	for i,kd in ipairs({{"←",Enum.KeyCode.Left},{"↓",Enum.KeyCode.Down},{"→",Enum.KeyCode.Right}}) do
-		if i > 1 then cx = cx + gap end; table.insert(keys,{Name=kd[1],KeyCode=kd[2],Position=UDim2.new(0,cx,0,arrow_row2_y),Size=UDim2.new(0,base_u,0,base_u),AllowGameProcessed=true}); cx = cx + base_u
-	end
-	max_x = math.max(nav_cluster_x + 3*base_u + 2*gap, max_x)
-	local keyboard_height = row_y_offset + 5*(base_u+gap)
-	local mouseWidth = 88; local mouseHeight = 132; local sideBW = 13; local sideBH = 26; local sideBG = 4; local mouseGap = 32
-	local mouse_x = max_x + mouseGap; local mouse_y = row_y_offset + math.floor((keyboard_height - row_y_offset - mouseHeight) / 2)
-	local mb4 = Instance.new("Frame"); mb4.Name = "MB4"; mb4.Parent = Frame; mb4.BackgroundColor3 = Color3.fromRGB(50,50,50); mb4.BackgroundTransparency = 0.3; mb4.BorderSizePixel = 0; mb4.Position = UDim2.new(0,mouse_x-sideBW-2,0,mouse_y+26); mb4.Size = UDim2.new(0,sideBW,0,sideBH)
-	Instance.new("UICorner",mb4); local mb4s=Instance.new("UIStroke",mb4); mb4s.Thickness=1; mb4s.Color=Color3.fromRGB(90,90,90)
-	local mb5 = Instance.new("Frame"); mb5.Name = "MB5"; mb5.Parent = Frame; mb5.BackgroundColor3 = Color3.fromRGB(50,50,50); mb5.BackgroundTransparency = 0.3; mb5.BorderSizePixel = 0; mb5.Position = UDim2.new(0,mouse_x-sideBW-2,0,mouse_y+26+sideBH+sideBG); mb5.Size = UDim2.new(0,sideBW,0,sideBH)
-	Instance.new("UICorner",mb5); local mb5s=Instance.new("UIStroke",mb5); mb5s.Thickness=1; mb5s.Color=Color3.fromRGB(90,90,90)
-	do local l=Instance.new("TextLabel",mb4); l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,1,0); l.Font=Enum.Font.GothamBold; l.Text="▲"; l.TextColor3=Color3.fromRGB(100,100,100); l.TextSize=8 end
-	do local l=Instance.new("TextLabel",mb5); l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,1,0); l.Font=Enum.Font.GothamBold; l.Text="▼"; l.TextColor3=Color3.fromRGB(100,100,100); l.TextSize=8 end
-	local mouseFrame = Instance.new("Frame"); mouseFrame.Name = "MouseBody"; mouseFrame.Parent = Frame; mouseFrame.BackgroundColor3 = Color3.fromRGB(35,35,35); mouseFrame.BackgroundTransparency = 0.3; mouseFrame.BorderSizePixel = 0; mouseFrame.Position = UDim2.new(0,mouse_x,0,mouse_y); mouseFrame.Size = UDim2.new(0,mouseWidth,0,mouseHeight)
-	Instance.new("UICorner",mouseFrame).CornerRadius = UDim.new(0,22)
-	local mbs=Instance.new("UIStroke",mouseFrame); mbs.Thickness=2; mbs.Color=Color3.fromRGB(100,100,100); mbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
-	local buttonAreaHeight = 46; local dividerWidth = 2; local scrollWW = 12; local scrollWH = 18
-	local lmbW = math.floor((mouseWidth - dividerWidth) / 2)
-	local lmbB = Instance.new("TextButton"); lmbB.Name = "LMB"; lmbB.Parent = mouseFrame; lmbB.BackgroundColor3 = Color3.fromRGB(50,50,50); lmbB.BackgroundTransparency = 0.3; lmbB.BorderSizePixel = 0; lmbB.Position = UDim2.new(0,0,0,0); lmbB.Size = UDim2.new(0,lmbW,0,buttonAreaHeight); lmbB.Font = Enum.Font.GothamBold; lmbB.Text = "L"; lmbB.TextColor3 = Color3.fromRGB(180,180,180); lmbB.TextSize = 10; lmbB.AutoButtonColor = false
-	Instance.new("UICorner",lmbB).CornerRadius = UDim.new(0,16)
-	local lmbClipB = Instance.new("Frame",lmbB); lmbClipB.BackgroundColor3 = lmbB.BackgroundColor3; lmbClipB.BackgroundTransparency = lmbB.BackgroundTransparency; lmbClipB.BorderSizePixel = 0; lmbClipB.Position = UDim2.new(0,0,1,-9); lmbClipB.Size = UDim2.new(1,0,0,9)
-	local lmbClipR = Instance.new("Frame",lmbB); lmbClipR.BackgroundColor3 = lmbB.BackgroundColor3; lmbClipR.BackgroundTransparency = lmbB.BackgroundTransparency; lmbClipR.BorderSizePixel = 0; lmbClipR.Position = UDim2.new(1,-9,0,0); lmbClipR.Size = UDim2.new(0,9,1,0)
-	local rmbW = mouseWidth - lmbW - dividerWidth
-	local rmbB = Instance.new("TextButton"); rmbB.Name = "RMB"; rmbB.Parent = mouseFrame; rmbB.BackgroundColor3 = Color3.fromRGB(50,50,50); rmbB.BackgroundTransparency = 0.3; rmbB.BorderSizePixel = 0; rmbB.Position = UDim2.new(0,lmbW+dividerWidth,0,0); rmbB.Size = UDim2.new(0,rmbW,0,buttonAreaHeight); rmbB.Font = Enum.Font.GothamBold; rmbB.Text = "R"; rmbB.TextColor3 = Color3.fromRGB(180,180,180); rmbB.TextSize = 10; rmbB.AutoButtonColor = false
-	Instance.new("UICorner",rmbB).CornerRadius = UDim.new(0,16)
-	local rmbClipB = Instance.new("Frame",rmbB); rmbClipB.BackgroundColor3 = rmbB.BackgroundColor3; rmbClipB.BackgroundTransparency = rmbB.BackgroundTransparency; rmbClipB.BorderSizePixel = 0; rmbClipB.Position = UDim2.new(0,0,1,-9); rmbClipB.Size = UDim2.new(1,0,0,9)
-	local rmbClipL = Instance.new("Frame",rmbB); rmbClipL.BackgroundColor3 = rmbB.BackgroundColor3; rmbClipL.BackgroundTransparency = rmbB.BackgroundTransparency; rmbClipL.BorderSizePixel = 0; rmbClipL.Position = UDim2.new(0,0,0,0); rmbClipL.Size = UDim2.new(0,9,1,0)
-	local div = Instance.new("Frame",mouseFrame); div.BackgroundColor3 = Color3.fromRGB(80,80,80); div.BorderSizePixel = 0; div.Position = UDim2.new(0,lmbW,0,0); div.Size = UDim2.new(0,dividerWidth,0,buttonAreaHeight)
-	local hDiv = Instance.new("Frame",mouseFrame); hDiv.BackgroundColor3 = Color3.fromRGB(80,80,80); hDiv.BorderSizePixel = 0; hDiv.Position = UDim2.new(0,7,0,buttonAreaHeight); hDiv.Size = UDim2.new(0,mouseWidth-14,0,1)
-	local scX = math.floor((mouseWidth-scrollWW)/2); local scY = math.floor((buttonAreaHeight-scrollWH)/2)+3
-	local scrollW = Instance.new("TextButton"); scrollW.Name = "MMB"; scrollW.Parent = mouseFrame; scrollW.BackgroundColor3 = Color3.fromRGB(70,70,70); scrollW.BackgroundTransparency = 0.2; scrollW.BorderSizePixel = 0; scrollW.Position = UDim2.new(0,scX,0,scY); scrollW.Size = UDim2.new(0,scrollWW,0,scrollWH); scrollW.Text = ""; scrollW.AutoButtonColor = false; scrollW.ZIndex = 3
-	Instance.new("UICorner",scrollW).CornerRadius = UDim.new(0,6); local scS=Instance.new("UIStroke",scrollW); scS.Thickness=1; scS.Color=Color3.fromRGB(120,120,120)
-	for i=1,3 do local l=Instance.new("Frame",scrollW); l.BackgroundColor3=Color3.fromRGB(100,100,100); l.BackgroundTransparency=0.3; l.BorderSizePixel=0; l.Size=UDim2.new(0.5,0,0,1); l.Position=UDim2.new(0.25,0,0,4+(i-1)*5); l.ZIndex=4 end
-	local palm = Instance.new("Frame",mouseFrame); palm.BackgroundColor3 = Color3.fromRGB(40,40,40); palm.BackgroundTransparency = 0.5; palm.BorderSizePixel = 0; palm.Position = UDim2.new(0,10,0,buttonAreaHeight+10); palm.Size = UDim2.new(0,mouseWidth-20,0,mouseHeight-buttonAreaHeight-24)
-	Instance.new("UICorner",palm).CornerRadius = UDim.new(0,15)
-	local dpi = Instance.new("Frame",mouseFrame); dpi.BackgroundColor3 = Color3.fromRGB(80,80,80); dpi.BorderSizePixel = 0; dpi.Position = UDim2.new(0.5,-3,0,buttonAreaHeight+4); dpi.Size = UDim2.new(0,6,0,6); Instance.new("UICorner",dpi).CornerRadius = UDim.new(1,0)
-	local scUp = Instance.new("TextLabel",mouseFrame); scUp.BackgroundTransparency=1; scUp.Position=UDim2.new(0,scX-2,0,scY-12); scUp.Size=UDim2.new(0,scrollWW+4,0,10); scUp.Font=Enum.Font.GothamBold; scUp.Text="▲"; scUp.TextColor3=Color3.fromRGB(80,80,80); scUp.TextSize=8; scUp.TextTransparency=1; scUp.ZIndex=4
-	local scDn = Instance.new("TextLabel",mouseFrame); scDn.BackgroundTransparency=1; scDn.Position=UDim2.new(0,scX-2,0,scY+scrollWH+1); scDn.Size=UDim2.new(0,scrollWW+4,0,10); scDn.Font=Enum.Font.GothamBold; scDn.Text="▼"; scDn.TextColor3=Color3.fromRGB(80,80,80); scDn.TextSize=8; scDn.TextTransparency=1; scDn.ZIndex=4
-	local total_width = mouse_x + mouseWidth + 9; local frame_height = keyboard_height + 9; Frame.Size = UDim2.new(0,total_width,0,frame_height)
-	local buttons = {}
-	for _, kd in ipairs(keys) do
-		local btn = Instance.new("TextButton"); btn.Name = kd.Name; btn.Parent = Frame; btn.BackgroundColor3 = Color3.fromRGB(50,50,50); btn.BackgroundTransparency = 0.5; btn.BorderSizePixel = 0; btn.Position = kd.Position; btn.Size = kd.Size or UDim2.new(0,base_u,0,base_u); btn.Font = Enum.Font.GothamBold; btn.Text = kd.Name; btn.TextColor3 = Color3.fromRGB(255,255,255); btn.TextScaled = true; btn.TextWrapped = false; btn.ClipsDescendants = true; btn.AutoButtonColor = false
-		Instance.new("UICorner", btn)
-		-- Auto-shrink each label so the FULL key name always fits inside its key and
-		-- never overflows / gets cut off. MaxTextSize keeps single-letter keys from
-		-- ballooning, MinTextSize keeps long names readable, and the small side padding
-		-- keeps text off the borders. TextScaled + no-wrap = complete names on one line.
-		local tsc = Instance.new("UITextSizeConstraint", btn); tsc.MaxTextSize = 12; tsc.MinTextSize = 5
-		local pad = Instance.new("UIPadding", btn); pad.PaddingLeft = UDim.new(0,2); pad.PaddingRight = UDim.new(0,2)
-		buttons[kd.Name] = btn
-	end
-	buttons["LMB"] = lmbB; buttons["RMB"] = rmbB; buttons["MMB"] = scrollW
-	local function updateLMBClips(c,t) lmbClipB.BackgroundColor3=c; lmbClipB.BackgroundTransparency=t; lmbClipR.BackgroundColor3=c; lmbClipR.BackgroundTransparency=t end
-	local function updateRMBClips(c,t) rmbClipB.BackgroundColor3=c; rmbClipB.BackgroundTransparency=t; rmbClipL.BackgroundColor3=c; rmbClipL.BackgroundTransparency=t end
-	updateLMBClips(Color3.fromRGB(50,50,50),0.3); updateRMBClips(Color3.fromRGB(50,50,50),0.3)
-	local keyCodeToKeys = {}
-	for _, kd in ipairs(keys) do if kd.KeyCode then if not keyCodeToKeys[kd.KeyCode] then keyCodeToKeys[kd.KeyCode]={} end; table.insert(keyCodeToKeys[kd.KeyCode],kd) end end
-	local longPressThreshold = 0.01; local keyPressTimes = {}
-	local defaultMouseBtnColor = Color3.fromRGB(50,50,50); local defaultMouseBtnTransparency = 0.3; local activeColor = Color3.fromRGB(0,255,255); local flashColor = Color3.fromRGB(255,255,255); local defaultKeyColor = Color3.fromRGB(50,50,50)
-	local function activateKey(name)
-		local button = buttons[name]; if not button then return end; keyPressTimes[name] = tick()
-		task.spawn(function() task.wait(longPressThreshold); if keyPressTimes[name] then TweenService:Create(button, TweenInfo.new(0.1), {BackgroundColor3 = activeColor}):Play() end end)
-	end
-	local function deactivateKey(name)
-		local button = buttons[name]; if not button or not keyPressTimes[name] then return end; local d = tick() - keyPressTimes[name]; keyPressTimes[name] = nil
-		if d < longPressThreshold then
-			TweenService:Create(button, TweenInfo.new(0.1), {BackgroundColor3 = flashColor}):Play()
-			task.spawn(function() task.wait(0.1); if not keyPressTimes[name] then TweenService:Create(button, TweenInfo.new(0.1), {BackgroundColor3 = defaultKeyColor}):Play() end end)
-		else TweenService:Create(button, TweenInfo.new(0.1), {BackgroundColor3 = defaultKeyColor}):Play() end
-	end
-	local keystrokeConns = {}
-	table.insert(keystrokeConns, UserInputService.InputBegan:Connect(function(input, gp)
-		if input.UserInputType == Enum.UserInputType.Keyboard then
-			local kdl = keyCodeToKeys[input.KeyCode]; if kdl then for _, kd in ipairs(kdl) do activateKey(kd.Name) end end
-		elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-			keyPressTimes["LMB"] = tick()
-			task.spawn(function() task.wait(longPressThreshold); if keyPressTimes["LMB"] then TweenService:Create(lmbB, TweenInfo.new(0.1), {BackgroundColor3 = activeColor, BackgroundTransparency = 0.1}):Play(); updateLMBClips(activeColor, 0.1) end end)
-		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-			keyPressTimes["RMB"] = tick()
-			task.spawn(function() task.wait(longPressThreshold); if keyPressTimes["RMB"] then TweenService:Create(rmbB, TweenInfo.new(0.1), {BackgroundColor3 = activeColor, BackgroundTransparency = 0.1}):Play(); updateRMBClips(activeColor, 0.1) end end)
-		elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
-			keyPressTimes["MMB"] = tick()
-			task.spawn(function() task.wait(longPressThreshold); if keyPressTimes["MMB"] then TweenService:Create(scrollW, TweenInfo.new(0.1), {BackgroundColor3 = activeColor, BackgroundTransparency = 0.1}):Play() end end)
-		elseif input.UserInputType == Enum.UserInputType.MouseWheel then
-			TweenService:Create(scrollW, TweenInfo.new(0.05), {BackgroundColor3 = flashColor, BackgroundTransparency = 0}):Play()
-			if input.Position.Z > 0 then
-				TweenService:Create(scUp, TweenInfo.new(0.05), {TextTransparency = 0, TextColor3 = Color3.fromRGB(0,255,255)}):Play()
-				task.delay(0.15, function() TweenService:Create(scUp, TweenInfo.new(0.2), {TextTransparency = 1}):Play() end)
-			else
-				TweenService:Create(scDn, TweenInfo.new(0.05), {TextTransparency = 0, TextColor3 = Color3.fromRGB(0,255,255)}):Play()
-				task.delay(0.15, function() TweenService:Create(scDn, TweenInfo.new(0.2), {TextTransparency = 1}):Play() end)
-			end
-			task.delay(0.1, function() TweenService:Create(scrollW, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(70,70,70), BackgroundTransparency = 0.2}):Play() end)
-		end
-	end))
-	table.insert(keystrokeConns, UserInputService.InputEnded:Connect(function(input, gp)
-		if input.UserInputType == Enum.UserInputType.Keyboard then
-			local kdl = keyCodeToKeys[input.KeyCode]; if kdl then for _, kd in ipairs(kdl) do deactivateKey(kd.Name) end end
-		elseif input.UserInputType == Enum.UserInputType.MouseButton1 and keyPressTimes["LMB"] then
-			local d = tick() - keyPressTimes["LMB"]; keyPressTimes["LMB"] = nil
-			if d < longPressThreshold then
-				TweenService:Create(lmbB, TweenInfo.new(0.1), {BackgroundColor3 = flashColor, BackgroundTransparency = 0}):Play(); updateLMBClips(flashColor, 0)
-				task.spawn(function() task.wait(0.1); TweenService:Create(lmbB, TweenInfo.new(0.1), {BackgroundColor3 = defaultMouseBtnColor, BackgroundTransparency = defaultMouseBtnTransparency}):Play(); updateLMBClips(defaultMouseBtnColor, defaultMouseBtnTransparency) end)
-			else TweenService:Create(lmbB, TweenInfo.new(0.1), {BackgroundColor3 = defaultMouseBtnColor, BackgroundTransparency = defaultMouseBtnTransparency}):Play(); updateLMBClips(defaultMouseBtnColor, defaultMouseBtnTransparency) end
-		elseif input.UserInputType == Enum.UserInputType.MouseButton2 and keyPressTimes["RMB"] then
-			local d = tick() - keyPressTimes["RMB"]; keyPressTimes["RMB"] = nil
-			if d < longPressThreshold then
-				TweenService:Create(rmbB, TweenInfo.new(0.1), {BackgroundColor3 = flashColor, BackgroundTransparency = 0}):Play(); updateRMBClips(flashColor, 0)
-				task.spawn(function() task.wait(0.1); TweenService:Create(rmbB, TweenInfo.new(0.1), {BackgroundColor3 = defaultMouseBtnColor, BackgroundTransparency = defaultMouseBtnTransparency}):Play(); updateRMBClips(defaultMouseBtnColor, defaultMouseBtnTransparency) end)
-			else TweenService:Create(rmbB, TweenInfo.new(0.1), {BackgroundColor3 = defaultMouseBtnColor, BackgroundTransparency = defaultMouseBtnTransparency}):Play(); updateRMBClips(defaultMouseBtnColor, defaultMouseBtnTransparency) end
-		elseif input.UserInputType == Enum.UserInputType.MouseButton3 and keyPressTimes["MMB"] then
-			local d = tick() - keyPressTimes["MMB"]; keyPressTimes["MMB"] = nil
-			if d < longPressThreshold then
-				TweenService:Create(scrollW, TweenInfo.new(0.1), {BackgroundColor3 = flashColor, BackgroundTransparency = 0}):Play()
-				task.spawn(function() task.wait(0.1); TweenService:Create(scrollW, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(70,70,70), BackgroundTransparency = 0.2}):Play() end)
-			else TweenService:Create(scrollW, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(70,70,70), BackgroundTransparency = 0.2}):Play() end
-		end
-	end))
-	local dragging, dragStart, startPos
-	table.insert(keystrokeConns, Frame.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true; dragStart = input.Position; startPos = Frame.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false; keystrokeSavedPos = Frame.Position; saveConfig()
-				end
-			end)
-		end
-	end))
-	table.insert(keystrokeConns, UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-		end
-	end))
-	table.insert(keystrokeConns, UserInputService.InputEnded:Connect(function(input)
-		if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and dragging then
-			dragging = false; keystrokeSavedPos = Frame.Position; saveConfig()
-		end
-	end))
-	keystrokeConnections = keystrokeConns
-end
-
-function enableKeystroke()
-	if keystrokeEnabled then return end
-	keystrokeEnabled = true; createKeystrokeUI()
-end
-
-function disableKeystroke()
-	keystrokeEnabled = false
-	if keystrokeConnections then
-		for _, conn in ipairs(keystrokeConnections) do conn:Disconnect() end
-		keystrokeConnections = nil
-	end
-	if keystrokeGui then keystrokeGui:Destroy() keystrokeGui = nil end
-end
-
-btn.keystrokeBtn = createButton("KeystrokeButton", "Keystroke: OFF", 119)
-btn.keystrokeBtn.MouseButton1Click:Connect(function()
-	if keystrokeEnabled then disableKeystroke() else enableKeystroke() end
-	setToggleState(btn.keystrokeBtn, keystrokeEnabled, "Keystroke: ON", "Keystroke: OFF")
 end)
 
 -- Master icon switches (Settings). menuIconsEnabled gates top-bar button
@@ -23113,10 +22873,11 @@ function showPlayerInfoPopup(plr)
 	local popupStartPos
 
 	popupTitle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			popupDragging = true
 			popupDragStart = input.Position
 			popupStartPos = popup.Position
+			popupDragInput = input
 			table.insert(popupConns, input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					popupDragging = false
@@ -23126,13 +22887,13 @@ function showPlayerInfoPopup(plr)
 	end)
 
 	popupTitle.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement then
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			popupDragInput = input
 		end
 	end)
 
 	popupDragCon = UserInputService.InputChanged:Connect(function(input)
-		if input == popupDragInput and popupDragging then
+		if popupDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			local delta = input.Position - popupDragStart
 			popup.Position = UDim2.new(popupStartPos.X.Scale, popupStartPos.X.Offset + delta.X, popupStartPos.Y.Scale, popupStartPos.Y.Offset + delta.Y)
 		end
@@ -24261,7 +24022,7 @@ task.spawn(function()
 end)
 
 autofarmEnabled = false
-autofarmTargetCoins = 40
+autofarmTargetCoins = 50
 autofarmCustomTargetEnabled = false
 autofarmCustomTargetCoins = 100
 autofarmCollected = 0
@@ -24500,14 +24261,24 @@ end
 -- 50) — that pins it to OUR bag and avoids matching unrelated numbers.
 -- The bag size is AUTO-DETECTED from the "X/Y" label (40 normal, 50 Elite) —
 -- that is what lets ONE "Autofarm Coins" button work with both bags.
-autofarmBagDetectedTotal = (loadedConfig and loadedConfig.values and loadedConfig.values.autofarmBagDetectedTotal) or 40
+-- [40/50 fix] When the HUD only exposes a bare count (the usual case) there is
+-- nothing to read the capacity from, so we must NOT assume the smaller 40 bag:
+-- the old default of 40 made the farm "finish" at 40/50 and skip Elite coins.
+-- Start at 50 and only lower it when the label explicitly says "/40" or after a
+-- full round proves the bag really holds 40 (see the no-more-coins path).
+autofarmBagTotalExplicit = false
+autofarmBagDetectedTotal = 50
+if loadedConfig and loadedConfig.values and loadedConfig.values.autofarmBagTotalExplicit == true then
+	autofarmBagTotalExplicit = true
+	autofarmBagDetectedTotal = math.floor(math.clamp(tonumber(loadedConfig.values.autofarmBagDetectedTotal) or 50, 20, 200))
+end
 function autofarmResolveTargetLimit()
 	if autofarmCustomTargetEnabled then
-		local custom = tonumber(autofarmCustomTarget) or 40
+		local custom = tonumber(autofarmCustomTarget) or 50
 		return math.max(1, math.floor(custom))
 	end
-	local total = tonumber(autofarmBagDetectedTotal) or 40
-	if total < 20 or total > 200 then total = 40 end
+	local total = tonumber(autofarmBagDetectedTotal) or 50
+	if total < 20 or total > 200 then total = 50 end
 	return math.floor(total)
 end
 
@@ -24520,6 +24291,7 @@ local function isCoinBagText(t)
 		-- "1/3" style counters elsewhere in the HUD.
 		if total >= 20 and total <= 200 then
 			autofarmBagDetectedTotal = total
+			autofarmBagTotalExplicit = true
 			return tonumber(num), total
 		end
 		return nil
@@ -24530,7 +24302,7 @@ local function isCoinBagText(t)
 		-- Elite inference: the visible bag label is sometimes a bare count with
 		-- no "X/50" form. Collecting a 41st coin proves the bag is bigger than
 		-- the normal 40, i.e. the Elite 50-slot bag.
-		if n and n > 40 and n <= 60 and (autofarmBagDetectedTotal or 40) < 50 then
+		if n and n > 40 and n <= 60 then
 			autofarmBagDetectedTotal = 50
 		end
 		return n
@@ -24945,8 +24717,14 @@ function autofarmFinishRound()
 	end)
 end
 
+-- True while the farm flight loop is actively moving the character every frame.
+-- While it is true the root is fully non-colliding (fly through anything);
+-- while false the root collides so the invisible platform catches the character.
+autofarmFlightMoving = false
+
 function autofarmStopFlight()
 	autofarmHoldPos = nil
+	autofarmFlightMoving = false
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -24976,6 +24754,7 @@ end
 -- This eliminates the sharp dip and the delay when switching coin targets.
 autofarmHoldPos = nil
 function autofarmPauseFlight()
+	autofarmFlightMoving = false
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -25094,6 +24873,13 @@ function startAutofarm()
 				-- New round / new map -> reset the per-round state
 				if container ~= autofarmActiveContainer then
 					autofarmActiveContainer = container
+					-- [40/50 fix] A fresh round that starts with 45+ coins in the
+					-- container can only be a 50-slot (Elite) bag — raise the target
+					-- even when the HUD only shows a bare count.
+					local okCc, ccCount = pcall(function() return #container:GetChildren() end)
+					if okCc and ccCount and ccCount >= 45 then
+						autofarmBagDetectedTotal = 50
+					end
 					autofarmCollected = 0
 					autofarmCoinWatched = {}
 					autofarmCoinRetries = {}
@@ -25274,9 +25060,12 @@ function startAutofarm()
 						-- clamped so a lag spike can never become one huge step either.
 						pcall(function() hum.PlatformStand = true end)
 						-- [perf] Cached part list + write CanCollide only when it actually
-						-- changed (property writes on every part every frame are not free)
+						-- changed (property writes on every part every frame are not free).
+						-- The HumanoidRootPart is kept collidable so the character can
+						-- rest on the invisible platform when it stops flying.
+						local rootPart = char:FindFirstChild("HumanoidRootPart")
 						for _, p in ipairs(autofarmGetCharParts(char)) do
-							if p.CanCollide then p.CanCollide = false end
+							if p ~= rootPart and p.CanCollide then p.CanCollide = false end
 						end
 
 						-- Keep touching the coin EVERY frame while in range (not just once).
@@ -25391,6 +25180,7 @@ function startAutofarm()
 						-- smooth at the same constant speed.
 						-- Resuming flight: drop the pinned hold position.
 						autofarmHoldPos = nil
+						autofarmFlightMoving = true
 						local delta = target - hrp.Position
 						local dMag = delta.Magnitude
 						local maxStep = autofarmSpeed * math.min(dt, autofarmMaxStepDt)
@@ -27218,7 +27008,9 @@ emoteAddRow.LayoutOrder = 392
 emoteAddRow.Parent = categoryFrames["Emotions"]
 local emoteAddName = Instance.new("TextBox")
 emoteAddName.Name = "EmoteAddName"
-emoteAddName.Size = UDim2.new(1, -290, 1, 0)
+-- [mobile layout] 292 px content width: name (120) + gap + ID (72) + gap +
+-- Add button (92) must all fit on one 42 px row.
+emoteAddName.Size = UDim2.new(1, -172, 1, 0)
 emoteAddName.Position = UDim2.new(0, 0, 0, 0)
 emoteAddName.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 emoteAddName.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -27232,8 +27024,8 @@ emoteAddName.Parent = emoteAddRow
 Instance.new("UICorner", emoteAddName).CornerRadius = UDim.new(0, 6)
 local emoteAddId = Instance.new("TextBox")
 emoteAddId.Name = "EmoteAddId"
-emoteAddId.Size = UDim2.new(0, 140, 1, 0)
-emoteAddId.Position = UDim2.new(1, -280, 0, 0)
+emoteAddId.Size = UDim2.new(0, 72, 1, 0)
+emoteAddId.Position = UDim2.new(1, -168, 0, 0)
 emoteAddId.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 emoteAddId.TextColor3 = Color3.fromRGB(255, 255, 255)
 emoteAddId.PlaceholderText = "ID"
@@ -27246,13 +27038,13 @@ emoteAddId.Parent = emoteAddRow
 Instance.new("UICorner", emoteAddId).CornerRadius = UDim.new(0, 6)
 local emoteAddBtn = Instance.new("TextButton")
 emoteAddBtn.Name = "EmoteAddBtn"
-emoteAddBtn.Size = UDim2.new(0, 130, 1, 0)
-emoteAddBtn.Position = UDim2.new(1, -130, 0, 0)
+emoteAddBtn.Size = UDim2.new(0, 92, 1, 0)
+emoteAddBtn.Position = UDim2.new(1, -92, 0, 0)
 emoteAddBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 emoteAddBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 emoteAddBtn.Text = "Add Emote"
 emoteAddBtn.Font = Enum.Font.SourceSansBold
-emoteAddBtn.TextSize = 14
+emoteAddBtn.TextSize = 13
 emoteAddBtn.Parent = emoteAddRow
 Instance.new("UICorner", emoteAddBtn).CornerRadius = UDim.new(0, 6)
 
@@ -27280,7 +27072,7 @@ function rebuildEmote()
 		order = order + 1
 		local animationButton = Instance.new("TextButton")
 		animationButton.Name = "EmoteButton_" .. tostring(animationId)
-		animationButton.Size = UDim2.new(1, -126, 1, 0)
+		animationButton.Size = UDim2.new(1, -102, 1, 0)
 		animationButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		animationButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 		animationButton.Text = animationName
@@ -27288,22 +27080,11 @@ function rebuildEmote()
 		animationButton.TextSize = 15
 		animationButton.Parent = animationRow
 		Instance.new("UICorner", animationButton).CornerRadius = UDim.new(0, 6)
-		-- NOTE: no speed box in the Emotions tab (removed): the play button below
-		-- stretches over the freed space and the rest is packed to the right.
-		local bindBtn = Instance.new("TextButton")
-		bindBtn.Size = UDim2.new(0, 22, 1, 0)
-		bindBtn.Position = UDim2.new(1, -24, 0, 0)
-		bindBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		bindBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		bindBtn.Text = emotionKeyBinds[animationId] and bindKeyToName(emotionKeyBinds[animationId]) or "⌨"
-		bindBtn.Font = Enum.Font.SourceSansBold
-		bindBtn.TextSize = 12
-		bindBtn.Parent = animationRow
-		Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 4)
-		attachBindKeyIcon(bindBtn)
+		-- NOTE: no speed box and no bind button in the Emotions tab (removed):
+		-- star / reorder / delete are packed to the right (fits 292 px).
 		local starBtn = Instance.new("TextButton")
 		starBtn.Size = UDim2.new(0, 22, 1, 0)
-		starBtn.Position = UDim2.new(1, -48, 0, 0)
+		starBtn.Position = UDim2.new(1, -24, 0, 0)
 		starBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		starBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		starBtn.Text = isEmoteDetached(animationId) and "★" or "☆"
@@ -27314,7 +27095,7 @@ function rebuildEmote()
 		local moveGroup = Instance.new("Frame")
 		moveGroup.Name = "EmoteMove_" .. tostring(animationId)
 		moveGroup.Size = UDim2.new(0, 46, 1, 0)
-		moveGroup.Position = UDim2.new(1, -96, 0, 0)
+		moveGroup.Position = UDim2.new(1, -72, 0, 0)
 		moveGroup.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		moveGroup.Parent = animationRow
 		Instance.new("UICorner", moveGroup).CornerRadius = UDim.new(0, 4)
@@ -27338,7 +27119,7 @@ function rebuildEmote()
 		downBtn.Parent = moveGroup
 		local delBtn = Instance.new("TextButton")
 		delBtn.Size = UDim2.new(0, 22, 1, 0)
-		delBtn.Position = UDim2.new(1, -120, 0, 0)
+		delBtn.Position = UDim2.new(1, -96, 0, 0)
 		delBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		delBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		delBtn.Text = "×"
@@ -27351,7 +27132,6 @@ function rebuildEmote()
 			Button = animationButton,
 			Name = animationName,
 			PopOut = starBtn,
-			Bind = bindBtn,
 		}
 		starBtn.MouseButton1Click:Connect(function()
 			if isEmoteDetached(animationId) then
@@ -27360,35 +27140,6 @@ function rebuildEmote()
 			else
 				createDetachedEmote(animationId, animationName)
 				starBtn.Text = "★"
-			end
-		end)
-		bindBtn.MouseButton1Click:Connect(function()
-			lastUIInteract = tick()
-			if listeningForEmotionBind then
-				listeningForEmotionBind = false
-				listeningEmotionTextBox = nil
-				listeningEmotionId = nil
-				bindBtn.Text = emotionKeyBinds[animationId] and bindKeyToName(emotionKeyBinds[animationId]) or "⌨"
-				return
-			end
-			bindBtn.Text = "..."
-			listeningForEmotionBind = true
-			listeningEmotionTextBox = bindBtn
-			listeningEmotionId = animationId
-		end)
-		bindBtn.MouseButton2Click:Connect(function()
-			lastUIInteract = tick()
-			if listeningForEmotionBind and listeningEmotionId == animationId then
-				listeningForEmotionBind = false
-				listeningEmotionTextBox = nil
-				listeningEmotionId = nil
-			end
-			local oldKey = emotionKeyBinds[animationId]
-			if oldKey then
-				if keyBinds[oldKey] then keyBinds[oldKey] = nil end
-				emotionKeyBinds[animationId] = nil
-				bindBtn.Text = "⌨"
-				pcall(saveConfig)
 			end
 		end)
 		animationButton.MouseButton1Click:Connect(function()
@@ -27532,7 +27283,8 @@ animAddRow.Parent = categoryFrames["Ragebait"]
 
 local animAddName = Instance.new("TextBox")
 animAddName.Name = "AnimAddName"
-animAddName.Size = UDim2.new(1, -290, 1, 0)
+-- [mobile layout] same 292 px split as the Emotions add row.
+animAddName.Size = UDim2.new(1, -172, 1, 0)
 animAddName.Position = UDim2.new(0, 0, 0, 0)
 animAddName.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 animAddName.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -27547,8 +27299,8 @@ Instance.new("UICorner", animAddName).CornerRadius = UDim.new(0, 6)
 
 local animAddId = Instance.new("TextBox")
 animAddId.Name = "AnimAddId"
-animAddId.Size = UDim2.new(0, 140, 1, 0)
-animAddId.Position = UDim2.new(1, -280, 0, 0)
+animAddId.Size = UDim2.new(0, 72, 1, 0)
+animAddId.Position = UDim2.new(1, -168, 0, 0)
 animAddId.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 animAddId.TextColor3 = Color3.fromRGB(255, 255, 255)
 animAddId.Text = ""
@@ -27562,13 +27314,13 @@ Instance.new("UICorner", animAddId).CornerRadius = UDim.new(0, 6)
 
 local animAddBtn = Instance.new("TextButton")
 animAddBtn.Name = "AnimAddButton"
-animAddBtn.Size = UDim2.new(0, 135, 1, 0)
-animAddBtn.Position = UDim2.new(1, -135, 0, 0)
+animAddBtn.Size = UDim2.new(0, 92, 1, 0)
+animAddBtn.Position = UDim2.new(1, -92, 0, 0)
 animAddBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 animAddBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 animAddBtn.Text = "Add Emotion"
 animAddBtn.Font = Enum.Font.SourceSansBold
-animAddBtn.TextSize = 14
+animAddBtn.TextSize = 13
 animAddBtn.Parent = animAddRow
 Instance.new("UICorner", animAddBtn).CornerRadius = UDim.new(0, 6)
 
@@ -27608,7 +27360,7 @@ function rebuildEmotions()
 
 		local animationButton = Instance.new("TextButton")
 		animationButton.Name = "AnimButton_" .. tostring(animationId)
-		animationButton.Size = UDim2.new(1, -208, 1, 0)
+		animationButton.Size = UDim2.new(1, -184, 1, 0)
 		animationButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		animationButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 		animationButton.Text = animationName
@@ -27632,21 +27384,10 @@ function rebuildEmotions()
 		speedBox.Parent = animationRow
 		Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0, 6)
 
-		local bindBtn = Instance.new("TextButton")
-		bindBtn.Size = UDim2.new(0, 22, 1, 0)
-		bindBtn.Position = UDim2.new(1, -102, 0, 0)
-		bindBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		bindBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		bindBtn.Text = emotionKeyBinds[animationId] and bindKeyToName(emotionKeyBinds[animationId]) or "⌨"
-		bindBtn.Font = Enum.Font.SourceSansBold
-		bindBtn.TextSize = 12
-		bindBtn.Parent = animationRow
-		Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 4)
-		attachBindKeyIcon(bindBtn)
-
+		-- NOTE: bind button REMOVED on mobile: star/move/del packed right.
 		local starBtn = Instance.new("TextButton")
 		starBtn.Size = UDim2.new(0, 22, 1, 0)
-		starBtn.Position = UDim2.new(1, -126, 0, 0)
+		starBtn.Position = UDim2.new(1, -102, 0, 0)
 		starBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		starBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		starBtn.Text = isEmoteDetached(animationId) and "★" or "☆"
@@ -27661,7 +27402,7 @@ function rebuildEmotions()
 		local moveGroup = Instance.new("Frame")
 		moveGroup.Name = "AnimMove_" .. tostring(animationId)
 		moveGroup.Size = UDim2.new(0, 46, 1, 0)
-		moveGroup.Position = UDim2.new(1, -174, 0, 0)
+		moveGroup.Position = UDim2.new(1, -150, 0, 0)
 		moveGroup.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		moveGroup.Parent = animationRow
 		Instance.new("UICorner", moveGroup).CornerRadius = UDim.new(0, 4)
@@ -27688,7 +27429,7 @@ function rebuildEmotions()
 
 		local delBtn = Instance.new("TextButton")
 		delBtn.Size = UDim2.new(0, 22, 1, 0)
-		delBtn.Position = UDim2.new(1, -198, 0, 0)
+		delBtn.Position = UDim2.new(1, -174, 0, 0)
 		delBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		delBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		delBtn.Text = "×"
@@ -27703,7 +27444,6 @@ function rebuildEmotions()
 			Box = speedBox,
 			Name = animationName,
 			PopOut = starBtn,
-			Bind = bindBtn,
 		}
 
 		starBtn.MouseButton1Click:Connect(function()
@@ -27713,40 +27453,6 @@ function rebuildEmotions()
 			else
 				createDetachedEmote(animationId, animationName)
 				starBtn.Text = "★"
-			end
-		end)
-
-		bindBtn.MouseButton1Click:Connect(function()
-			lastUIInteract = tick()
-			if listeningForEmotionBind then
-				listeningForEmotionBind = false
-				listeningEmotionTextBox = nil
-				listeningEmotionId = nil
-				bindBtn.Text = emotionKeyBinds[animationId] and bindKeyToName(emotionKeyBinds[animationId]) or "⌨"
-				return
-			end
-			-- Enter listening mode WITHOUT dropping an existing bind: the old key
-			-- stays active until a new key is pressed (or the bind is cleared).
-			bindBtn.Text = "..."
-			listeningForEmotionBind = true
-			listeningEmotionTextBox = bindBtn
-			listeningEmotionId = animationId
-		end)
-
-		-- Right-click the bind button to remove the bind (shows ⌨ again).
-		bindBtn.MouseButton2Click:Connect(function()
-			lastUIInteract = tick()
-			if listeningForEmotionBind and listeningEmotionId == animationId then
-				listeningForEmotionBind = false
-				listeningEmotionTextBox = nil
-				listeningEmotionId = nil
-			end
-			local oldKey = emotionKeyBinds[animationId]
-			if oldKey then
-				if keyBinds[oldKey] then keyBinds[oldKey] = nil end
-				emotionKeyBinds[animationId] = nil
-				bindBtn.Text = "⌨"
-				pcall(saveConfig)
 			end
 		end)
 
@@ -29608,599 +29314,6 @@ end)
 
 
 -- ============================================
--- SECTION 6: Binds (LayoutOrder 500-599)
--- ============================================
-currentCategory = "Binds"
-createSection("Binds", 500)
-
-bindToggleStates = {}
-
-bindableFeatures = {
-	{name = "Toggle Menu", defaultKey = nil, getState = function() return menuVisible end, callback = function()
-		toggleMenu()
-	end},
-	{name = "Infinite Jump", defaultKey = nil, getState = function() return isEnabled end, callback = function()
-		isEnabled = not isEnabled
-		setToggleState(button1, isEnabled, "Infinite Jump: ON", "Infinite Jump: OFF")
-		setExtractedBtnState("Infinite Jump", isEnabled)
-	end},
-	{name = "Fake Wallhop", defaultKey = nil, getState = function() return wallhopToggle end, callback = function()
-		wallhopToggle = not wallhopToggle
-		setToggleState(button2, wallhopToggle, "Fake Wallhop: ON", "Fake Wallhop: OFF")
-		setExtractedBtnState("Fake Wallhop", wallhopToggle)
-	end},
-	{name = "Jump Boost", defaultKey = nil, getState = function() return false end, callback = function()
-		local char = player.Character
-		if char and char:FindFirstChild("Humanoid") then
-			char.Humanoid.JumpPower = JUMP_BOOST_POWER
-			task.wait(0.7)
-			if char and char:FindFirstChild("Humanoid") then
-				char.Humanoid.JumpPower = 50
-			end
-		end
-	end},
-	{name = "Fake Speed Glitch", defaultKey = nil, getState = function() return fakeSpeedEnabled end, callback = function()
-		toggleFakeSpeed()
-		setToggleState(button4, fakeSpeedEnabled, "Fake Speed Glitch: ON", "Fake Speed Glitch: OFF")
-		setExtractedBtnState("Fake Speed Glitch", fakeSpeedEnabled)
-	end},
-	{name = "Invisibility", defaultKey = nil, getState = function() return invis_on end, callback = function()
-		invis_on = not invis_on
-		if invis_on then
-			applyInvisibility()
-			setToggleState(button5, true, "Invisibility: ON", "Invisibility: OFF")
-			setExtractedBtnState("Invisibility", true)
-		else
-			removeInvisibility()
-			setToggleState(button5, false, "Invisibility: ON", "Invisibility: OFF")
-			setExtractedBtnState("Invisibility", false)
-		end
-	end},
-	{name = "Auto Invisibility", defaultKey = nil, getState = function() return autoInvisEnabled end, callback = function()
-		toggleAutoInvis()
-	end},
-	{name = "Auto TP", defaultKey = nil, getState = function() return autoTpEnabled end, callback = function()
-		toggleAutoTp()
-	end},
-	{name = "Anti-Shoot", defaultKey = nil, getState = function() return PastedSources end, callback = function()
-		toggleDesync()
-		setToggleState(desyncButton, PastedSources, "Anti-Shoot: ON", "Anti-Shoot: OFF")
-		setExtractedBtnState("Anti-Shoot", PastedSources)
-	end},
-	{name = "Desync", defaultKey = nil, getState = function() return DesyncSpinActive end, callback = function()
-		toggleDesyncSpin()
-		setToggleState(desyncSpinButton, DesyncSpinActive, "Desync: ON", "Desync: OFF")
-		setExtractedBtnState("Desync", DesyncSpinActive)
-	end},
-	{name = "Clumsy", defaultKey = nil, getState = function() return clumsy_on end, callback = function()
-		toggleClumsy()
-	end},
-	{name = "Noclip", defaultKey = nil, getState = function() return noclipEnabled end, callback = function()
-		toggleNoclip()
-		setToggleState(noclipButton, noclipEnabled, "Noclip: ON", "Noclip: OFF")
-		setExtractedBtnState("Noclip", noclipEnabled)
-	end},
-	{name = "Knife Stab Aura", defaultKey = nil, getState = function() return reachEnabled end, callback = function()
-		toggleReach()
-		setToggleState(reachButton, reachEnabled, "Knife Stab Aura: ON", "Knife Stab Aura: OFF")
-		setExtractedBtnState("Knife Stab Aura", reachEnabled)
-	end},
-	{name = "Throwing Knife Aura", defaultKey = nil, getState = function() return throwingKnifeAuraEnabled end, callback = function()
-		toggleThrowingKnifeAura()
-		setToggleState(throwingKnifeAuraButton, throwingKnifeAuraEnabled, "Throwing Knife Aura: ON", "Throwing Knife Aura: OFF")
-		setExtractedBtnState("Throwing Knife Aura", throwingKnifeAuraEnabled)
-	end},
-	{name = "Air Strafe", defaultKey = nil, getState = function() return airStrafeEnabled end, callback = function()
-		toggleAirStrafe()
-		setToggleState(airStrafeButton, airStrafeEnabled, "Air Strafe: ON", "Air Strafe: OFF")
-		setExtractedBtnState("Air Strafe", airStrafeEnabled)
-	end},
-	{name = "Fake Duck", defaultKey = nil, getState = function() return fakeDuckEnabled end, callback = function()
-		toggleFakeDuck()
-		bindToggleStates["Fake Duck"] = fakeDuckEnabled
-	end},
-	{name = "Anti-Lag", defaultKey = nil, getState = function() return antiLagEnabled end, callback = function()
-		toggleAntiLag()
-		bindToggleStates["Anti-Lag"] = antiLagEnabled
-		setExtractedBtnState("Anti-Lag", antiLagEnabled)
-	end},
-	{name = "Loop Walkspeed", defaultKey = nil, getState = function() return loopSpeedEnabled end, callback = function()
-		toggleLoopSpeed()
-		bindToggleStates["Loop Walkspeed"] = loopSpeedEnabled
-	end},
-	{name = "Loop Jump Power", defaultKey = nil, getState = function() return customJumpPowerEnabled end, callback = function()
-		toggleCustomJumpPower()
-		setToggleState(customJumpPowerButton, customJumpPowerEnabled, "Loop Jump Power: ON", "Loop Jump Power: OFF")
-		setExtractedBtnState("Loop Jump Power", customJumpPowerEnabled)
-		bindToggleStates["Loop Jump Power"] = customJumpPowerEnabled
-	end},
-	{name = "Fly", defaultKey = nil, getState = function() return flyEnabled end, callback = function()
-		toggleFly()
-		if flyButton then setToggleState(flyButton, flyEnabled, "Fly: ON", "Fly: OFF") end
-		setExtractedBtnState("Fly", flyEnabled)
-		bindToggleStates["Fly"] = flyEnabled
-	end},
-	{name = "Teleport Walk", defaultKey = nil, getState = function() return tpwalkEnabled end, callback = function()
-		toggleTpwalk()
-		if tpwalkButton then setToggleState(tpwalkButton, tpwalkEnabled, "Teleport Walk: ON", "Teleport Walk: OFF") end
-		setExtractedBtnState("Teleport Walk", tpwalkEnabled)
-		bindToggleStates["Teleport Walk"] = tpwalkEnabled
-	end},
-	{name = "Anti-Aim", defaultKey = nil, getState = function() return currentMode ~= 0 end, callback = function()
-		cycleMode()
-		bindToggleStates["Anti-Aim"] = (currentMode ~= 0)
-		setExtractedBtnState("Anti-Aim", currentMode ~= 0)
-	end},
-	{name = "AA/FQ Manuals", defaultKey = nil, getState = function() return manualsEnabled end, callback = function()
-		toggleManuals()
-		bindToggleStates["AA/FQ Manuals"] = manualsEnabled
-		setExtractedBtnState("AA/FQ Manuals", manualsEnabled)
-	end},
-	{name = "Manuals: Side", defaultKey = nil, getState = function() return manualsEnabled end, callback = function()
-		manualsSwitchSide()
-		bindToggleStates["Manuals: Side"] = manualsEnabled
-	end},
-	{name = "Auto Manuals", defaultKey = nil, getState = function() return autoManualsEnabled end, callback = function()
-		toggleAutoManuals()
-		bindToggleStates["Auto Manuals"] = autoManualsEnabled
-		setExtractedBtnState("Auto Manuals", autoManualsEnabled)
-	end},
-	{name = "Auto Dodge Knife", defaultKey = nil, getState = function() return autoDodgeEnabled end, callback = function()
-		toggleAutoDodge()
-		setToggleState(autoDodgeButton, autoDodgeEnabled, "Auto Dodge Knife: ON", "Auto Dodge Knife: OFF")
-		setExtractedBtnState("Auto Dodge Knife", autoDodgeEnabled)
-	end},
-	{name = "Reset Sheriff/Hero", defaultKey = nil, getState = function() return false end, callback = function()
-		executeNanFlingByRole("Sheriff")
-	end},
-	{name = "Reset Murderer", defaultKey = nil, getState = function() return false end, callback = function()
-		executeNanFlingByRole("Murderer")
-	end},
-	{name = "Auto Reset Sheriff/Hero", defaultKey = nil, getState = function() return autoResetSheriffEnabled end, callback = function()
-		toggleAutoResetSheriff()
-		setToggleState(autoResetSheriffBtn, autoResetSheriffEnabled, "Auto Reset Sheriff/Hero: ON", "Auto Reset Sheriff/Hero: OFF")
-		setExtractedBtnState("Auto Reset Sheriff/Hero", autoResetSheriffEnabled)
-	end},
-	{name = "Auto Reset Murderer", defaultKey = nil, getState = function() return autoResetMurdererEnabled end, callback = function()
-		toggleAutoResetMurderer()
-		setToggleState(autoResetMurdererBtn, autoResetMurdererEnabled, "Auto Reset Murderer: ON", "Auto Reset Murderer: OFF")
-		setExtractedBtnState("Auto Reset Murderer", autoResetMurdererEnabled)
-	end},
-	{name = "Anti-Bang", defaultKey = nil, getState = function() return false end, callback = function()
-		executeAntiBang()
-	end},
-	{name = "AutoGrab Gun", defaultKey = nil, getState = function() return autoGrabGunEnabled end, callback = function()
-		toggleAutoGrabGun()
-		setToggleState(btn.autoGrabGun, autoGrabGunEnabled, "AutoGrab Gun: ON", "AutoGrab Gun: OFF")
-		setExtractedBtnState("AutoGrab Gun", autoGrabGunEnabled)
-	end},
-	{name = "Gun Aura", defaultKey = nil, getState = function() return gunAuraEnabled end, callback = function()
-		toggleGunAura()
-		setToggleState(btn.gunAura, gunAuraEnabled, "Gun Aura: ON", "Gun Aura: OFF")
-		setExtractedBtnState("Gun Aura", gunAuraEnabled)
-	end},
-	{name = "Coin Aura", defaultKey = nil, getState = function() return coinAuraEnabled end, callback = function()
-		toggleCoinAura()
-		setToggleState(btn.coinAura, coinAuraEnabled, "Coin Aura: ON", "Coin Aura: OFF")
-		setExtractedBtnState("Coin Aura", coinAuraEnabled)
-	end},
-	{name = "Auto Remove Coins", defaultKey = nil, getState = function() return autoDeleteCoinsEnabled end, callback = function()
-		toggleAutoDeleteCoins()
-		setToggleState(btn.autoDeleteCoins, autoDeleteCoinsEnabled, "Auto Remove Coins: ON", "Auto Remove Coins: OFF")
-		setExtractedBtnState("Auto Remove Coins", autoDeleteCoinsEnabled)
-	end},
-	{name = "Auto Delete Corpses", defaultKey = nil, getState = function() return autoDeleteCorpsesEnabled end, callback = function()
-		toggleAutoDeleteCorpses()
-		setToggleState(btn.autoDeleteCorpses, autoDeleteCorpsesEnabled, "Auto Delete Corpses: ON", "Auto Delete Corpses: OFF")
-		setExtractedBtnState("Auto Delete Corpses", autoDeleteCorpsesEnabled)
-	end},
-	{name = "Anti-Death on Mansion 2", defaultKey = nil, getState = function() return antiDeathMansion2Enabled end, callback = function()
-		antiDeathMansion2Enabled = not antiDeathMansion2Enabled
-		setToggleState(btn.antiDeathMansion2, antiDeathMansion2Enabled, "Anti-Death on Mansion 2: ON", "Anti-Death on Mansion 2: OFF")
-		setExtractedBtnState("Anti-Death on Mansion 2", antiDeathMansion2Enabled)
-		if antiDeathMansion2Enabled then removeGlitchProof() end
-	end},
-	{name = "Touch Fling", defaultKey = nil, getState = function() return hiddenfling end, callback = function()
-		hiddenfling = not hiddenfling
-		setToggleState(touchFlingButton, hiddenfling, "Touch Fling: ON", "Touch Fling: OFF")
-		setExtractedBtnState("Touch Fling", hiddenfling)
-		if hiddenfling then flingThread = coroutine.create(fling); coroutine.resume(flingThread) end
-	end},
-	{name = "ESP", defaultKey = nil, getState = function() return espEnabled end, callback = function()
-		toggleEsp()
-		setToggleState(espButton, espEnabled, "Esp: ON", "Esp: OFF")
-		setExtractedBtnState("ESP", espEnabled)
-	end},
-	{name = "Anti-Fling", defaultKey = nil, getState = function() return antiFlingEnabled end, callback = function()
-		toggleAntiFling()
-		setToggleState(antiFlingButton, antiFlingEnabled, "Anti-Fling: ON", "Anti-Fling: OFF")
-		setExtractedBtnState("Anti-Fling", antiFlingEnabled)
-	end},
-	{name = "Anti-Void", defaultKey = nil, getState = function() return antiVoidEnabled end, callback = function()
-		toggleAntiVoid()
-		setToggleState(antiVoidButton, antiVoidEnabled, "Anti-Void: ON", "Anti-Void: OFF")
-		setExtractedBtnState("Anti-Void", antiVoidEnabled)
-	end},
-	{name = "Auto Reset Player", defaultKey = nil, getState = function() return autoResetPlayerEnabled end, callback = function()
-		toggleAutoResetPlayer()
-		setToggleState(autoResetPlayerBtn, autoResetPlayerEnabled, "Auto Reset Player: ON", "Auto Reset Player: OFF")
-		setExtractedBtnState("Auto Reset Player", autoResetPlayerEnabled)
-	end},
-	{name = "Auto Reset Everyone", defaultKey = nil, getState = function() return autoResetEveryoneEnabled end, callback = function()
-		toggleAutoResetEveryone()
-		setToggleState(autoResetEveryoneBtn, autoResetEveryoneEnabled, "Auto Reset Everyone: ON", "Auto Reset Everyone: OFF")
-		setExtractedBtnState("Auto Reset Everyone", autoResetEveryoneEnabled)
-	end},
-	{name = "Auto Kill Everyone", defaultKey = nil, getState = function() return autoKillEveryoneEnabled end, callback = function()
-		autoKillEveryoneEnabled = not autoKillEveryoneEnabled
-		setToggleState(autoKillEveryoneBtn, autoKillEveryoneEnabled, "Auto Kill Everyone: ON", "Auto Kill Everyone: OFF")
-		setExtractedBtnState("Auto Kill Everyone", autoKillEveryoneEnabled)
-		if autoKillEveryoneEnabled then startAutoKillEveryone() end
-	end},
-	{name = "Auto Kill Everyone (No Friends)", defaultKey = nil, getState = function() return autoKillEveryoneNoFriendsEnabled end, callback = function()
-		autoKillEveryoneNoFriendsEnabled = not autoKillEveryoneNoFriendsEnabled
-		setToggleState(autoKillEveryoneNoFriendsBtn, autoKillEveryoneNoFriendsEnabled, "Auto Kill Everyone (except friends): ON", "Auto Kill Everyone (except friends): OFF")
-		setExtractedBtnState("Auto Kill Everyone (No Friends)", autoKillEveryoneNoFriendsEnabled)
-		if autoKillEveryoneNoFriendsEnabled then startAutoKillEveryoneNoFriends() end
-	end},
-	{name = "Auto Kill Sheriff", defaultKey = nil, getState = function() return autoKillSheriffEnabled end, callback = function()
-		autoKillSheriffEnabled = not autoKillSheriffEnabled
-		setToggleState(autoKillSheriffBtn, autoKillSheriffEnabled, "Auto Kill Sheriff: ON", "Auto Kill Sheriff: OFF")
-		setExtractedBtnState("Auto Kill Sheriff", autoKillSheriffEnabled)
-		if autoKillSheriffEnabled then startAutoKillSheriff() end
-	end},
-	{name = "Knife Silent Aim", defaultKey = nil, getState = function() return knifeAimEnabled end, callback = function()
-		knifeAimSetEnabled(not knifeAimEnabled)
-	end},
-	{name = "Gun Silent Aim", defaultKey = nil, getState = function() return aimLmbShootEnabled end, callback = function()
-		aimLmbShootEnabled = not aimLmbShootEnabled
-		setToggleState(lmbShootButton, aimLmbShootEnabled, "Gun Silent Aim: ON", "Gun Silent Aim: OFF")
-		setExtractedBtnState("Gun Silent Aim", aimLmbShootEnabled)
-		if aimLmbShootEnabled then pcall(gunAimEnsureWeaponHook) end
-		pcall(aimApplyStockShotBlock)
-	end},
-	{name = "Flick Shot", defaultKey = nil, getState = function() return flickShotEnabled end, callback = function()
-		flickShotEnabled = not flickShotEnabled
-		setToggleState(flickShotButton, flickShotEnabled, "Flick Shot: ON", "Flick Shot: OFF")
-		setExtractedBtnState("Flick Shot", flickShotEnabled)
-	end},
-	{name = "Spin 360", defaultKey = nil, getState = function() return spin360Enabled end, callback = function()
-		spin360Enabled = not spin360Enabled
-		setToggleState(spin360Button, spin360Enabled, "Spin 360: ON", "Spin 360: OFF")
-		setExtractedBtnState("Spin 360", spin360Enabled)
-	end},
-	{name = "Piercer Bullet", defaultKey = nil, getState = function() return aimWallbangEnabled end, callback = function()
-		aimWallbangEnabled = not aimWallbangEnabled
-		setToggleState(wallBangButton, aimWallbangEnabled, "Piercer Bullet: ON", "Piercer Bullet: OFF")
-		setExtractedBtnState("Piercer Bullet", aimWallbangEnabled)
-	end},
-	{name = "Auto Shoot Murderer", defaultKey = nil, getState = function() return aimAutoShotEnabled end, callback = function()
-		aimAutoShotEnabled = not aimAutoShotEnabled
-		setToggleState(autoShotButton, aimAutoShotEnabled, "Auto Shoot Murderer: ON", "Auto Shoot Murderer: OFF")
-		setExtractedBtnState("Auto Shoot Murderer", aimAutoShotEnabled)
-		autoShotSyncWallFlag()
-	end},
-	{name = "AutoWall", defaultKey = nil, getState = function() return aimAutoWallEnabled end, callback = function()
-		autoShotModeIndex = 2
-		if autoShotModeSelect then autoShotModeSelect.Text = "Wall Check ▼" end
-		if not aimAutoShotEnabled then
-			aimAutoShotEnabled = true
-			setToggleState(autoShotButton, true, "Auto Shoot Murderer: ON", "Auto Shoot Murderer: OFF")
-			setExtractedBtnState("Auto Shoot Murderer", true)
-		end
-		autoShotSyncWallFlag()
-	end},
-	{name = "Lay", defaultKey = nil, getState = function() return layEnabled end, callback = function()
-		toggleLay()
-		setToggleState(layButton, layEnabled, "Lay: ON", "Lay: OFF")
-		setExtractedBtnState("Lay", layEnabled)
-	end},
-	{name = "Freeze", defaultKey = nil, getState = function() return freezeEnabled end, callback = function()
-		toggleFreeze()
-		setToggleState(freezeButton, freezeEnabled, "Freeze: ON", "Freeze: OFF")
-		setExtractedBtnState("Freeze", freezeEnabled)
-	end},
-	{name = "Auto Freeze Glitch", defaultKey = nil, getState = function() return autoFreezeGlitchEnabled end, callback = function()
-		toggleAutoFreezeGlitch()
-		setToggleState(autoFreezeGlitchButton, autoFreezeGlitchEnabled, "Auto Freeze Glitch: ON", "Auto Freeze Glitch: OFF")
-		setExtractedBtnState("Auto Freeze Glitch", autoFreezeGlitchEnabled)
-	end},
-	{name = "TP to Lobby", defaultKey = nil, getState = function() return false end, callback = function()
-		local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
-		if h then h.CFrame = CFrame.new(527, 461, 37); notify("Teleported", "Teleported to Lobby", 2) else notify("Error", "Character not found", 2) end
-	end},
-	{name = "TP to VoteMap", defaultKey = nil, getState = function() return false end, callback = function()
-		local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
-		if h then h.CFrame = CFrame.new(610, 466, 37); notify("Teleported", "Teleported to VoteMap", 2) else notify("Error", "Character not found", 2) end
-	end},
-	{name = "TP Above Lobby", defaultKey = nil, getState = function() return false end, callback = function()
-		local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
-		if h then h.CFrame = CFrame.new(537, 563, 38); notify("Teleported", "Teleported above Lobby", 2) else notify("Error", "Character not found", 2) end
-	end},
-	{name = "TP to Map", defaultKey = nil, getState = function() return false end, callback = function()
-		tpToMap()
-	end},
-	{name = "TP Above Map", defaultKey = nil, getState = function() return false end, callback = function()
-		tpAboveMap()
-	end},
-	{name = "TP to Void", defaultKey = nil, getState = function() return false end, callback = function()
-		local c = player.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
-		if h then voidTpPreviousPos = h.CFrame; h.CFrame = CFrame.new(voidBaseplatePos.X, voidBaseplatePos.Y + 1, voidBaseplatePos.Z); notify("Teleported", "Teleported to Void Baseplate", 2) end
-	end},
-	{name = "TP to Sheriff", defaultKey = nil, getState = function() return false end, callback = function()
-		tpToRole("Sheriff")
-	end},
-	{name = "TP to Hero", defaultKey = nil, getState = function() return false end, callback = function()
-		tpToRole("Hero")
-	end},
-	{name = "TP to Murderer", defaultKey = nil, getState = function() return false end, callback = function()
-		tpToRole("Murderer")
-	end},
-	{name = "Reset Player", defaultKey = nil, getState = function() return false end, callback = function()
-		executeNanFling()
-	end},
-	{name = "Reset Everyone", defaultKey = nil, getState = function() return false end, callback = function()
-		executeNanFlingEveryone()
-	end},
-	{name = "Kill Everyone", defaultKey = nil, getState = function() return false end, callback = function()
-		local c = doKillEveryone(false)
-		if c == nil then notify("Kill Everyone", "You need the knife (be the Murderer).", 2) else notify("Kill Everyone", "Hit " .. c .. " player(s).", 1.5) end
-	end},
-	{name = "Kill Everyone (No Friends)", defaultKey = nil, getState = function() return false end, callback = function()
-		local c = doKillEveryone(true)
-		if c == nil then notify("Kill Everyone", "You need the knife (be the Murderer).", 2) else notify("Kill Everyone", "Hit " .. c .. " non-friend(s).", 1.5) end
-	end},
-	{name = "Kill Sheriff", defaultKey = nil, getState = function() return false end, callback = function()
-		local c = doKillSheriff()
-		if c == nil then notify("Kill Sheriff", "You need the knife (be the Murderer).", 2) elseif c == 0 then notify("Kill Sheriff", "No Sheriff / gun holder found.", 2) else notify("Kill Sheriff", "Hit " .. c .. " target(s).", 1.5) end
-	end},
-	{name = "Kill Player", defaultKey = nil, getState = function() return false end, callback = function()
-		local sels = killPicker and killPicker.selectedNames
-		if not sels or #sels == 0 then notify("Kill Player", "No players selected.", 2) return end
-		local killed = 0
-		for _, sel in ipairs(sels) do local ok = doKillPlayer(sel); if ok then killed = killed + 1 end end
-		notify("Kill Player", "Knifed " .. killed .. "/" .. #sels .. " player(s)", 1.5)
-	end},
-	{name = "Shoot Murderer", defaultKey = nil, getState = function() return false end, callback = function()
-		doShootMurderer()
-	end},
-	{name = "Fake Bomb Jump", defaultKey = nil, getState = function() return false end, callback = function()
-		doFakeBombJump()
-	end},
-	{name = "Auto Mute Coins", defaultKey = nil, getState = function() return autoMuteCoinsEnabled end, callback = function()
-		toggleAutoMuteCoins()
-		setToggleState(btn.autoMuteCoins, autoMuteCoinsEnabled, "Auto Mute Coins: ON", "Auto Mute Coins: OFF")
-		setExtractedBtnState("Auto Mute Coins", autoMuteCoinsEnabled)
-	end},
-}
-
-bindInputConn = UserInputService.InputBegan:Connect(function(input, gp)
-	if listeningForEmotionBind and listeningEmotionTextBox and listeningEmotionId then
-		local isMouse = input.UserInputType == Enum.UserInputType.MouseButton1 or
-			input.UserInputType == Enum.UserInputType.MouseButton2 or
-			input.UserInputType == Enum.UserInputType.MouseButton3
-		if isMouse and tick() - lastUIInteract < 0.3 then return end
-		local bindKey
-		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
-			bindKey = input.KeyCode
-		elseif isMouse then
-			bindKey = input.UserInputType
-		else
-			return
-		end
-		-- Remove old bind for this emotion if exists
-		local oldKey = emotionKeyBinds[listeningEmotionId]
-		if oldKey and keyBinds[oldKey] then
-			keyBinds[oldKey] = nil
-		end
-		emotionKeyBinds[listeningEmotionId] = bindKey
-		local animId = listeningEmotionId
-		-- Emote tab: one-time Dance.lua principle, Emotions: toggle walkable.
-		-- Emote-ness is checked lazily at press time (see emotionIsEmote) so the
-		-- bind keeps working even if the emote lists change later.
-		local isEmote = false
-		if emoteOrder then for _, e in ipairs(emoteOrder) do if e.id == animId then isEmote = true; break end end end
-		keyBinds[bindKey] = {
-			callback = function()
-				if emotionIsEmote(animId) then
-					local char2 = player.Character
-					local hum2 = char2 and char2:FindFirstChildOfClass("Humanoid")
-					if hum2 and hum2.RigType == Enum.HumanoidRigType.R15 then
-						local desc = hum2:FindFirstChildOfClass("HumanoidDescription")
-						local ok = pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-						if not ok and desc then
-							local nm = (emoteUiById[animId] and emoteUiById[animId].Name) or ("Emote "..tostring(animId))
-							pcall(function() desc:AddEmote(nm, animId) end)
-							pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-						end
-					end
-				else
-					if playingAnimationId == animId then
-						stopCurrentAnimation()
-					else
-						playAnimation(animId, "1")
-					end
-				end
-			end,
-			description = (isEmote and "Ragebait: " or "Emotion: ") .. tostring(animId),
-		}
-		listeningEmotionTextBox.Text = bindKeyToName(bindKey)
-		justBoundKey = bindKey
-		listeningForEmotionBind = false
-		listeningEmotionTextBox = nil
-		listeningEmotionId = nil
-		saveConfig()
-		return
-	end
-	if listeningForBind and listeningTextBox and listeningFeatureName then
-		local isMouse = input.UserInputType == Enum.UserInputType.MouseButton1 or
-			input.UserInputType == Enum.UserInputType.MouseButton2 or
-			input.UserInputType == Enum.UserInputType.MouseButton3
-		if isMouse and tick() - lastUIInteract < 0.3 then return end
-		local bindKey
-		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
-			bindKey = input.KeyCode
-		elseif isMouse then
-			bindKey = input.UserInputType
-		else
-			return
-		end
-		local oldKey = featureBinds[listeningFeatureName]
-		if oldKey and keyBinds[oldKey] then
-			keyBinds[oldKey] = nil
-		end
-		featureBinds[listeningFeatureName] = bindKey
-		for _, feat in ipairs(bindableFeatures) do
-			if feat.name == listeningFeatureName then
-				keyBinds[bindKey] = {callback = feat.callback, description = feat.name}
-				break
-			end
-		end
-		listeningTextBox.Text = bindKeyToName(bindKey)
-		justBoundKey = bindKey
-		listeningForBind = false
-		listeningTextBox = nil
-		listeningFeatureName = nil
-		saveConfig()
-	end
-end)
-
--- Register default key binds
-for _, feature in ipairs(bindableFeatures) do
-	if feature.defaultKey then
-		featureBinds[feature.name] = feature.defaultKey
-		keyBinds[feature.defaultKey] = {callback = feature.callback, description = feature.name}
-	end
-end
-
--- Create Binds UI
-bindsSearchBox = Instance.new("TextBox")
-bindsSearchBox.Name = "BindsSearchBox"
-bindsSearchBox.Size = UDim2.new(1, 0, 0, 42)
-bindsSearchBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-bindsSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-bindsSearchBox.PlaceholderText = "Search binds"
-bindsSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
-bindsSearchBox.Text = ""
-bindsSearchBox.Font = Enum.Font.SourceSansBold
-bindsSearchBox.TextSize = 16
-bindsSearchBox.ClearTextOnFocus = false
--- The "Binds" section title sits at LayoutOrder 500 and the bind rows at 502+,
--- so 501 puts the search box directly AFTER the "Binds" title (same pattern as
--- the Buttons tab, where the search follows the "Buttons" title).
-bindsSearchBox.LayoutOrder = 501
-bindsSearchBox.Parent = categoryFrames["Binds"]
-
-bindsSearchCorner = Instance.new("UICorner")
-bindsSearchCorner.CornerRadius = UDim.new(0, 6)
-bindsSearchCorner.Parent = bindsSearchBox
-
-bindRowRefs = {}
-
--- Alphabetical order, but Toggle Menu always stays first
-do
-	local firstIdx = 1
-	for i, f in ipairs(bindableFeatures) do
-		if f.name == "Toggle Menu" then firstIdx = i break end
-	end
-	local first = table.remove(bindableFeatures, firstIdx)
-	local rest = {}
-	for i = 1, #bindableFeatures do rest[i] = bindableFeatures[i] end
-	table.sort(rest, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
-	for i = 1, #rest do bindableFeatures[i + 1] = rest[i] end
-	bindableFeatures[1] = first
-end
-
-for bindOrder, feature in ipairs(bindableFeatures) do
-	local row = Instance.new("Frame")
-	row.Name = "BindRow_" .. feature.name:gsub("%W", "")
-	row.Size = UDim2.new(1, 0, 0, 42)
-	row.BackgroundTransparency = 1
-	row.LayoutOrder = 501 + bindOrder -- rows start at 502: after the title (500) and the search box (501)
-	row.Parent = categoryFrames["Binds"]
-	bindRowRefs[feature.name] = row
-
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -160, 1, 0)
-	label.BackgroundTransparency = 1
-	label.Text = feature.name
-	label.TextColor3 = Color3.fromRGB(255, 255, 255)
-	label.Font = Enum.Font.SourceSansBold
-	label.TextSize = 16
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = row
-
-	local bindButton = Instance.new("TextButton")
-	bindButton.Size = UDim2.new(0, 74, 1, 0)
-	bindButton.Position = UDim2.new(1, -156, 0, 0)
-	bindButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	bindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	bindButton.Text = featureBinds[feature.name] and bindKeyToName(featureBinds[feature.name]) or "None"
-	bindButton.Font = Enum.Font.SourceSansBold
-	bindButton.TextSize = 15
-	bindButton.AutoButtonColor = false
-	bindButton.Parent = row
-
-	local buttonCorner = Instance.new("UICorner")
-	buttonCorner.CornerRadius = UDim.new(0, 6)
-	buttonCorner.Parent = bindButton
-
-	local clearButton = Instance.new("TextButton")
-	clearButton.Size = UDim2.new(0, 74, 1, 0)
-	clearButton.Position = UDim2.new(1, -78, 0, 0)
-	clearButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	clearButton.Text = "X"
-	clearButton.Font = Enum.Font.SourceSansBold
-	clearButton.TextSize = 16
-	clearButton.AutoButtonColor = false
-	clearButton.Parent = row
-
-	local clearCorner = Instance.new("UICorner")
-	clearCorner.CornerRadius = UDim.new(0, 6)
-	clearCorner.Parent = clearButton
-
-	bindButton.MouseButton1Click:Connect(function()
-		lastUIInteract = tick()
-		if listeningForBind then
-			listeningForBind = false
-			listeningTextBox = nil
-			listeningFeatureName = nil
-			bindButton.Text = featureBinds[feature.name] and bindKeyToName(featureBinds[feature.name]) or "None"
-			return
-		end
-		listeningForBind = true
-		listeningTextBox = bindButton
-		listeningFeatureName = feature.name
-		bindButton.Text = "..."
-	end)
-
-	clearButton.MouseButton1Click:Connect(function()
-		lastUIInteract = tick()
-		if listeningForBind then
-			listeningForBind = false
-			listeningTextBox = nil
-			listeningFeatureName = nil
-			bindButton.Text = featureBinds[feature.name] and bindKeyToName(featureBinds[feature.name]) or "None"
-		end
-		local oldKey = featureBinds[feature.name]
-		if oldKey and keyBinds[oldKey] then
-			keyBinds[oldKey] = nil
-		end
-		featureBinds[feature.name] = nil
-		bindButton.Text = "None"
-		saveConfig()
-	end)
-end
-
-bindsSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-	local searchText = string.lower(bindsSearchBox.Text)
-	for name, row in pairs(bindRowRefs) do
-		row.Visible = searchText == "" or string.find(string.lower(name), searchText, 1, true) ~= nil
-	end
-end)
-
--- ============================================
 -- Exact timestamp from ISO 8601
 -- ============================================
 function isoToUnix(iso)
@@ -30923,10 +30036,11 @@ function createTeamerPlayerButton(plr)
 		local popupStartPos
 
 		popupTitle.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				popupDragging = true
 				popupDragStart = input.Position
 				popupStartPos = popup.Position
+				popupDragInput = input
 				table.insert(teamerConns, input.Changed:Connect(function()
 					if input.UserInputState == Enum.UserInputState.End then
 						popupDragging = false
@@ -30936,13 +30050,13 @@ function createTeamerPlayerButton(plr)
 		end)
 
 		popupTitle.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement then
+			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 				popupDragInput = input
 			end
 		end)
 
 		popupDragCon = UserInputService.InputChanged:Connect(function(input)
-			if input == popupDragInput and popupDragging then
+			if popupDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 				local delta = input.Position - popupDragStart
 				popup.Position = UDim2.new(popupStartPos.X.Scale, popupStartPos.X.Offset + delta.X, popupStartPos.Y.Scale, popupStartPos.Y.Offset + delta.Y)
 			end
@@ -31905,7 +31019,7 @@ serverCountryLabel = createProfileLabel("Location: Loading...", 164)
 pcall(function() serverCountryLabel.TextTruncate = Enum.TextTruncate.AtEnd end)
 serverUptimeLabel = createProfileLabel("Server Uptime: 0d 0h 0m 0s", 186)
 serverTimeLabel = createProfileLabel("Server Time: 0d 0h 0m 0s", 208)
-createProfileLabel("Roles: Owner | Developer & Beta Tester", 76)
+createProfileLabel("Roles: T1 Trader & Beta Tester", 76)
 
 createProfileLabel("Display Name: " .. player.DisplayName, 230)
 createProfileLabel("Username: " .. player.Name, 252)
@@ -37431,7 +36545,7 @@ function buildConfigData()
 	config.toggles.espHealthRoleDead = espHealthRoleDead
 	config.toggles.autoGrabGunEnabled = autoGrabGunEnabled; config.toggles.autoDodgeEnabled = autoDodgeEnabled
 	config.values.autoGrabModeIndex = autoGrabModeIndex or 1
-	config.toggles.gunAuraEnabled = gunAuraEnabled; config.toggles.autoDeleteCoinsEnabled = autoDeleteCoinsEnabled
+	config.toggles.gunAuraEnabled = gunAuraEnabled; config.toggles.autoDeleteCoinsEnabled = autoDeleteCoinsEnabled; config.toggles.autoDeleteCoinsMode = autoDeleteCoinsMode
 	config.toggles.coinAuraEnabled = coinAuraEnabled
 	config.toggles.autoKillEveryoneEnabled = autoKillEveryoneEnabled; config.toggles.autoKillEveryoneNoFriendsEnabled = autoKillEveryoneNoFriendsEnabled
 	config.toggles.autoKillSheriffEnabled = autoKillSheriffEnabled; config.toggles.knifeAimEnabled = knifeAimEnabled; config.toggles.autoMuteCoinsEnabled = autoMuteCoinsEnabled
@@ -37454,7 +36568,6 @@ function buildConfigData()
 	config.toggles.tradeHelperEnabled = tradeHelperEnabled
 	config.toggles.glitchNotificationEnabled = glitchNotificationEnabled
 	config.toggles.zombieTryhardEnabled = zombieTryhardEnabled; config.toggles.tryhardAnimEnabled = tryhardAnimEnabled; config.toggles.tryhardMainEnabled = tryhardMainEnabled; config.toggles.r6AnimEnabled = r6AnimEnabled; config.toggles.activeCustomAnimName = activeCustomAnimName; config.toggles.korbloxEnabled = korbloxEnabled; config.toggles.headlessEnabled = headlessEnabled; config.toggles.headlessAllHatsEnabled = headlessAllHatsEnabled
-	config.toggles.crosshairEnabled = crosshairEnabled; config.toggles.keystrokeEnabled = keystrokeEnabled
 	config.toggles.shadersEnabled = shadersEnabled
 	config.toggles.autofarmEnabled = autofarmEnabled; config.toggles.autofarmResetInnocentEnabled = autofarmResetInnocentEnabled
 	config.toggles.autofarmResetSheriffEnabled = autofarmResetSheriffEnabled; config.toggles.autofarmResetMurdererEnabled = autofarmResetMurdererEnabled
@@ -37466,7 +36579,6 @@ function buildConfigData()
 	config.toggles.instantRolePerkNotifyEnabled = instantRolePerkNotifyEnabled
 	config.toggles.showRoundTimerEnabled = showRoundTimerEnabled
 	config.toggles.voteDupeMode = voteDupeMode
-	if keystrokeSavedPos then config.keystrokePos = {X = {Scale = keystrokeSavedPos.X.Scale, Offset = keystrokeSavedPos.X.Offset}, Y = {Scale = keystrokeSavedPos.Y.Scale, Offset = keystrokeSavedPos.Y.Offset}} end
 	config.values.JUMP_BOOST_POWER = JUMP_BOOST_POWER; config.values.FAKE_SPEED_CFRAME_SPEED = FAKE_SPEED_CFRAME_SPEED; config.values.BHOP_CFRAME_SPEED = BHOP_CFRAME_SPEED
 	config.values.instantRolePosXScale = instantRolePosXScale; config.values.instantRolePosYScale = instantRolePosYScale
 	config.values.instantRoleSizeXScale = instantRoleSizeXScale; config.values.instantRoleSizeYScale = instantRoleSizeYScale
@@ -37517,6 +36629,7 @@ config.values.explicitlyClearedSoundPaths = explicitlyClearedSoundPaths
 	config.values.autofarmWebhookUrl = AUTOFARM_WEBHOOK_URL
 	config.values.autofarmTargetCoins = autofarmTargetCoins; config.values.autofarmSpeed = autofarmSpeed
 	config.values.autofarmBagDetectedTotal = autofarmBagDetectedTotal
+	config.values.autofarmBagTotalExplicit = autofarmBagTotalExplicit
 	config.values.autofarmCustomTargetEnabled = autofarmCustomTargetEnabled; config.values.autofarmCustomTarget = autofarmCustomTarget
 	config.values.autofarmTpModeIndex = autofarmTpModeIndex; config.values.autofarmTpEnabled = autofarmTpEnabled
 	config.values.autofarmPreTpModeIndex = autofarmPreTpModeIndex; config.values.autofarmPreTpEnabled = autofarmPreTpEnabled; config.values.knifeAimModeIndex = knifeAimModeIndex; config.values.aimPresetIndex = aimPresetIndex; config.values.fakeBombJumpModeIndex = fakeBombJumpModeIndex; config.values.lmbShootModeIndex = lmbShootModeIndex; config.values.autoShotModeIndex = autoShotModeIndex
@@ -40103,42 +39216,83 @@ toggleClickButton.ZIndex = 10
 toggleClickButton.Parent = toggleButton
 addBtnPressAnim(toggleClickButton)
 
-topBar.InputBegan:Connect(function(input)
-	if isFrameLocked then
-		return
-	end
+-- [mobile drag fix] Main-menu drag.
+-- The old code relied on topBar.InputChanged to capture the drag InputObject.
+-- That event only fires while the pointer stays OVER the top bar, so on touch
+-- (and as soon as the cursor leaves the bar) dragInput never updated and the
+-- menu could not be moved at all. This version starts the drag on any press
+-- inside the bar strip and follows global UserInputService / TouchMoved events,
+-- exactly like the emote pill and extracted-button drags.
+menuDragActive = false
+menuDragStartPos = nil
+menuDragStartFrame = nil
+
+function menuDragBegin(pos)
+	if isFrameLocked then return end
+	menuDragActive = true
+	menuDragStartPos = pos
+	menuDragStartFrame = mainFrame.Position
+end
+
+function menuDragMove(pos)
+	if not menuDragActive or isFrameLocked or not menuDragStartPos or not menuDragStartFrame then return end
+	local delta = pos - menuDragStartPos
+	mainFrame.Position = UDim2.new(
+		menuDragStartFrame.X.Scale,
+		menuDragStartFrame.X.Offset + delta.X,
+		menuDragStartFrame.Y.Scale,
+		menuDragStartFrame.Y.Offset + delta.Y
+	)
+	savedMenuPos = mainFrame.Position
+end
+
+function menuDragEnd()
+	menuDragActive = false
+	menuDragStartPos = nil
+	menuDragStartFrame = nil
+end
+
+local function menuDragInput(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true
-		dragStart = input.Position
-		startPos = mainFrame.Position
-
-		local connection
-		connection = input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
-				connection:Disconnect()
-			end
-		end)
+		menuDragBegin(input.Position)
 	end
-end)
+end
 
-topBar.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-		dragInput = input
+-- Catch the press on the bar itself, the title label, and (as a fallback) any
+-- press that starts inside the bar's screen-space strip even when a child such
+-- as the search box is the actual input target.
+topBar.InputBegan:Connect(menuDragInput)
+if titleBar then titleBar.InputBegan:Connect(menuDragInput) end
+mainFrame.InputBegan:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+	local abs = topBar.AbsolutePosition
+	local sz = topBar.AbsoluteSize
+	local pos = input.Position
+	if pos.X >= abs.X and pos.X <= (abs.X + sz.X) and pos.Y >= abs.Y and pos.Y <= (abs.Y + sz.Y) then
+		menuDragBegin(pos)
 	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if dragging and input == dragInput then
-		local delta = input.Position - dragStart
-		mainFrame.Position = UDim2.new(
-			startPos.X.Scale,
-			startPos.X.Offset + delta.X,
-			startPos.Y.Scale,
-			startPos.Y.Offset + delta.Y
-		)
-		savedMenuPos = mainFrame.Position
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		menuDragMove(input.Position)
 	end
+end)
+pcall(function()
+	UserInputService.TouchMoved:Connect(function(t)
+		menuDragMove(t.Position)
+	end)
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		menuDragEnd()
+	end
+end)
+pcall(function()
+	UserInputService.TouchEnded:Connect(function()
+		menuDragEnd()
+	end)
 end)
 
 DRAG_THRESHOLD = 5
@@ -40306,16 +39460,44 @@ end
 -- for the whole time autofarm is ON and the "Autofarm" pre-TP location is selected.
 autofarmNoclipActive = false
 autofarmNoclipConn = nil
+autofarmVoidRescueAt = 0
 function autofarmUpdateNoclip()
 	local want = autofarmEnabled and autofarmPreTpModes[autofarmPreTpModeIndex] == "Autofarm"
 	if want == autofarmNoclipActive then return end
 	autofarmNoclipActive = want
 	if want then
+		autofarmVoidRescueAt = 0
 		autofarmNoclipConn = RunService.Heartbeat:Connect(function()
 			local char = player.Character
-			if char then
-				for _, p in ipairs(autofarmGetCharParts(char)) do
+			if not char then return end
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			for _, p in ipairs(autofarmGetCharParts(char)) do
+				-- Keep the ROOT collidable while not flying: the invisible
+				-- AdrenalinFarmPlatform below the map then holds the character
+				-- (with every part non-colliding it fell straight through it).
+				if p ~= hrp then
 					if p.CanCollide then p.CanCollide = false end
+				end
+			end
+			if hrp then
+				local wantCollide = not autofarmFlightMoving
+				if hrp.CanCollide ~= wantCollide then hrp.CanCollide = wantCollide end
+				-- Anti-void guard: if the character still ends up well below the
+				-- farm spot (lag, respawn, the game resetting parts) put it back
+				-- on the platform instead of letting it fall to its death.
+				local now = os.clock()
+				if (now - autofarmVoidRescueAt) >= 0.25 then
+					autofarmVoidRescueAt = now
+					local spot = autofarmCurrentSpot()
+					if spot and hrp.Position.Y < (spot.Y - 40) then
+						pcall(function()
+							hrp.CFrame = CFrame.new(spot) * autofarmLieCF
+							hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+							hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+						end)
+						local hum = char:FindFirstChildOfClass("Humanoid")
+						if hum then pcall(function() hum.PlatformStand = true end) end
+					end
 				end
 			end
 		end)
@@ -40557,6 +39739,8 @@ function restoreFullConfig()
 	autoGrabGunEnabled = T.autoGrabGunEnabled or false
 	gunAuraEnabled = T.gunAuraEnabled or false
 	autoDeleteCoinsEnabled = T.autoDeleteCoinsEnabled or false
+	autoDeleteCoinsMode = (T.autoDeleteCoinsMode == "Full") and "Full" or "Default"
+	if btn.autoDeleteCoinsMode then btn.autoDeleteCoinsMode.Text = autoDeleteCoinsModeLabel() end
 	autoMuteCoinsEnabled = T.autoMuteCoinsEnabled or false
 	autoDeleteCorpsesEnabled = T.autoDeleteCorpsesEnabled or false
 	antiDeathMansion2Enabled = T.antiDeathMansion2Enabled
@@ -40605,8 +39789,6 @@ function restoreFullConfig()
 	korbloxEnabled = T.korbloxEnabled or false
 	headlessEnabled = T.headlessEnabled or false
 	headlessAllHatsEnabled = T.headlessAllHatsEnabled or false
-	crosshairEnabled = T.crosshairEnabled or false
-	keystrokeEnabled = T.keystrokeEnabled or false
 	menuIconsEnabled = T.menuIconsEnabled
 	if menuIconsEnabled == nil then menuIconsEnabled = true end
 	tabIconsEnabled = T.tabIconsEnabled
@@ -41299,116 +40481,6 @@ function restoreFullConfig()
 		roundTimerSizeHInput.Text = tostring(math.floor(c.values.roundTimerSizeYScale * 100))
 	end
 
-	-- Restore binds UI FIRST (before toggles, so saveConfig sees them).
-	-- Full resync: wipe current binds first, otherwise switching to a config
-	-- without binds (or with different keys) leaves stale shortcuts firing
-	-- while the UI already shows "None". A missing key (old configs) counts
-	-- as empty — never skip, or stale binds survive the switch.
-	local restoreBinds = c.binds
-	if type(restoreBinds) ~= "table" then restoreBinds = {} end
-	do
-		for name, oldKey in pairs(featureBinds) do
-			if oldKey and keyBinds[oldKey] then
-				keyBinds[oldKey] = nil
-			end
-			featureBinds[name] = nil
-		end
-		for name, keyStr in pairs(restoreBinds) do
-			local key = stringToKey(keyStr)
-			if key then
-				featureBinds[name] = key
-				for _, feature in ipairs(bindableFeatures) do
-					if feature.name == name then
-						keyBinds[key] = {callback = feature.callback, description = name}
-						break
-					end
-				end
-			end
-		end
-		for _, feature in ipairs(bindableFeatures) do
-			local row = categoryFrames["Binds"]:FindFirstChild("BindRow_" .. feature.name:gsub("%W", ""))
-			if row then
-				for _, child in ipairs(row:GetChildren()) do
-					if child:IsA("TextButton") and child.Text ~= "X" then
-						child.Text = featureBinds[feature.name] and bindKeyToName(featureBinds[feature.name]) or "None"
-					end
-				end
-			end
-		end
-	end
-
-	-- Restore emotion binds (Emotions/Ragebait tabs): full resync for the same
-	-- reason — stale emotion shortcuts must die when the new config lacks them.
-	-- A missing key (old configs) counts as empty — never skip.
-	local restoreEmotionBinds = c.emotionKeyBinds
-	if type(restoreEmotionBinds) ~= "table" then restoreEmotionBinds = {} end
-	do
-		for animId, oldKc in pairs(emotionKeyBinds) do
-			if oldKc and keyBinds[oldKc] then
-				keyBinds[oldKc] = nil
-			end
-		end
-		emotionKeyBinds = {}
-		for idStr, keyCodeStr in pairs(restoreEmotionBinds) do
-			local id = tonumber(idStr)
-			if id and keyCodeStr then
-				local ok, kc = pcall(function()
-					local kc2 = Enum.KeyCode[keyCodeStr]
-					if kc2 then return kc2 end
-					return Enum.UserInputType[keyCodeStr]
-				end)
-				if ok and kc then
-					emotionKeyBinds[id] = kc
-				end
-			end
-		end
-		for animId, kc in pairs(emotionKeyBinds) do
-			keyBinds[kc] = {
-				callback = function()
-					if emotionIsEmote(animId) then
-						local char2 = player.Character
-						local hum2 = char2 and char2:FindFirstChildOfClass("Humanoid")
-						if hum2 and hum2.RigType == Enum.HumanoidRigType.R15 then
-							local desc = hum2:FindFirstChildOfClass("HumanoidDescription")
-							local ok = pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-							if not ok and desc then
-								local nm = (emoteUiById[animId] and emoteUiById[animId].Name) or ("Emote "..tostring(animId))
-								pcall(function() desc:AddEmote(nm, animId) end)
-								pcall(function() hum2:PlayEmoteAndGetAnimTrackById(animId) end)
-							end
-						end
-					else
-						if playingAnimationId == animId then
-							stopCurrentAnimation()
-						else
-							playAnimation(animId, "1")
-						end
-					end
-				end,
-				description = "Emotion: " .. tostring(animId),
-			}
-		end
-		-- Refresh bind labels on existing Emotions/Ragebait rows.
-		if emoteUiById then
-			for animId, ui in pairs(emoteUiById) do
-				if ui and ui.Bind then
-					pcall(function()
-						ui.Bind.Text = emotionKeyBinds[animId] and bindKeyToName(emotionKeyBinds[animId]) or "⌨"
-					end)
-				end
-			end
-		end
-		if animationUiById then
-			for animId, ui in pairs(animationUiById) do
-				if ui and ui.Bind then
-					pcall(function()
-						ui.Bind.Text = emotionKeyBinds[animId] and bindKeyToName(emotionKeyBinds[animId]) or "⌨"
-					end)
-				end
-			end
-		end
-	end
-
 	-- Restore extracted buttons (before toggles, so saveConfig sees them).
 	-- Each entry is isolated: one broken button must not abort the whole restore.
 	if c.extractedBtns then
@@ -41675,10 +40747,6 @@ function restoreFullConfig()
 	disableHeadlessAllHats()
 	if btn.headlessAllHatsBtn then setToggleState(btn.headlessAllHatsBtn, false, "Headless (All Hats): ON", "Headless (All Hats): OFF") end
 	if activeCustomAnimName then disableCustomAnim() end
-	disableCrosshair()
-	if btn.crosshairBtn then setToggleState(btn.crosshairBtn, false, "Adrenalin.win Crosshair: ON", "Adrenalin.win Crosshair: OFF") end
-	disableKeystroke()
-	if btn.keystrokeBtn then setToggleState(btn.keystrokeBtn, false, "Keystroke: ON", "Keystroke: OFF") end
 	disableShaders()
 	if btn.shadersBtn then setToggleState(btn.shadersBtn, false, "Shaders: ON", "Shaders: OFF") end
 	autofarmEnabled = false
@@ -42202,17 +41270,6 @@ function restoreFullConfig()
 	if T.korbloxEnabled then korbloxEnabled = false; enableKorblox(); if btn.korbloxBtn then setToggleState(btn.korbloxBtn, true, "Korblox: ON", "Korblox: OFF") end end
 	if T.headlessEnabled then headlessEnabled = false; enableHeadless(); if btn.headlessBtn then setToggleState(btn.headlessBtn, true, "Headless: ON", "Headless: OFF") end end
 	if T.headlessAllHatsEnabled then headlessAllHatsEnabled = false; enableHeadlessAllHats(); if btn.headlessAllHatsBtn then setToggleState(btn.headlessAllHatsBtn, true, "Headless (All Hats): ON", "Headless (All Hats): OFF") end end
-	if T.crosshairEnabled then crosshairEnabled = false; enableCrosshair(); if btn.crosshairBtn then setToggleState(btn.crosshairBtn, true, "Adrenalin.win Crosshair: ON", "Adrenalin.win Crosshair: OFF") end end
-	-- Always restore the last keyboard position from config, even when Keystroke is currently
-	-- off, so that whenever it is enabled (now or later by hand) it returns to where it last was.
-	if c.keystrokePos then
-		local p = c.keystrokePos
-		keystrokeSavedPos = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset)
-	end
-	if T.keystrokeEnabled then
-		keystrokeEnabled = false; enableKeystroke()
-		if btn.keystrokeBtn then setToggleState(btn.keystrokeBtn, true, "Keystroke: ON", "Keystroke: OFF") end
-	end
 	if menuIconsEnabled == false then
 		if btn.menuIconsBtn then setToggleState(btn.menuIconsBtn, false, "Menu Icons: ON", "Menu Icons: OFF") end
 		setExtractedBtnState("Menu Icons", false)
@@ -42237,10 +41294,18 @@ function restoreFullConfig()
 			autofarmSpeed = math.clamp(c.values.autofarmSpeed, 1, 30)
 			if autofarmSpeedBox then autofarmSpeedBox.Text = tostring(autofarmSpeed) end
 		end
-		if c.values.autofarmBagDetectedTotal then
+		if c.values.autofarmBagTotalExplicit == true and c.values.autofarmBagDetectedTotal then
+			autofarmBagTotalExplicit = true
 			autofarmBagDetectedTotal = math.floor(math.clamp(c.values.autofarmBagDetectedTotal, 20, 200))
 		end
-		if c.values.autofarmTargetCoins then autofarmTargetCoins = c.values.autofarmTargetCoins end
+		-- [40/50 fix] autofarmTargetCoins is DERIVED from the detected bag size.
+		-- Legacy configs saved the old 40 default, which would immediately cap the
+		-- farm at 40/50 again, so a plain 40 is never restored — only a bigger
+		-- value (or an explicit bag size, handled above) is accepted.
+		if c.values.autofarmTargetCoins then
+			local savedTarget = math.floor(tonumber(c.values.autofarmTargetCoins) or 0)
+			if savedTarget > 40 then autofarmTargetCoins = savedTarget end
+		end
 		if c.values.autofarmCustomTarget ~= nil then autofarmCustomTarget = c.values.autofarmCustomTarget end
 		if autofarmCustomBox then autofarmCustomBox.Text = tostring(autofarmCustomTarget) end
 		if c.values.autofarmCustomTargetEnabled ~= nil then autofarmCustomTargetEnabled = c.values.autofarmCustomTargetEnabled end
@@ -43462,6 +42527,7 @@ do
 	local combatEndFrame = categoryFrames["Combat"]
 	if combatEndFrame then
 		if btn.autoDeleteCoins then btn.autoDeleteCoins.Parent = combatEndFrame; btn.autoDeleteCoins.LayoutOrder = 258.5 end
+		if btn.autoDeleteCoinsMode then btn.autoDeleteCoinsMode.Parent = combatEndFrame; btn.autoDeleteCoinsMode.LayoutOrder = 258.55 end
 		if btn.autoMuteCoins then btn.autoMuteCoins.Parent = combatEndFrame; btn.autoMuteCoins.LayoutOrder = 258.6 end
 		if btn.autoDeleteCorpses then btn.autoDeleteCorpses.Parent = combatEndFrame; btn.autoDeleteCorpses.LayoutOrder = 258.7 end
 	end
