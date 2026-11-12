@@ -24189,6 +24189,13 @@ autofarmAuraUnderFloorDepth = 0.4
 -- turns to the next coin well before the aura finishes this one — continuous
 -- movement, no pause. Keep it below coinAuraRadius.
 autofarmAuraRetargetDist = 1
+-- Fly-through retarget distances. The two fast modes must not park on a coin:
+-- as soon as it is reached they mark it pending and pick the NEXT coin, so the
+-- flight is continuous. Fast retargets on the real 3D distance (it flies
+-- straight at the coin); Fast Safe flies directly UNDER the coin, so its
+-- vertical gap is constant and only the horizontal distance matters.
+autofarmFastRetargetDist = 2.5     -- Fast: 3D distance (studs)
+autofarmFastSafeRetargetDist = 1   -- Fast Safe: horizontal distance (studs)
 autofarmAscendDist = 1             -- horizontal distance at which we start rising to the coin
 autofarmAscentMultiplier = 1       -- DEPRECATED: the 3x ascent boost caused speed spikes ("jerks") when climbing to higher coins — flight now moves at ONE constant speed in all directions
 -- Coins currently being pulled in by Coin Aura: [coin] = os.clock() when we flew
@@ -24577,6 +24584,25 @@ function autofarmGetCoinVisiblePart(coin)
 		end
 	end
 	return nil
+end
+
+-- Touch a coin the SAME way the proven Coin Aura does: snap the invisible
+-- hitbox onto the root and fire the touch in BOTH directions. A bare
+-- firetouchinterest is sometimes ignored when the client and server disagree
+-- about contact, which is exactly why the farm used to fly right past coins
+-- without ever collecting them. Doing it here (not just relying on the aura
+-- toggle) makes autofarm self-sufficient in every mode.
+function autofarmTouchCoin(root, coin, coinPart)
+	if not (root and coinPart and coinPart.Parent) then return end
+	if coin and coin:IsA("Model") then
+		pcall(function() coin:PivotTo(root.CFrame) end)
+	end
+	pcall(function()
+		coinPart.CFrame = root.CFrame
+		coinPart.CanCollide = false
+	end)
+	safeFireTouch(coinPart, root)
+	safeFireTouch(root, coinPart)
 end
 
 -- [perf] Cached list of the character's BaseParts. The flight loop used to call
@@ -25230,42 +25256,23 @@ function startAutofarm()
 						-- mode we rely on the fly-through block below (which claims the coin,
 						-- marks it pending and immediately retargets the NEXT coin) — so
 						-- the flight never pauses at a coin to collect it.
-						if autofarmMode == 1 and (dist <= autofarmPickupRange or horizToCoin <= autofarmTouchHorizRange) then
-							safeFireTouch(part, hrp)
-							if not autofarmFullTouchAt[coin] or (os.clock() - autofarmFullTouchAt[coin]) >= 0.15 then
-								autofarmFullTouchAt[coin] = os.clock()
-								for _, bp in ipairs(autofarmGetCharParts(char)) do
-									if bp ~= hrp then
-										safeFireTouch(part, bp)
-									end
-								end
-							end
+						-- Collection strategy. All three modes touch the coin the same
+						-- proven way (snap the hitbox onto the root + fire both ways),
+						-- but they decide when to move on differently:
+						--   * Default (1): park on the coin and keep touching until the
+						--     server removes it - slowest, but never skips a coin.
+						--   * Fast (2) / Fast Safe (3): fly THROUGH. Once the coin is
+						--     reached it is marked pending and the next coin becomes
+						--     the target immediately, so the flight never stops.
+						if dist <= autofarmPickupRange or horizToCoin <= autofarmTouchHorizRange then
+							autofarmTouchCoin(hrp, coin, part)
 							-- Last-touch timestamp: updated EVERY frame so we can later
 							-- tell whether WE were collecting the coin when it vanished.
 							autofarmTouchedAt[coin] = os.clock()
 							autofarmClaimCoin(coin)
-						end
-
-						-- Fast / Fast Safe fly-through: fly through the coins touching
-						-- them with the SAME cadence as Default (HRP every frame, full-body
-						-- volley throttled to 0.15s). Fast flies directly at each coin
-						-- (no under-floor detour — the "slightly faster than Default" edge);
-						-- Fast Safe takes the under-floor route (see below) which is safer,
-						-- so its vertical gap to the coin stays constant. We do NOT hammer
-						-- every coin within pickup range with all 15 body parts on every
-						-- frame — that burst of simultaneous touches collected coins far too
-						-- fast and the anti-cheat kicked for "too-fast collection". Retarget
-						-- only once we have actually reached the coin, marking it pending so
-						-- the flight stays continuous. For Fast Safe, reached means the
-						-- character is DIRECTLY UNDER the coin (vertical gap is constant, so
-						-- compare horizontally), not that the 3D distance shrank to the
-						-- retarget radius.
-						if (autofarmMode == 2 or autofarmMode == 3) and (dist <= autofarmPickupRange or horizToCoin <= autofarmTouchHorizRange) then
-							-- Touch on HRP (primary collector), every frame
-							safeFireTouch(part, hrp)
-							autofarmTouchedAt[coin] = os.clock()
-							autofarmClaimCoin(coin)
-							-- Full-body volley throttled to 0.15s per coin (same as Default)
+							-- Full-body volley throttled to 0.15s per coin (the old
+							-- every-frame volley was 30+ firetouchinterest pcalls per
+							-- frame - a real hitch source on weaker executors).
 							if not autofarmFullTouchAt[coin] or (os.clock() - autofarmFullTouchAt[coin]) >= 0.15 then
 								autofarmFullTouchAt[coin] = os.clock()
 								for _, bp in ipairs(autofarmGetCharParts(char)) do
@@ -25274,31 +25281,38 @@ function startAutofarm()
 									end
 								end
 							end
-							-- Once actually on top of the coin (or directly under it for
-							-- Fast Safe), mark it pending (aura finishes the pickup as we
-							-- fly past) and retarget the next coin
-							local reachedCoin
-							if autofarmMode == 2 then
-								reachedCoin = dist <= autofarmAuraRetargetDist
-							else
-								local dx = hrp.Position.X - part.Position.X
-								local dz = hrp.Position.Z - part.Position.Z
-								reachedCoin = (dx * dx + dz * dz) <= (autofarmAuraRetargetDist * autofarmAuraRetargetDist)
-							end
-							if reachedCoin then
-								-- Only hand the coin over to Coin Aura when it is ON.
-								-- With the aura OFF nothing else collects it, so the old
-								-- unconditional hand-off made the farm skip coin after
-								-- coin while every one of them stayed in the container.
-								if coinAuraEnabled then
+							if autofarmMode ~= 1 then
+								-- Reached the coin? Fast compares the real 3D distance
+								-- (it flies straight at the coin); Fast Safe flies
+								-- directly under the coin, so only XZ matters.
+								local reachedCoin
+								if autofarmMode == 2 then
+									reachedCoin = dist <= autofarmFastRetargetDist
+								else
+									reachedCoin = horizToCoin <= autofarmFastSafeRetargetDist
+								end
+								if reachedCoin then
+									-- Hand the coin to the pending list (it is being
+									-- touched right now, and a missed coin becomes
+									-- targetable again automatically after 2s - see
+									-- autofarmNearestCoin) and pick the NEXT coin.
+									-- If no other coin exists we keep this one as the
+									-- target instead of handing off the last coin to
+									-- nothing, so the round can never stall.
 									autofarmAuraPending[coin] = os.clock()
 									local nextCoin, nextPart, nextDist = autofarmNearestCoin(container, hrp.Position)
 									if nextCoin then
 										coin, part, dist = nextCoin, nextPart, nextDist
+										coinDx = hrp.Position.X - part.Position.X
+										coinDz = hrp.Position.Z - part.Position.Z
+										horizToCoin = math.sqrt(coinDx * coinDx + coinDz * coinDz)
+									else
+										autofarmAuraPending[coin] = nil
 									end
 								end
 							end
 						end
+
 
 						-- Route: in Default and Fast Safe modes, fly UNDER the floor
 						-- whenever one exists below the coin (harder to be killed). In Fast
@@ -25746,6 +25760,36 @@ autofarmModeDropdownFrame.ZIndex = 10
 autofarmModeDropdownFrame.Parent = autofarmModeRow
 Instance.new("UICorner", autofarmModeDropdownFrame).CornerRadius = UDim.new(0, 6)
 
+-- Short description of the selected mode, so switching the dropdown visibly
+-- changes the Autofarm tab (the three modes really do behave differently now).
+autofarmModeDesc = Instance.new("TextLabel")
+autofarmModeDesc.Name = "AutofarmModeDesc"
+autofarmModeDesc.Size = UDim2.new(1, 0, 0, 34)
+autofarmModeDesc.BackgroundTransparency = 1
+autofarmModeDesc.TextColor3 = Color3.fromRGB(180, 180, 180)
+autofarmModeDesc.Font = Enum.Font.SourceSans
+autofarmModeDesc.TextSize = 12
+autofarmModeDesc.TextXAlignment = Enum.TextXAlignment.Left
+autofarmModeDesc.TextYAlignment = Enum.TextYAlignment.Top
+autofarmModeDesc.TextWrapped = true
+-- Grow with the wrapped text: on a narrow (mobile) menu the description needs
+-- more than the fixed height, and a fixed label would clip the last line.
+autofarmModeDesc.AutomaticSize = Enum.AutomaticSize.Y
+autofarmModeDesc.LayoutOrder = 303.6
+autofarmModeDesc.Parent = categoryFrames["Autofarm"]
+
+autofarmModeDescriptions = {
+	"Default: flies under the floor and parks on every coin until it is collected (safest).",
+	"Fast: flies straight at the coins and never stops (fastest, most exposed).",
+	"Fast Safe: under-floor route like Default, but flies through coins without stopping.",
+}
+function refreshAutofarmModeDesc()
+	if autofarmModeDesc then
+		autofarmModeDesc.Text = autofarmModeDescriptions[autofarmMode] or ""
+	end
+end
+refreshAutofarmModeDesc()
+
 for i, modeName in ipairs(autofarmModeNames) do
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2.new(1, 0, 0, 30)
@@ -25762,6 +25806,7 @@ for i, modeName in ipairs(autofarmModeNames) do
 	btn.MouseButton1Click:Connect(function()
 		autofarmMode = i
 		autofarmModeSelect.Text = modeName .. " ▼"
+		refreshAutofarmModeDesc()
 		autofarmModeDropdownFrame.Visible = false
 		saveConfig()
 	end)
@@ -38876,8 +38921,17 @@ for bindOrder, feature in ipairs(btnFeatures) do
 				fpsText.Text = string.format("FPS: %d", math.floor(displayedFPS))
 				fpsText.Font = Enum.Font.Code
 				fpsText.TextSize = 20
+				-- Scale the text down with the pill instead of letting it overflow
+				-- outside the frame (this pill is user-resizable).
+				fpsText.TextScaled = true
+				fpsText.TextWrapped = false
+				fpsText.ClipsDescendants = true
 				fpsText.TextXAlignment = Enum.TextXAlignment.Left
 				fpsText.Parent = popupBorder
+				local fpsTextTSC = Instance.new("UITextSizeConstraint")
+				fpsTextTSC.MaxTextSize = 20
+				fpsTextTSC.MinTextSize = 6
+				fpsTextTSC.Parent = fpsText
 
 				local pingText = Instance.new("TextLabel")
 				pingText.Size = UDim2.new(1, -4, 0.5, 0)
@@ -38887,8 +38941,16 @@ for bindOrder, feature in ipairs(btnFeatures) do
 				pingText.Text = string.format("PING: %d", math.floor(displayedPing))
 				pingText.Font = Enum.Font.Code
 				pingText.TextSize = 20
+				-- Same shrink-to-fit treatment as the FPS line above.
+				pingText.TextScaled = true
+				pingText.TextWrapped = false
+				pingText.ClipsDescendants = true
 				pingText.TextXAlignment = Enum.TextXAlignment.Left
 				pingText.Parent = popupBorder
+				local pingTextTSC = Instance.new("UITextSizeConstraint")
+				pingTextTSC.MaxTextSize = 20
+				pingTextTSC.MinTextSize = 6
+				pingTextTSC.Parent = pingText
 
 				data.fpsText = fpsText
 				data.pingText = pingText
@@ -38935,9 +38997,16 @@ for bindOrder, feature in ipairs(btnFeatures) do
 				textBtn.Text = feature.name == "FPS" and string.format("FPS: %d", math.floor(displayedFPS)) or string.format("PING: %d", math.floor(displayedPing))
 				textBtn.Font = Enum.Font.Code
 				textBtn.TextSize = 22
+				textBtn.TextScaled = true
+				textBtn.TextWrapped = false
+				textBtn.ClipsDescendants = true
 				textBtn.AutoButtonColor = false
 				textBtn.BorderSizePixel = 0
 				textBtn.Parent = popupBorder
+				local textBtnTSC = Instance.new("UITextSizeConstraint")
+				textBtnTSC.MaxTextSize = 22
+				textBtnTSC.MinTextSize = 6
+				textBtnTSC.Parent = textBtn
 
 				local btnCorner = Instance.new("UICorner")
 				btnCorner.CornerRadius = UDim.new(0, 6)
@@ -40666,6 +40735,11 @@ function restoreFullConfig()
 				pcall(function() refreshMiniLockBtn(extractedButtons[name].popupLockBtn, true) end)
 			end
 		end
+		-- Repair stacked / off-screen saved positions (this is what fixes an
+		-- already-corrupted config: all pills sitting in the same spot).
+		-- Guarded: the sanitizer is defined further down the file, so an early
+		-- call must not try to pcall a nil value.
+		if extractedSanitizePositions then pcall(extractedSanitizePositions) end
 	end
 
 	-- Config switching: shut EVERYTHING down first so the incoming config applies
@@ -41522,6 +41596,7 @@ function restoreFullConfig()
 		if c.values.autofarmMode and autofarmModeNames[c.values.autofarmMode] then
 			autofarmMode = c.values.autofarmMode
 			if autofarmModeSelect then autofarmModeSelect.Text = autofarmModeNames[autofarmMode] .. " ▼" end
+			if refreshAutofarmModeDesc then pcall(refreshAutofarmModeDesc) end
 		end
 		if c.values.autofarmPreTpEnabled ~= nil then
 			autofarmPreTpEnabled = c.values.autofarmPreTpEnabled
@@ -42818,35 +42893,79 @@ task.defer(function()
 	if notifyExistingMarkedPlayers then pcall(notifyExistingMarkedPlayers) end
 end)
 
--- Viewport guard (F11 fullscreen <-> windowed): the executor Drawing overlay
--- and absolute-offset popup positions go stale on resize. On change, rebuild
--- ESP skeleton lines (stale Drawing transform) and clamp every extracted
--- popup back on-screen, then save the fixed positions.
-function extractedClampAllToViewport()
+-- Saved extracted-button positions are USER DATA: they must never be rewritten
+-- just because the viewport changed. The old "clamp every popup on resize" pass
+-- used only the Offset component, clamped EVERY out-of-bounds pill to the same
+-- corner and then saved that - so after a rejoin (or a death + auto-rejoin) all
+-- extracted buttons appeared stacked in one place. Positions are now repaired
+-- only at restore time, and only when they are genuinely unusable: off-screen
+-- or shared by more than one button.
+function extractedSanitizePositions()
 	local cam = workspace.CurrentCamera
 	if not (cam and popupBtnGui) then return end
 	local vs = cam.ViewportSize
+	if not vs or vs.X <= 0 or vs.Y <= 0 then return end
 	local insetY = 0
-	pcall(function()
-		insetY = game:GetService("GuiService"):GetGuiInset().Y
-	end)
-	for _, data in pairs(extractedButtons) do
-		local f = data and (data.frame or data.btn)
-		if f ~= nil and typeof(f) == "Instance" and f:IsA("GuiObject") and f.Parent ~= nil then
-			local pos, sz = nil, nil
-			pcall(function() pos = f.Position end)
-			pcall(function() sz = f.AbsoluteSize end)
-			if pos ~= nil and sz ~= nil then
-				local x = math.clamp(pos.X.Offset, 0, math.max(0, vs.X - sz.X))
-				local y = math.clamp(pos.Y.Offset, insetY, math.max(insetY, vs.Y - sz.Y))
-				if x ~= pos.X.Offset or y ~= pos.Y.Offset then
-					pcall(function() f.Position = UDim2.new(pos.X.Scale, x, pos.Y.Scale, y) end)
+	pcall(function() insetY = game:GetService("GuiService"):GetGuiInset().Y end)
+	local used = {}
+	local function keyFor(x, y)
+		return math.floor(x / 4 + 0.5) .. ":" .. math.floor(y / 4 + 0.5)
+	end
+	local function sizeOf(f)
+		local w, h = nil, nil
+		pcall(function() local s = f.AbsoluteSize; w, h = s.X, s.Y end)
+		if not w or w <= 0 then w = f.Size.X.Offset end
+		if not h or h <= 0 then h = f.Size.Y.Offset end
+		if not w or w <= 0 then w = 120 end
+		if not h or h <= 0 then h = 40 end
+		return w, h
+	end
+	local function defaultSpot(w, h)
+		local stepX = math.max(40, w + 4)
+		local stepY = math.max(24, h + 2)
+		local cols = math.max(1, math.floor((vs.X - 20) / stepX))
+		for row = 0, 80 do
+			for col = 0, cols - 1 do
+				local x = 10 + col * stepX
+				local y = insetY + 10 + row * stepY
+				if y + h > vs.Y then break end
+				local k = keyFor(x, y)
+				if not used[k] then
+					used[k] = true
+					return UDim2.new(0, x, 0, y)
 				end
 			end
 		end
+		return UDim2.new(0, 10, 0, insetY + 10)
+	end
+	-- Pass 1: keep the first occurrence of each on-screen position.
+	local pending = {}
+	for _, data in pairs(extractedButtons) do
+		local f = data and (data.frame or data.btn)
+		if f ~= nil and typeof(f) == "Instance" and f:IsA("GuiObject") and f.Parent ~= nil then
+			local pos = f.Position
+			local w, h = sizeOf(f)
+			local x = pos.X.Scale * vs.X + pos.X.Offset
+			local y = pos.Y.Scale * vs.Y + pos.Y.Offset
+			local onScreen = x >= -1 and y >= -1 and (x + w) <= (vs.X + 1) and (y + h) <= (vs.Y + 1)
+			local k = keyFor(x, y)
+			if onScreen and not used[k] then
+				used[k] = true
+			else
+				pending[#pending + 1] = f
+			end
+		end
+	end
+	-- Pass 2: give every duplicate / off-screen pill a free grid slot.
+	for _, f in ipairs(pending) do
+		local w, h = sizeOf(f)
+		pcall(function() f.Position = defaultSpot(w, h) end)
 	end
 end
 
+-- Viewport guard (F11 fullscreen <-> windowed): the executor Drawing overlay
+-- and the ESP skeleton transform go stale on resize, so rebuild the skeleton.
+-- Button positions are deliberately NOT touched here - see the sanitizer above.
 task.spawn(function()
 	local lastVp = nil
 	while true do
@@ -42861,8 +42980,6 @@ task.spawn(function()
 					for plr, _ in pairs(espSkelDrawings) do keys[#keys + 1] = plr end
 					for _, plr in ipairs(keys) do pcall(espSkeletonClearPlayer, plr) end
 				end
-				extractedClampAllToViewport()
-				pcall(saveConfig)
 			end
 			lastVp = vs
 		end)
