@@ -3328,8 +3328,11 @@ function espGetRoleClass(plr)
 	return "innocent"
 end
 
--- Skeleton ESP (Drawing API, ported from Skeleton.lua): per-player lines
+-- Skeleton ESP (ScreenGui frames, NOT the Drawing API): per-player lines
 -- between body-part centers, updated every render frame, colored by role.
+-- Drawing overlay coordinates drift on mobile executors (the whole skeleton
+-- was drawn beside the character on phones); regular GUI Frames use the same
+-- coordinate space as WorldToViewportPoint, so they line up on every device.
 ESP_SKEL_R15 = {
 	{"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"},
 	{"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"}, {"LeftLowerArm", "LeftHand"},
@@ -3344,6 +3347,29 @@ ESP_SKEL_R6 = {
 ESP_SKEL_THICKNESS = 1.5
 ESP_SKEL_OPACITY = 0.8
 espSkelDrawings = {}
+espSkeletonGui = nil
+-- Lazily (re)creates the overlay used by the frame-based skeleton.
+function espSkeletonEnsureGui()
+	if espSkeletonGui and espSkeletonGui.Parent then return espSkeletonGui end
+	local pg = player:FindFirstChildOfClass("PlayerGui")
+	if not pg then return nil end
+	local gui = pg:FindFirstChild("AdrenalinSkeletonGui")
+	if not gui then
+		gui = Instance.new("ScreenGui")
+		gui.Name = "AdrenalinSkeletonGui"
+		gui.ResetOnSpawn = false
+		-- Under the script's own windows (mainGui = 999999), above the game HUD.
+		gui.DisplayOrder = 999
+		-- Absolute screen pixels: no topbar / notch inset, matching
+		-- WorldToScreenPoint exactly (a notch inset is what shifted the
+		-- skeleton sideways on phones before).
+		gui.IgnoreGuiInset = true
+		pcall(function() gui.ScreenInsets = Enum.ScreenInsets.None end)
+		gui.Parent = pg
+	end
+	espSkeletonGui = gui
+	return gui
+end
 espDrawingOK = false
 pcall(function()
 	local probe = Drawing.new("Line")
@@ -3353,20 +3379,14 @@ end)
 function espSkeletonClearPlayer(plr)
 	local data = espSkelDrawings and espSkelDrawings[plr]
 	if data then
-		if data.lines then
-			for _, line in ipairs(data.lines) do
-				pcall(function() line:Remove() end)
-			end
-		end
+		if data.frame then pcall(function() data.frame:Destroy() end) end
 		espSkelDrawings[plr] = nil
 	end
 end
 function espSkeletonHidePlayer(plr)
 	local data = espSkelDrawings and espSkelDrawings[plr]
-	if data and data.lines then
-		for _, line in ipairs(data.lines) do
-			pcall(function() line.Visible = false end)
-		end
+	if data and data.frame then
+		pcall(function() data.frame.Visible = false end)
 	end
 end
 -- Shared ESP visibility gate: returns character, color when this player's ESP
@@ -3398,7 +3418,6 @@ for _, plr in ipairs(Players:GetPlayers()) do
 	end
 end
 function espSkeletonTick()
-	if not espDrawingOK then return end
 	if not (espEnabled and espSkeletonEnabled) then
 		for plr, _ in pairs(espSkelDrawings) do
 			espSkeletonHidePlayer(plr)
@@ -3407,6 +3426,8 @@ function espSkeletonTick()
 	end
 	local cam = workspace.CurrentCamera
 	if not cam then return end
+	local gui = espSkeletonEnsureGui()
+	if not gui then return end
 	for _, plr in ipairs(Players:GetPlayers()) do
 		local character, color = espPlayerVisible(plr)
 		local hum = character and character:FindFirstChildOfClass("Humanoid")
@@ -3435,49 +3456,72 @@ function espSkeletonTick()
 			end
 			if needRebuild then
 				espSkeletonClearPlayer(plr)
-				data = { lines = {}, parts = {}, rig = hum.RigType, char = character }
+				-- Container for this player's bone lines, so visibility/destroy
+				-- affects all lines with one call.
+				local holder = Instance.new("Frame")
+				holder.Name = "Skel_" .. plr.Name
+				holder.Size = UDim2.fromScale(1, 1)
+				holder.BackgroundTransparency = 1
+				holder.BorderSizePixel = 0
+				holder.ClipsDescendants = false
+				holder.Active = false
+				holder.Parent = gui
+				data = { frame = holder, lines = {}, parts = {}, rig = hum.RigType, char = character }
 				for _ = 1, #bonePairs do
-					local ok, line = pcall(function()
-						local l = Drawing.new("Line")
-						l.Thickness = ESP_SKEL_THICKNESS
-						l.Transparency = ESP_SKEL_OPACITY
-						l.Visible = false
-						return l
-					end)
-					if ok and line then data.lines[#data.lines + 1] = line end
+					local l = Instance.new("Frame")
+					l.Name = "Bone"
+					l.AnchorPoint = Vector2.new(0.5, 0.5)
+					l.BackgroundColor3 = Color3.new(1, 1, 1)
+					l.BackgroundTransparency = 1 - ESP_SKEL_OPACITY
+					l.BorderSizePixel = 0
+					l.Size = UDim2.new(0, 0, 0, ESP_SKEL_THICKNESS)
+					l.Position = UDim2.new(0, -1000, 0, -1000)
+					l.Rotation = 0
+					l.Visible = false
+					l.ZIndex = 2
+					l.Parent = holder
+					data.lines[#data.lines + 1] = l
 				end
 				for _, pair in ipairs(bonePairs) do
 					data.parts[#data.parts + 1] = { character:FindFirstChild(pair[1]), character:FindFirstChild(pair[2]) }
 				end
 				espSkelDrawings[plr] = data
 			end
+			if data.frame then data.frame.Visible = true end
 			for idx, _ in ipairs(bonePairs) do
 				local line = data.lines[idx]
 				local pr = data.parts[idx]
+				local shown = false
 				if line and pr then
 					local partA, partB = pr[1], pr[2]
 					if partA and partB and partA.Parent and partB.Parent then
-						-- WorldToViewportPoint (not ScreenPoint): Drawing uses raw
-						-- viewport coords; ScreenPoint subtracts the topbar inset
-						-- and shifts the whole figure upward.
-						local posA, onA = cam:WorldToViewportPoint(partA.Position)
-						local posB, onB = cam:WorldToViewportPoint(partB.Position)
+						-- WorldToScreenPoint returns GUI coordinates, i.e. the same space
+						-- as this default (IgnoreGuiInset = false) ScreenGui, so the
+						-- frame lines land exactly on the bones everywhere (Drawing's
+						-- viewport coords were what drifted on mobile).
+						local posA = cam:WorldToScreenPoint(partA.Position)
+						local posB = cam:WorldToScreenPoint(partB.Position)
 						-- Z <= 0 means behind the camera: its projection mirrors and
-						-- would draw the skeleton somewhere else on screen.
-						if onA and onB and posA.Z > 0 and posB.Z > 0 then
-							pcall(function()
-								line.From = Vector2.new(posA.X, posA.Y)
-								line.To = Vector2.new(posB.X, posB.Y)
-								line.Color = color
-								line.Visible = true
-							end)
-						else
-							pcall(function() line.Visible = false end)
+						-- would draw the skeleton somewhere else on screen. Do not rely
+						-- on the onScreen flag: on mobile it can be false for points
+						-- that are actually visible.
+						if posA.Z > 0 and posB.Z > 0 then
+							local dx, dy = posB.X - posA.X, posB.Y - posA.Y
+							local dist = math.sqrt(dx * dx + dy * dy)
+							if dist >= 0.5 then
+								pcall(function()
+									line.Position = UDim2.new(0, (posA.X + posB.X) * 0.5, 0, (posA.Y + posB.Y) * 0.5)
+									line.Size = UDim2.new(0, dist, 0, ESP_SKEL_THICKNESS)
+									line.Rotation = math.deg(math.atan2(dy, dx))
+									line.BackgroundColor3 = color
+									line.Visible = true
+								end)
+								shown = true
+							end
 						end
-					else
-						pcall(function() line.Visible = false end)
 					end
 				end
+				if not shown and line then line.Visible = false end
 			end
 		end
 	end
@@ -13581,11 +13625,24 @@ function toggleAutoDeleteCoins()
 end
 
 function autoDeleteCoinsModeLabel()
-	return "Coins Removal: " .. autoDeleteCoinsMode .. "  ▼"
+	return autoDeleteCoinsMode .. "  ▼"
 end
 
 currentCategory = "Player"
-btn.autoDeleteCoins = createButton("AutoDeleteCoinsButton", "Auto Remove Coins: OFF", 112)
+-- Auto Remove Coins: the toggle and its mode picker live in ONE row, with the
+-- mode button sitting right next to the toggle (same pattern as the
+-- Desync / Clumsy dual rows) instead of being a separate full-width feature.
+btn.autoDeleteCoinsRow = Instance.new("Frame")
+btn.autoDeleteCoinsRow.Name = "AutoDeleteCoinsRow"
+btn.autoDeleteCoinsRow.Size = UDim2.new(1, 0, 0, 42)
+btn.autoDeleteCoinsRow.BackgroundTransparency = 1
+btn.autoDeleteCoinsRow.LayoutOrder = 112
+if categoryFrames[currentCategory] then btn.autoDeleteCoinsRow.Parent = categoryFrames[currentCategory] end
+
+btn.autoDeleteCoins = createButton("AutoDeleteCoinsButton", "Auto Remove Coins: OFF")
+btn.autoDeleteCoins.Size = UDim2.new(1, -98, 1, 0)
+btn.autoDeleteCoins.Position = UDim2.new(0, 0, 0, 0)
+btn.autoDeleteCoins.Parent = btn.autoDeleteCoinsRow
 btn.autoDeleteCoins.MouseButton1Click:Connect(function()
 	toggleAutoDeleteCoins()
 	setToggleState(btn.autoDeleteCoins, autoDeleteCoinsEnabled, "Auto Remove Coins: ON", "Auto Remove Coins: OFF")
@@ -13594,7 +13651,10 @@ end)
 
 -- Mode picker: Default = individual coins (they respawn when toggled off),
 -- Full = the whole coin container (no respawn until next round).
-btn.autoDeleteCoinsMode = createButton("AutoDeleteCoinsModeButton", autoDeleteCoinsModeLabel(), 112.05)
+btn.autoDeleteCoinsMode = createButton("AutoDeleteCoinsModeButton", autoDeleteCoinsModeLabel())
+btn.autoDeleteCoinsMode.Size = UDim2.new(0, 92, 1, 0)
+btn.autoDeleteCoinsMode.Position = UDim2.new(1, -92, 0, 0)
+btn.autoDeleteCoinsMode.Parent = btn.autoDeleteCoinsRow
 btn.autoDeleteCoinsMode.MouseButton1Click:Connect(function()
 	autoDeleteCoinsMode = (autoDeleteCoinsMode == "Full") and "Default" or "Full"
 	btn.autoDeleteCoinsMode.Text = autoDeleteCoinsModeLabel()
@@ -21888,6 +21948,8 @@ tradeBg.Name = "TradeBg"
 tradeBg.BackgroundColor3 = mainProfileBgColor or Color3.fromRGB(0, 0, 0)
 tradeBg.BackgroundTransparency = tradeBgTransparency or 0
 tradeBg.BorderSizePixel = 0
+tradeBg.Size = UDim2.new(1, 0, 0, 0)
+tradeBg.AutomaticSize = Enum.AutomaticSize.Y
 tradeBg.LayoutOrder = 721
 tradeBg.Parent = categoryFrames["Trade"]
 
@@ -21958,12 +22020,14 @@ RARES:
 Dungeon reduced to 110
 ]]
 
--- Расчёт высоты текста с учётом автоматического переноса строк
-local tradeTextSize = game:GetService("TextService"):GetTextSize(tradeChangesText, 15, Enum.Font.Gotham, Vector2.new(460, math.huge))
-
+-- Высота текста НЕ считается под фиксированную ширину 460 px: на телефоне
+-- вкладка уже, строки переносятся чаще, и жёсткая высота обрезала хвост —
+-- текст вылезал за чёрный фон и не долистывался. Авторазмер растит текст
+-- и фон ровно под фактическую ширину вкладки на любом устройстве.
 local tradeChanges = Instance.new("TextLabel")
 tradeChanges.Name = "TradeChanges"
-tradeChanges.Size = UDim2.new(1, -20, 0, tradeTextSize.Y)
+tradeChanges.Size = UDim2.new(1, -20, 0, 0)
+tradeChanges.AutomaticSize = Enum.AutomaticSize.Y
 tradeChanges.BackgroundTransparency = 1
 tradeChanges.Text = tradeChangesText
 tradeChanges.TextColor3 = Color3.fromRGB(230, 230, 230)
@@ -21976,8 +22040,8 @@ tradeChanges.RichText = true
 tradeChanges.LayoutOrder = 2
 tradeChanges.Parent = tradeBg
 
--- Подгоняем высоту фона под содержимое (заголовок + текст + отступы)
-tradeBg.Size = UDim2.new(1, 0, 0, tradeTextSize.Y + 70)
+-- Фон уже имеет AutomaticSize.Y: высота подстраивается под заголовок + текст
+-- + отступы, поэтому ничего вручную пересчитывать не нужно.
 
 -- Кнопка Trade Helper — вне поля с текстом, в конце вкладки
 -- (аналогично FPS/Ping/Fov, идущим после профиля во вкладке Main)
@@ -24754,7 +24818,11 @@ end
 -- This eliminates the sharp dip and the delay when switching coin targets.
 autofarmHoldPos = nil
 function autofarmPauseFlight()
-	autofarmFlightMoving = false
+	-- Keep the flight flag TRUE while pinned between coins: the noclip heartbeat
+	-- restores root collision when this is false, and a colliding root inside the
+	-- map geometry wedges the character (it then never reaches the next coin).
+	-- Root collision is restored only when the farm truly stops.
+	autofarmFlightMoving = true
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -25061,11 +25129,13 @@ function startAutofarm()
 						pcall(function() hum.PlatformStand = true end)
 						-- [perf] Cached part list + write CanCollide only when it actually
 						-- changed (property writes on every part every frame are not free).
-						-- The HumanoidRootPart is kept collidable so the character can
-						-- rest on the invisible platform when it stops flying.
-						local rootPart = char:FindFirstChild("HumanoidRootPart")
+						-- EVERY part (root included) must be non-colliding while flying:
+						-- the farm spot sits INSIDE the map textures, so a colliding root
+						-- gets wedged in geometry and the character never reaches a coin
+						-- ("flies to the coin and stops collecting"). Root collision is
+						-- only restored when the farm goes idle (autofarmStopFlight).
 						for _, p in ipairs(autofarmGetCharParts(char)) do
-							if p ~= rootPart and p.CanCollide then p.CanCollide = false end
+							if p.CanCollide then p.CanCollide = false end
 						end
 
 						-- Keep touching the coin EVERY frame while in range (not just once).
@@ -36983,7 +37053,10 @@ createSection("Buttons", 900)
 popupBtnGui = Instance.new("ScreenGui")
 popupBtnGui.Name = "AdrenalinPopupBtns"
 popupBtnGui.ResetOnSpawn = false
-popupBtnGui.DisplayOrder = 999999
+-- Extracted feature buttons must render BELOW the main menu (mainGui is 999999).
+-- At the same order this GUI was created later, so it drew on top and clicks on
+-- the open menu went straight through to these buttons.
+popupBtnGui.DisplayOrder = 999998
 popupBtnGui.IgnoreGuiInset = true
 popupBtnGui.Parent = playerGui
 
@@ -42526,8 +42599,13 @@ end
 do
 	local combatEndFrame = categoryFrames["Combat"]
 	if combatEndFrame then
-		if btn.autoDeleteCoins then btn.autoDeleteCoins.Parent = combatEndFrame; btn.autoDeleteCoins.LayoutOrder = 258.5 end
-		if btn.autoDeleteCoinsMode then btn.autoDeleteCoinsMode.Parent = combatEndFrame; btn.autoDeleteCoinsMode.LayoutOrder = 258.55 end
+		if btn.autoDeleteCoinsRow then
+			btn.autoDeleteCoinsRow.Parent = combatEndFrame
+			btn.autoDeleteCoinsRow.LayoutOrder = 258.5
+		else
+			if btn.autoDeleteCoins then btn.autoDeleteCoins.Parent = combatEndFrame; btn.autoDeleteCoins.LayoutOrder = 258.5 end
+			if btn.autoDeleteCoinsMode then btn.autoDeleteCoinsMode.Parent = combatEndFrame; btn.autoDeleteCoinsMode.LayoutOrder = 258.55 end
+		end
 		if btn.autoMuteCoins then btn.autoMuteCoins.Parent = combatEndFrame; btn.autoMuteCoins.LayoutOrder = 258.6 end
 		if btn.autoDeleteCorpses then btn.autoDeleteCorpses.Parent = combatEndFrame; btn.autoDeleteCorpses.LayoutOrder = 258.7 end
 	end
