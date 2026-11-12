@@ -3360,12 +3360,24 @@ function espSkeletonEnsureGui()
 		gui.ResetOnSpawn = false
 		-- Under the script's own windows (mainGui = 999999), above the game HUD.
 		gui.DisplayOrder = 999
-		-- Absolute screen pixels: no topbar / notch inset, matching
-		-- WorldToScreenPoint exactly (a notch inset is what shifted the
-		-- skeleton sideways on phones before).
-		gui.IgnoreGuiInset = true
-		pcall(function() gui.ScreenInsets = Enum.ScreenInsets.None end)
+		-- Viewport-space GUI: WorldToViewportPoint and a CoreUISafeInsets
+		-- ScreenGui share the same coordinate origin, so the projected points
+		-- land on the bones on PC and phones alike.
+		gui.IgnoreGuiInset = false
+		pcall(function() gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets end)
 		gui.Parent = pg
+	end
+	-- Size probe: the AbsoluteSize of a full-screen frame tells us how many GUI
+	-- pixels one viewport pixel maps to. If the GUI is laid out in a different
+	-- pixel space (high-DPI phones / executor quirk) the projected points are
+	-- scaled by this ratio, so the skeleton can never drift with the resolution.
+	if not gui:FindFirstChild("SizeProbe") then
+		local probe = Instance.new("Frame")
+		probe.Name = "SizeProbe"
+		probe.Size = UDim2.fromScale(1, 1)
+		probe.BackgroundTransparency = 1
+		probe.BorderSizePixel = 0
+		probe.Parent = gui
 	end
 	espSkeletonGui = gui
 	return gui
@@ -3428,6 +3440,22 @@ function espSkeletonTick()
 	if not cam then return end
 	local gui = espSkeletonEnsureGui()
 	if not gui then return end
+	-- WorldToViewportPoint is in viewport pixels. If this GUI is laid out in a
+	-- different pixel space (high-DPI phones, executor scaling), scale the
+	-- projected points by the real AbsoluteSize / ViewportSize ratio.
+	local vs = cam.ViewportSize
+	local scaleX, scaleY = 1, 1
+	local probe = gui:FindFirstChild("SizeProbe")
+	if probe then
+		local as = probe.AbsoluteSize
+		if as.X > 1 and as.Y > 1 and vs.X > 1 and vs.Y > 1 then
+			local rx, ry = as.X / vs.X, as.Y / vs.Y
+			-- Ignore absurd ratios (probe not laid out yet / one-frame resize).
+			if rx > 0.5 and rx < 2 and ry > 0.5 and ry < 2 then
+				scaleX, scaleY = rx, ry
+			end
+		end
+	end
 	for _, plr in ipairs(Players:GetPlayers()) do
 		local character, color = espPlayerVisible(plr)
 		local hum = character and character:FindFirstChildOfClass("Humanoid")
@@ -3495,22 +3523,23 @@ function espSkeletonTick()
 				if line and pr then
 					local partA, partB = pr[1], pr[2]
 					if partA and partB and partA.Parent and partB.Parent then
-						-- WorldToScreenPoint returns GUI coordinates, i.e. the same space
-						-- as this default (IgnoreGuiInset = false) ScreenGui, so the
-						-- frame lines land exactly on the bones everywhere (Drawing's
-						-- viewport coords were what drifted on mobile).
-						local posA = cam:WorldToScreenPoint(partA.Position)
-						local posB = cam:WorldToScreenPoint(partB.Position)
+						-- WorldToViewportPoint is the same coordinate space as this
+						-- CoreUISafeInsets (default inset) ScreenGui, so the frame
+						-- lines land exactly on the bones everywhere.
+						local posA = cam:WorldToViewportPoint(partA.Position)
+						local posB = cam:WorldToViewportPoint(partB.Position)
 						-- Z <= 0 means behind the camera: its projection mirrors and
 						-- would draw the skeleton somewhere else on screen. Do not rely
 						-- on the onScreen flag: on mobile it can be false for points
 						-- that are actually visible.
 						if posA.Z > 0 and posB.Z > 0 then
-							local dx, dy = posB.X - posA.X, posB.Y - posA.Y
+							local ax, ay = posA.X * scaleX, posA.Y * scaleY
+							local bx, by = posB.X * scaleX, posB.Y * scaleY
+							local dx, dy = bx - ax, by - ay
 							local dist = math.sqrt(dx * dx + dy * dy)
 							if dist >= 0.5 then
 								pcall(function()
-									line.Position = UDim2.new(0, (posA.X + posB.X) * 0.5, 0, (posA.Y + posB.Y) * 0.5)
+									line.Position = UDim2.new(0, (ax + bx) * 0.5, 0, (ay + by) * 0.5)
 									line.Size = UDim2.new(0, dist, 0, ESP_SKEL_THICKNESS)
 									line.Rotation = math.deg(math.atan2(dy, dx))
 									line.BackgroundColor3 = color
@@ -13650,20 +13679,59 @@ btn.autoDeleteCoins.MouseButton1Click:Connect(function()
 end)
 
 -- Mode picker: Default = individual coins (they respawn when toggled off),
--- Full = the whole coin container (no respawn until next round).
+-- Full = the whole coin container (no respawn until next round). Clicking the
+-- mode button opens a popup list (AutoGrab / Knife Silent Aim pattern) instead
+-- of silently cycling the mode on every press.
+autoDeleteCoinsModes = {"Default", "Full"}
+autoDeleteCoinsModeDropdown = Instance.new("Frame")
+autoDeleteCoinsModeDropdown.Name = "AutoDeleteCoinsModeDropdown"
+autoDeleteCoinsModeDropdown.Size = UDim2.new(0, 92, 0, #autoDeleteCoinsModes * 30)
+autoDeleteCoinsModeDropdown.Position = UDim2.new(1, -92, 0, 42)
+autoDeleteCoinsModeDropdown.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+autoDeleteCoinsModeDropdown.BorderSizePixel = 0
+autoDeleteCoinsModeDropdown.Visible = false
+autoDeleteCoinsModeDropdown.ZIndex = 10
+autoDeleteCoinsModeDropdown.Parent = btn.autoDeleteCoinsRow
+Instance.new("UICorner", autoDeleteCoinsModeDropdown).CornerRadius = UDim.new(0, 6)
+
 btn.autoDeleteCoinsMode = createButton("AutoDeleteCoinsModeButton", autoDeleteCoinsModeLabel())
 btn.autoDeleteCoinsMode.Size = UDim2.new(0, 92, 1, 0)
 btn.autoDeleteCoinsMode.Position = UDim2.new(1, -92, 0, 0)
+btn.autoDeleteCoinsMode.ZIndex = 2
 btn.autoDeleteCoinsMode.Parent = btn.autoDeleteCoinsRow
+
+for i, modeName in ipairs(autoDeleteCoinsModes) do
+	local modeOption = Instance.new("TextButton")
+	modeOption.Name = "AutoDeleteCoinsMode" .. modeName
+	modeOption.Size = UDim2.new(1, 0, 0, 30)
+	modeOption.Position = UDim2.new(0, 0, 0, (i - 1) * 30)
+	modeOption.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	modeOption.TextColor3 = Color3.fromRGB(255, 255, 255)
+	modeOption.Text = modeName
+	modeOption.Font = Enum.Font.SourceSansBold
+	modeOption.TextSize = 14
+	modeOption.AutoButtonColor = false
+	modeOption.ZIndex = 10
+	modeOption.Parent = autoDeleteCoinsModeDropdown
+	styleSeparatorBtn(modeOption)
+	modeOption.MouseButton1Click:Connect(function()
+		autoDeleteCoinsMode = modeName
+		btn.autoDeleteCoinsMode.Text = autoDeleteCoinsModeLabel()
+		autoDeleteCoinsModeDropdown.Visible = false
+		refreshDropdownArrow(btn.autoDeleteCoinsMode, autoDeleteCoinsModeDropdown)
+		-- Re-arm with the new mode without leaving the feature half-enabled.
+		if autoDeleteCoinsEnabled then
+			disableAutoDeleteCoins()
+			enableAutoDeleteCoins()
+		end
+		pcall(saveConfig)
+	end)
+	modeOption.MouseEnter:Connect(function() modeOption.BackgroundColor3 = Color3.fromRGB(60, 60, 60) end)
+	modeOption.MouseLeave:Connect(function() modeOption.BackgroundColor3 = Color3.fromRGB(0, 0, 0) end)
+end
 btn.autoDeleteCoinsMode.MouseButton1Click:Connect(function()
-	autoDeleteCoinsMode = (autoDeleteCoinsMode == "Full") and "Default" or "Full"
-	btn.autoDeleteCoinsMode.Text = autoDeleteCoinsModeLabel()
-	-- Re-arm with the new mode without leaving the feature half-enabled.
-	if autoDeleteCoinsEnabled then
-		disableAutoDeleteCoins()
-		enableAutoDeleteCoins()
-	end
-	pcall(saveConfig)
+	autoDeleteCoinsModeDropdown.Visible = not autoDeleteCoinsModeDropdown.Visible
+	refreshDropdownArrow(btn.autoDeleteCoinsMode, autoDeleteCoinsModeDropdown)
 end)
 
 -- Auto Mute Coins: fully silence MM2 coin pickup / collect sounds
@@ -24101,7 +24169,14 @@ autofarmLieCF = CFrame.Angles(math.rad(90), 0, 0)
 -- never rising up onto them — Coin Aura pulls them in as we pass by.
 -- 2.0 = a bit deeper than the old 1.25 so the character is safer from above-ground
 -- attacks, but still within the 6-stud pickup range so coins are collected fine.
-autofarmUnderFloorDepth = 2.0    -- how far below the floor surface we fly (studs) — safely under, still collecting
+autofarmUnderFloorDepth = 2.0    -- how far below the floor surface we fly (studs) - safely under, still collecting
+-- Horizontal distance (studs) at which the under-floor route gives up and the
+-- character rises INTO the coin. A character parked below the floor is out of
+-- touch range, which is exactly why Default "stopped under the coins".
+autofarmUnderFloorRiseDist = 4
+-- Horizontal touch gate (studs): firetouchinterest needs no real 3D contact,
+-- so a character directly under a coin still fires a valid touch.
+autofarmTouchHorizRange = 3
 -- When Coin Aura is ON we fly closer to the coin (shallower under-floor depth,
 -- just a bit below the coin's hitbox). Keeps the character under the map (hard
 -- to be killed) while letting a small aura radius (1-2) reach the coin over the
@@ -25137,6 +25212,12 @@ function startAutofarm()
 						for _, p in ipairs(autofarmGetCharParts(char)) do
 							if p.CanCollide then p.CanCollide = false end
 						end
+						-- Horizontal distance to the coin: the touch gates and the
+						-- under-floor route only care about XZ, because the vertical
+						-- gap is whatever the route dictates for this frame.
+						local coinDx = hrp.Position.X - part.Position.X
+						local coinDz = hrp.Position.Z - part.Position.Z
+						local horizToCoin = math.sqrt(coinDx * coinDx + coinDz * coinDz)
 
 						-- Keep touching the coin EVERY frame while in range (not just once).
 						-- The coin stays targetable until it disappears, so we keep hitting
@@ -25149,7 +25230,7 @@ function startAutofarm()
 						-- mode we rely on the fly-through block below (which claims the coin,
 						-- marks it pending and immediately retargets the NEXT coin) — so
 						-- the flight never pauses at a coin to collect it.
-						if autofarmMode == 1 and dist <= autofarmPickupRange then
+						if autofarmMode == 1 and (dist <= autofarmPickupRange or horizToCoin <= autofarmTouchHorizRange) then
 							safeFireTouch(part, hrp)
 							if not autofarmFullTouchAt[coin] or (os.clock() - autofarmFullTouchAt[coin]) >= 0.15 then
 								autofarmFullTouchAt[coin] = os.clock()
@@ -25179,7 +25260,7 @@ function startAutofarm()
 						-- character is DIRECTLY UNDER the coin (vertical gap is constant, so
 						-- compare horizontally), not that the 3D distance shrank to the
 						-- retarget radius.
-						if (autofarmMode == 2 or autofarmMode == 3) and dist <= autofarmPickupRange then
+						if (autofarmMode == 2 or autofarmMode == 3) and (dist <= autofarmPickupRange or horizToCoin <= autofarmTouchHorizRange) then
 							-- Touch on HRP (primary collector), every frame
 							safeFireTouch(part, hrp)
 							autofarmTouchedAt[coin] = os.clock()
@@ -25205,10 +25286,16 @@ function startAutofarm()
 								reachedCoin = (dx * dx + dz * dz) <= (autofarmAuraRetargetDist * autofarmAuraRetargetDist)
 							end
 							if reachedCoin then
-								autofarmAuraPending[coin] = os.clock()
-								local nextCoin, nextPart, nextDist = autofarmNearestCoin(container, hrp.Position)
-								if nextCoin then
-									coin, part, dist = nextCoin, nextPart, nextDist
+								-- Only hand the coin over to Coin Aura when it is ON.
+								-- With the aura OFF nothing else collects it, so the old
+								-- unconditional hand-off made the farm skip coin after
+								-- coin while every one of them stayed in the container.
+								if coinAuraEnabled then
+									autofarmAuraPending[coin] = os.clock()
+									local nextCoin, nextPart, nextDist = autofarmNearestCoin(container, hrp.Position)
+									if nextCoin then
+										coin, part, dist = nextCoin, nextPart, nextDist
+									end
 								end
 							end
 						end
@@ -25220,6 +25307,12 @@ function startAutofarm()
 						local target
 						if autofarmMode == 2 then
 							-- Fast mode: fly straight to the coin
+							target = part.Position
+						elseif horizToCoin <= autofarmUnderFloorRiseDist then
+							-- Directly above/below the coin: rise INTO the hitbox
+							-- instead of staying under the floor. The server only
+							-- removes a coin when a character part really overlaps it,
+							-- so parking below the floor never collected anything.
 							target = part.Position
 						else
 							-- Default mode: fly under the floor
@@ -25277,7 +25370,9 @@ function startAutofarm()
 								autofarmStuckCheckAt = now
 								if autofarmStuckLastPos then
 									local movedDist = (curPos - autofarmStuckLastPos).Magnitude
-									if movedDist < AUTOFARM_STUCK_MIN_DIST then
+									-- Deliberately parked on a coin is NOT "stuck": the farm
+									-- holds the hitbox until the server accepts the pickup.
+									if movedDist < AUTOFARM_STUCK_MIN_DIST and horizToCoin > autofarmUnderFloorRiseDist then
 										if not autofarmStuckSince then
 											autofarmStuckSince = now
 										elseif (now - autofarmStuckSince) >= autofarmStuckTimeout then
