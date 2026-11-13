@@ -3331,8 +3331,9 @@ end
 -- Skeleton ESP (ScreenGui frames, NOT the Drawing API): per-player lines
 -- between body-part centers, updated every render frame, colored by role.
 -- Drawing overlay coordinates drift on mobile executors (the whole skeleton
--- was drawn beside the character on phones); regular GUI Frames use the same
--- coordinate space as WorldToViewportPoint, so they line up on every device.
+-- was drawn beside the character on phones); a full-screen ScreenGui with
+-- IgnoreGuiInset = true and no safe-area insets uses the exact same pixel
+-- space as WorldToViewportPoint, so the frames line up on every device.
 ESP_SKEL_R15 = {
 	{"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"},
 	{"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"}, {"LeftLowerArm", "LeftHand"},
@@ -3360,13 +3361,20 @@ function espSkeletonEnsureGui()
 		gui.ResetOnSpawn = false
 		-- Under the script's own windows (mainGui = 999999), above the game HUD.
 		gui.DisplayOrder = 999
-		-- Viewport-space GUI: WorldToViewportPoint and a CoreUISafeInsets
-		-- ScreenGui share the same coordinate origin, so the projected points
-		-- land on the bones on PC and phones alike.
-		gui.IgnoreGuiInset = false
-		pcall(function() gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets end)
+		-- Full-viewport GUI: WorldToViewportPoint is in viewport pixels and a
+		-- ScreenGui with IgnoreGuiInset = true / no safe-area insets starts at
+		-- the same (0, 0) origin, so the projected points land on the bones on
+		-- PC and phones alike. (With CoreUISafeInsets the origin was shifted
+		-- and the safe-area margins compressed the points, which made the
+		-- skeleton drift sideways the farther the player was from us.)
+		gui.IgnoreGuiInset = true
+		pcall(function() gui.ScreenInsets = Enum.ScreenInsets.None end)
 		gui.Parent = pg
 	end
+	-- Re-assert on every call: an overlay left over from a previous execution
+	-- of the script may still be using the old inset/safe-area layout.
+	gui.IgnoreGuiInset = true
+	pcall(function() gui.ScreenInsets = Enum.ScreenInsets.None end)
 	-- Size probe: the AbsoluteSize of a full-screen frame tells us how many GUI
 	-- pixels one viewport pixel maps to. If the GUI is laid out in a different
 	-- pixel space (high-DPI phones / executor quirk) the projected points are
@@ -3440,19 +3448,20 @@ function espSkeletonTick()
 	if not cam then return end
 	local gui = espSkeletonEnsureGui()
 	if not gui then return end
-	-- WorldToViewportPoint is in viewport pixels. If this GUI is laid out in a
-	-- different pixel space (high-DPI phones, executor scaling), scale the
-	-- projected points by the real AbsoluteSize / ViewportSize ratio.
+	-- WorldToViewportPoint is in viewport pixels. The overlay now covers the
+	-- full viewport 1:1; only a uniform pixel-space scale (high-DPI executor)
+	-- is corrected. A non-uniform ratio means a layout/inset mismatch, applying
+	-- it would skew the skeleton, so it is ignored.
 	local vs = cam.ViewportSize
-	local scaleX, scaleY = 1, 1
+	local scale = 1
 	local probe = gui:FindFirstChild("SizeProbe")
 	if probe then
 		local as = probe.AbsoluteSize
 		if as.X > 1 and as.Y > 1 and vs.X > 1 and vs.Y > 1 then
 			local rx, ry = as.X / vs.X, as.Y / vs.Y
 			-- Ignore absurd ratios (probe not laid out yet / one-frame resize).
-			if rx > 0.5 and rx < 2 and ry > 0.5 and ry < 2 then
-				scaleX, scaleY = rx, ry
+			if rx > 0.5 and rx < 2 and ry > 0.5 and ry < 2 and math.abs(rx - ry) < 0.02 then
+				scale = (rx + ry) * 0.5
 			end
 		end
 	end
@@ -3516,7 +3525,11 @@ function espSkeletonTick()
 				espSkelDrawings[plr] = data
 			end
 			if data.frame then data.frame.Visible = true end
-			for idx, _ in ipairs(bonePairs) do
+			-- [perf] No pcall/closure per bone per frame: these are our own Frame
+			-- instances, so a property write can never throw. The colour is only
+			-- written when it actually changed, and the length test compares the
+			-- squared distance (one sqrt less per bone).
+			for idx = 1, #bonePairs do
 				local line = data.lines[idx]
 				local pr = data.parts[idx]
 				local shown = false
@@ -3524,8 +3537,8 @@ function espSkeletonTick()
 					local partA, partB = pr[1], pr[2]
 					if partA and partB and partA.Parent and partB.Parent then
 						-- WorldToViewportPoint is the same coordinate space as this
-						-- CoreUISafeInsets (default inset) ScreenGui, so the frame
-						-- lines land exactly on the bones everywhere.
+						-- full-viewport (no-inset) ScreenGui, so the frame lines
+						-- land exactly on the bones everywhere.
 						local posA = cam:WorldToViewportPoint(partA.Position)
 						local posB = cam:WorldToViewportPoint(partB.Position)
 						-- Z <= 0 means behind the camera: its projection mirrors and
@@ -3533,18 +3546,16 @@ function espSkeletonTick()
 						-- on the onScreen flag: on mobile it can be false for points
 						-- that are actually visible.
 						if posA.Z > 0 and posB.Z > 0 then
-							local ax, ay = posA.X * scaleX, posA.Y * scaleY
-							local bx, by = posB.X * scaleX, posB.Y * scaleY
+							local ax, ay = posA.X * scale, posA.Y * scale
+							local bx, by = posB.X * scale, posB.Y * scale
 							local dx, dy = bx - ax, by - ay
-							local dist = math.sqrt(dx * dx + dy * dy)
-							if dist >= 0.5 then
-								pcall(function()
-									line.Position = UDim2.new(0, (ax + bx) * 0.5, 0, (ay + by) * 0.5)
-									line.Size = UDim2.new(0, dist, 0, ESP_SKEL_THICKNESS)
-									line.Rotation = math.deg(math.atan2(dy, dx))
-									line.BackgroundColor3 = color
-									line.Visible = true
-								end)
+							local d2 = dx * dx + dy * dy
+							if d2 >= 0.25 then
+								line.Position = UDim2.new(0, (ax + bx) * 0.5, 0, (ay + by) * 0.5)
+								line.Size = UDim2.new(0, math.sqrt(d2), 0, ESP_SKEL_THICKNESS)
+								line.Rotation = math.deg(math.atan2(dy, dx))
+								if line.BackgroundColor3 ~= color then line.BackgroundColor3 = color end
+								line.Visible = true
 								shown = true
 							end
 						end
@@ -3775,11 +3786,8 @@ function espHookGunDrop(gunDrop)
 end
 
 	function espFindGunDropsInModel(mapModel)
-		for _, child in ipairs(mapModel:GetDescendants()) do
-			if child.Name == "GunDrop" then
-				task.spawn(espHookGunDrop, child)
-			end
-		end
+		-- Hook NEW drops first, so anything that spawns during the (now chunked)
+		-- scan below is never missed.
 		local mapConn = mapModel.DescendantAdded:Connect(function(descendant)
 			if not (espEnabled and espGunEnabled) then return end
 			if descendant.Name == "GunDrop" then
@@ -3787,6 +3795,24 @@ end
 			end
 		end)
 		table.insert(espConnections, mapConn)
+		-- [perf] Incremental walk instead of one mapModel:GetDescendants() call:
+		-- a map model can hold tens of thousands of instances, and building that
+		-- table in a single frame was a visible hitch during the config restore.
+		task.spawn(function()
+			local stack = { mapModel }
+			local budget = 0
+			while #stack > 0 and espEnabled do
+				local node = table.remove(stack)
+				if node.Name == "GunDrop" then task.spawn(espHookGunDrop, node) end
+				local kids = node:GetChildren()
+				for i = 1, #kids do stack[#stack + 1] = kids[i] end
+				budget = budget + 1
+				if budget >= 300 then
+					budget = 0
+					RunService.Heartbeat:Wait()
+				end
+			end
+		end)
 	end
 
 	-- Trap ESP: highlight + label for Trap perk traps
@@ -3920,11 +3946,7 @@ function espHookTrap(trap)
 	end
 
 	function espScanForTraps()
-		for _, obj in ipairs(Workspace:GetDescendants()) do
-			if espIsTrap(obj) then
-				task.spawn(espHookTrap, obj)
-			end
-		end
+		-- Watch for new traps immediately; the existing-world scan is chunked.
 		local trapConn = Workspace.DescendantAdded:Connect(function(descendant)
 			if not (espEnabled and espTrapEnabled) then return end
 			if espIsTrap(descendant) then
@@ -3932,6 +3954,24 @@ function espHookTrap(trap)
 			end
 		end)
 		table.insert(espConnections, trapConn)
+		-- [perf] Workspace:GetDescendants() on a full MM2 map allocates a huge
+		-- table in ONE frame (the biggest part of the startup hitch). Walk the
+		-- tree in small slices across frames instead.
+		task.spawn(function()
+			local stack = { Workspace }
+			local budget = 0
+			while #stack > 0 and espEnabled do
+				local node = table.remove(stack)
+				if espIsTrap(node) then task.spawn(espHookTrap, node) end
+				local kids = node:GetChildren()
+				for i = 1, #kids do stack[#stack + 1] = kids[i] end
+				budget = budget + 1
+				if budget >= 300 then
+					budget = 0
+					RunService.Heartbeat:Wait()
+				end
+			end
+		end)
 	end
 
 function espScanForMaps()
@@ -10106,15 +10146,35 @@ function autoGrabConnectModel(model)
 end
 
 function autoGrabScanWorkspace()
-	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if obj:IsA("Model") and autoGrabGunTargets[obj.Name] then
-			autoGrabConnectModel(obj)
+	-- [perf] Chunked walk (300 nodes per frame) instead of a single
+	-- Workspace:GetDescendants() call. The old version rebuilt the whole map's
+	-- descendant table in ONE frame on every rescan (5 s while Auto Grab is on
+	-- and on every respawn), which was a visible periodic hitch. Only
+	-- containers (Models/Folders) are descended into, so loose parts are never
+	-- visited.
+	task.spawn(function()
+		local stack = { Workspace }
+		local budget = 0
+		while autoGrabGunEnabled and #stack > 0 do
+			local obj = table.remove(stack)
+			if obj:IsA("Model") and autoGrabGunTargets[obj.Name] then
+				autoGrabConnectModel(obj)
+			end
+			-- Also catch GunDrop directly
+			if obj.Name == "GunDrop" then
+				autoGrabClaimDrop(obj)
+			end
+			if obj == Workspace or obj:IsA("Model") or obj:IsA("Folder") then
+				local kids = obj:GetChildren()
+				for i = 1, #kids do stack[#stack + 1] = kids[i] end
+			end
+			budget = budget + 1
+			if budget >= 300 then
+				budget = 0
+				RunService.Heartbeat:Wait()
+			end
 		end
-		-- Also catch GunDrop directly
-		if obj.Name == "GunDrop" then
-			autoGrabClaimDrop(obj)
-		end
-	end
+	end)
 end
 
 function enableAutoGrabGun()
@@ -12236,9 +12296,26 @@ voteDupeCurrentMap = 0
 
 function voteResetSelf()
 	local char = player.Character
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
 	if hum then pcall(function() hum.Health = 0 end) end
 	if char then pcall(function() char:BreakJoints() end) end
+	-- [VoteDupe lag fix] Quiesce OUR body the instant it dies: transparent, no
+	-- collisions and ANCHORED, so the physics solver has no broken-joint ragdoll
+	-- to simulate between the death and the respawn. Together with the corpse
+	-- cleanup in voteDupeStart (which removes the game's cloned "Raggy") this
+	-- removes the stall that happened right after every vote death.
+	pcall(function()
+		for _, p in ipairs(char:GetDescendants()) do
+			if p:IsA("BasePart") then
+				p.CanCollide = false
+				p.CanTouch = false
+				p.Massless = true
+				p.Anchored = true
+				p.Transparency = 1
+			end
+		end
+	end)
 end
 
 function voteDupeStart(mapIndex)
@@ -12269,30 +12346,122 @@ function voteDupeStart(mapIndex)
 			if cacheOK then return votePadParts end
 			local parts = {}
 			pcall(function()
-				for _, d in ipairs(Workspace:GetDescendants()) do
-					if d:IsA("BasePart") and (d.Position - voteCF.Position).Magnitude < 6 then
-						table.insert(parts, d)
+				-- [perf] Spatial query instead of a full Workspace:GetDescendants()
+				-- scan: MM2 has tens of thousands of parts and the old scan walked
+				-- ALL of them. GetPartBoundsInRadius returns just the parts around
+				-- the vote pad (the descendant scan stays only as a fallback).
+				local ok = pcall(function()
+					for _, d in ipairs(Workspace:GetPartBoundsInRadius(voteCF.Position, 8)) do
+						-- Same 6-stud selection the old scan used, so the touched
+						-- set is identical (radius 8 only widens the query bounds).
+						if d:IsA("BasePart") and (d.Position - voteCF.Position).Magnitude <= 6 then
+							table.insert(parts, d)
+						end
+					end
+				end)
+				if not ok or #parts == 0 then
+					for _, d in ipairs(Workspace:GetDescendants()) do
+						if d:IsA("BasePart") and (d.Position - voteCF.Position).Magnitude < 6 then
+							table.insert(parts, d)
+						end
 					end
 				end
 			end)
 			votePadParts = parts
 			return parts
 		end
-		local function voteTouchBurst(hrp)
+		-- [perf] Character parts are cached per character instead of being rebuilt
+		-- on every burst. Touching with EVERY body part (both directions) makes the
+		-- vote register even when the pad's handler debounces a single part.
+		local voteBodyParts, voteBodyPartsChar
+		local function getVoteBodyParts(char, hrp)
+			if voteBodyPartsChar ~= char then
+				voteBodyPartsChar = char
+				voteBodyParts = {hrp}
+				for _, p in ipairs(char:GetDescendants()) do
+					if p:IsA("BasePart") and p ~= hrp then
+						voteBodyParts[#voteBodyParts + 1] = p
+					end
+				end
+			end
+			return voteBodyParts
+		end
+		-- full = every body part (first frame of a vote cycle, maximum reliability);
+		-- light = root only. The pad debounces PER PAD PART, so the root already
+		-- covers every pad part - hammering all ~15 body parts on every extra
+		-- frame only added hundreds of touch calls per frame for no extra vote,
+		-- which is what made the whole tool feel laggy while it was voting.
+		local function voteTouchBurst(char, hrp, full)
 			pcall(function()
-				for _, d in ipairs(getVotePadParts()) do
-					safeFireTouch(hrp, d)
+				local pads = getVotePadParts()
+				if not full then
+					for _, d in ipairs(pads) do
+						safeFireTouch(hrp, d)
+						safeFireTouch(d, hrp)
+					end
+					return
+				end
+				local body = getVoteBodyParts(char, hrp)
+				for _, d in ipairs(pads) do
+					for _, p in ipairs(body) do
+						safeFireTouch(p, d)
+						safeFireTouch(d, p)
+					end
 				end
 			end)
 		end
+		-- [VoteDupe lag fix] Every vote death leaves an MM2 "Raggy" corpse behind.
+		-- A corpse is a FULLY SIMULATED ragdoll that stays in the map until the
+		-- round ends, and the dupe creates one per vote, so after a couple of
+		-- votes the client is simulating several ragdolls on top of the normal
+		-- round - that is the stall that showed up right after every death and
+		-- that slowly ate the vote speed. Remove the fresh corpse the moment MM2
+		-- spawns it (only around the vote pad, i.e. our own body).
+		local function voteKillCorpse(obj)
+			if not obj or not obj.Parent then return end
+			pcall(function()
+				for _, p in ipairs(obj:GetDescendants()) do
+					if p:IsA("BasePart") then
+						p.CanCollide = false
+						p.CanTouch = false
+						p.CanQuery = false
+						p.Anchored = true
+						p.Transparency = 1
+					end
+				end
+			end)
+			pcall(function() obj:Destroy() end)
+		end
+		local voteCorpseConn = Workspace.DescendantAdded:Connect(function(obj)
+			if not voteDupeActive then return end
+			if obj.Name ~= "Raggy" then return end
+			-- Never touch the live character model itself (only copies/corpses).
+			if obj == player.Character then return end
+			local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart", true)
+			if not part then return end
+			if (part.Position - voteCF.Position).Magnitude > 40 then return end
+			task.spawn(voteKillCorpse, obj)
+		end)
+		-- Warm the pad-part cache BEFORE the first vote so the spatial query does
+		-- not run in the middle of a vote cycle (it used to cost the first burst
+		-- a frame right after the respawn).
+		pcall(getVotePadParts)
 		while voteDupeActive do
 			if voteDupeMode == "Infinite" and (os.clock() - voteInfiniteStart) >= voteInfiniteMax then
 				break
 			end
-			local voteCount = math.max(1, #Players:GetPlayers() - 1)
+			-- More votes per press: at least 5 cycles even in a nearly empty
+			-- server. The old "#players - 1" produced a SINGLE vote when playing
+			-- with one friend, which looked like the dupe did nothing at all.
+			local voteCount = math.max(5, #Players:GetPlayers() - 1)
 
 			for i = 1, voteCount do
 				if not voteDupeActive then break end
+				-- Infinite mode must also respect its 13s window INSIDE a cycle,
+				-- otherwise a 5-cycle batch overruns the timer by ~10s.
+				if voteDupeMode == "Infinite" and (os.clock() - voteInfiniteStart) >= voteInfiniteMax then
+					break
+				end
 
 				-- Wait for character to respawn (fast poll, clock-based cap).
 				local char, hrp, hum
@@ -12307,20 +12476,23 @@ function voteDupeStart(mapIndex)
 				if not voteDupeActive then break end
 				if not (hrp and hum and hum.Health > 0) then break end
 
-				-- Teleport to vote pad + touch, wait for the server to register,
-				-- then reset. The waits stay short but non-zero so the vote is
-				-- replicated before the death, and the next loop still has plenty
-				-- of time to respawn and teleport again.
+				-- Teleport onto the pad and touch it for a few frames. The first
+				-- frame uses EVERY body part so the pickup cannot be missed; the
+				-- follow-up frames only use the root, which still covers every pad
+				-- part (that is where the duplication happens) at a fraction of
+				-- the cost.
 				pcall(function() hrp.CFrame = voteCF end)
-				voteTouchBurst(hrp)       -- first burst, same frame as the teleport
-				RunService.Heartbeat:Wait()
-				voteTouchBurst(hrp)       -- confirm burst after one replicated frame
-				task.wait(0.06)
-				-- Reset as soon as the vote is in. The respawn poll below starts on
-				-- the very next frame, which is the real time limiter (MM2 respawn),
-				-- so the old fixed 0.15 s post-death wait was pure overhead.
+				-- Full volley on the respawn frame (every body part x every pad
+				-- part), then root-only volleys for the remaining three frames.
+				voteTouchBurst(char, hrp, true)
+				for _ = 1, 3 do
+					voteTouchBurst(char, hrp, false)
+					RunService.Heartbeat:Wait()
+				end
+				-- Reset as soon as the votes are in. The respawn poll below starts
+				-- on the very next frame, which is the real time limiter (MM2
+				-- respawn), so the old fixed post-death wait was pure overhead.
 				voteResetSelf()
-				RunService.Heartbeat:Wait()
 			end
 
 			-- Multiple: run one set of votes then stop; Infinite: keep looping until disabled
@@ -12328,6 +12500,8 @@ function voteDupeStart(mapIndex)
 				voteDupeActive = false
 			end
 		end
+
+		if voteCorpseConn then voteCorpseConn:Disconnect() end
 
 		for idx = 1, 3 do
 			if voteDupeBtns[idx] then
@@ -12697,11 +12871,28 @@ function gunAuraConnectModel(model)
 end
 
 function gunAuraScanWorkspace()
-	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if obj:IsA("Model") and gunAuraTargets[obj.Name] then
-			gunAuraConnectModel(obj)
+	-- [perf] Chunked walk (300 nodes per frame) instead of a single
+	-- Workspace:GetDescendants() call, which rebuilt the whole map's descendant
+	-- table in one frame on every rescan. Only containers are descended into.
+	task.spawn(function()
+		local stack = { Workspace }
+		local budget = 0
+		while gunAuraEnabled and #stack > 0 do
+			local obj = table.remove(stack)
+			if obj:IsA("Model") and gunAuraTargets[obj.Name] then
+				gunAuraConnectModel(obj)
+			end
+			if obj == Workspace or obj:IsA("Model") or obj:IsA("Folder") then
+				local kids = obj:GetChildren()
+				for i = 1, #kids do stack[#stack + 1] = kids[i] end
+			end
+			budget = budget + 1
+			if budget >= 300 then
+				budget = 0
+				RunService.Heartbeat:Wait()
+			end
 		end
-	end
+	end)
 end
 
 function enableGunAura()
@@ -12960,6 +13151,14 @@ function enableCoinAura()
 		local playerPos = root.Position
 		local cc = coinAuraContainer
 		if not (cc and cc.Parent) then
+			-- [perf] The recursive search below walks the whole Workspace. It used
+			-- to run EVERY Heartbeat frame while no CoinContainer existed (which
+			-- is most of the time between rounds) - 60 full map searches per
+			-- second, the single biggest cost of Coin Aura. Throttled to once a
+			-- second: the aura just idles until a container appears.
+			local now = os.clock()
+			if (now - (coinAuraFindAt or 0)) < 1 then return end
+			coinAuraFindAt = now
 			cc = Workspace:FindFirstChild("CoinContainer", true)
 			coinAuraContainer = cc
 			coinAuraPartCache = {}
@@ -13541,6 +13740,15 @@ function autoDeleteCoinsRefreshContainers()
 	end
 	autoDeleteCoinContainers = alive
 	if #autoDeleteCoinContainers == 0 then
+		-- [perf] FindFirstChild(..., true) is a RECURSIVE search over the whole
+		-- Workspace. The Default sweep runs every 0.15 s and hit this branch
+		-- whenever no container existed yet (between rounds), i.e. 6-7 full map
+		-- searches per second. New containers are registered by the
+		-- DescendantAdded hook anyway, so the fallback only needs to run now and
+		-- then (throttled to once every 2 s).
+		local now = os.clock()
+		if (now - (autoDeleteCoinsFindAt or 0)) < 2 then return end
+		autoDeleteCoinsFindAt = now
 		local ok, found = pcall(function() return Workspace:FindFirstChild("CoinContainer", true) end)
 		if ok and found then table.insert(autoDeleteCoinContainers, found) end
 	end
@@ -13554,18 +13762,34 @@ function autoDeleteCoinsSweepDefault()
 end
 
 function fullCoinScan()
-	local removed = 0
-	for _, descendant in ipairs(Workspace:GetDescendants()) do
-		if descendant.Name == "CoinContainer" then
-			if autoDeleteCoinsMode == "Default" then
-				autoDeleteCoinsClearContainer(descendant)
-				removed += 1
-			elseif tryRemoveCoin(descendant) then
-				removed += 1
+	-- [perf] Chunked walk (300 nodes per frame) instead of one
+	-- Workspace:GetDescendants() call. In "Full" mode this runs every 8 s, and
+	-- rebuilding the whole map's descendant table in a single frame was a
+	-- periodic hitch. Everything except BaseParts is descended into, so the
+	-- walk stays short but cannot miss a CoinContainer wherever it lives.
+	task.spawn(function()
+		local stack = { Workspace }
+		local budget = 0
+		while autoDeleteCoinsEnabled and #stack > 0 do
+			local obj = table.remove(stack)
+			if obj.Name == "CoinContainer" then
+				if autoDeleteCoinsMode == "Default" then
+					autoDeleteCoinsClearContainer(obj)
+				else
+					tryRemoveCoin(obj)
+				end
+			end
+			if not obj:IsA("BasePart") then
+				local kids = obj:GetChildren()
+				for i = 1, #kids do stack[#stack + 1] = kids[i] end
+			end
+			budget = budget + 1
+			if budget >= 300 then
+				budget = 0
+				RunService.Heartbeat:Wait()
 			end
 		end
-	end
-	return removed
+	end)
 end
 
 function enableAutoDeleteCoins()
@@ -15451,11 +15675,10 @@ function enableAutoDeleteCorpses()
 
     -- Delete every existing corpse anywhere (no map gating, so corpses outside the
     -- known maps no longer leave a stuck hitbox behind).
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj.Name == "Raggy" then
-            destroyCorpse(obj)
-        end
-    end
+    -- [perf] Chunked walk instead of Workspace:GetDescendants(): that single call
+    -- built the whole map's descendant table in ONE frame, which was a hitch when
+    -- the config restored with Auto Delete Corpses ON. The sweep now runs right
+    -- after the DescendantAdded hook below, so nothing created meanwhile is missed.
 
     -- Catch new corpses / corpse parts the instant they appear and neutralize the
     -- hitbox SYNCHRONOUSLY (before a thrown knife can collide), then delete.
@@ -15486,16 +15709,50 @@ function enableAutoDeleteCorpses()
     end)
     table.insert(autoDeleteCorpsesConnections, descConn)
 
+    -- [perf] Initial sweep of corpses that already existed before the toggle:
+    -- chunked (300 nodes per frame), containers only, no single-frame hitch.
+    task.spawn(function()
+        local stack = { Workspace }
+        local budget = 0
+        while autoDeleteCorpsesEnabled and #stack > 0 do
+            local obj = table.remove(stack)
+            if obj.Name == "Raggy" then destroyCorpse(obj) end
+            if obj == Workspace or obj:IsA("Model") or obj:IsA("Folder") then
+                local kids = obj:GetChildren()
+                for i = 1, #kids do stack[#stack + 1] = kids[i] end
+            end
+            budget = budget + 1
+            if budget >= 300 then
+                budget = 0
+                RunService.Heartbeat:Wait()
+            end
+        end
+    end)
+
     -- [perf] Periodic sweep as a safety net only — DescendantAdded already catches
     -- every new corpse instantly. A full Workspace scan every 3s was too heavy on
     -- mobile; 10s is plenty for a fallback.
+    -- [perf] The fallback sweep is now a CHUNKED walk (300 nodes per frame)
+    -- instead of one Workspace:GetDescendants() call, and it only descends into
+    -- containers (Models/Folders), so it never visits the millions of loose
+    -- parts. No single-frame table allocation, no periodic hitch.
     task.spawn(function()
         while autoDeleteCorpsesEnabled do
             task.wait(10)
             if autoDeleteCorpsesEnabled then
-                for _, obj in ipairs(Workspace:GetDescendants()) do
-                    if obj.Name == "Raggy" then
-                        destroyCorpse(obj)
+                local stack = { Workspace }
+                local budget = 0
+                while autoDeleteCorpsesEnabled and #stack > 0 do
+                    local obj = table.remove(stack)
+                    if obj.Name == "Raggy" then destroyCorpse(obj) end
+                    if obj == Workspace or obj:IsA("Model") or obj:IsA("Folder") then
+                        local kids = obj:GetChildren()
+                        for i = 1, #kids do stack[#stack + 1] = kids[i] end
+                    end
+                    budget = budget + 1
+                    if budget >= 300 then
+                        budget = 0
+                        RunService.Heartbeat:Wait()
                     end
                 end
             end
@@ -16408,15 +16665,32 @@ end
 -- Workspace.DescendantAdded hook below (event-based, zero scanning); this loop only
 -- checks the handful of already-known guns for removal.
 task.spawn(function()
-	-- one-time initial scan for guns that already existed before the script loaded
-	pcall(function()
-		for _, obj in ipairs(Workspace:GetDescendants()) do
+	-- one-time initial scan for guns that already existed before the script
+	-- loaded. [perf] Chunked walk instead of one Workspace:GetDescendants()
+	-- call: that single call built the whole map's descendant table in ONE
+	-- frame, which was the biggest part of the config-restore hitch. Only
+	-- containers (Models/Folders) are descended into, so the millions of loose
+	-- parts are never visited.
+	task.spawn(function()
+		local stack = { Workspace }
+		local budget = 0
+		while #stack > 0 do
+			local obj = table.remove(stack)
 			if obj.Name == "GunDrop" then
 				gameNotifGunDrops[obj] = true
 				gameNotifHookGunDrop(obj)
 			end
+			if obj == Workspace or obj:IsA("Model") or obj:IsA("Folder") then
+				local kids = obj:GetChildren()
+				for i = 1, #kids do stack[#stack + 1] = kids[i] end
+			end
+			budget = budget + 1
+			if budget >= 300 then
+				budget = 0
+				RunService.Heartbeat:Wait()
+			end
 		end
-end)
+	end)
 		while true do
 			task.wait(0.5)
 			-- Record each tracked GunDrop's current position while it still exists,
@@ -16823,34 +17097,61 @@ function fireGunDroppedNotif()
 	playSoundFile(sheriffDieSoundPath)
 end
 
+-- [perf] GunDrop fallback tracker. The old version called
+-- Workspace:GetDescendants() EVERY second - a full scan of the whole map (tens
+-- of thousands of instances) that allocated a huge table on every pass and was
+-- one of the biggest constant hitching sources. New drops are now caught by the
+-- Workspace.DescendantAdded hook below (zero scanning); this loop only runs a
+-- CHUNKED safety sweep every few seconds, a few hundred nodes per frame, and it
+-- only descends into containers (Models/Folders) so it never touches the
+-- millions of loose parts. Nothing is ever built in one frame.
 task.spawn(function()
-	task.wait(3)
-	while true do
-		task.wait(1)
-		if not espEnabled and not gameNotifEnabled then
-			for g in pairs(gunDropAnnounced) do
-				if not g.Parent then gunDropAnnounced[g] = nil end
+	local function gunDropHandle(obj)
+		if espEnabled and espTrackedGuns and not espTrackedGuns[obj] then
+			task.spawn(espHookGunDrop, obj)
+		end
+		if not gunDropAnnounced[obj] and not gameNotifGunDrops[obj] then
+			gunDropAnnounced[obj] = true
+			gameNotifGunDrops[obj] = true
+			gameNotifHookGunDrop(obj)
+			fireGunDroppedNotif()
+		end
+	end
+	Workspace.DescendantAdded:Connect(function(obj)
+		if obj.Name ~= "GunDrop" then return end
+		gunDropHandle(obj)
+	end)
+	local sweepRunning = false
+	local function gunDropSweep()
+		local stack = { Workspace }
+		local budget = 0
+		while #stack > 0 do
+			local obj = table.remove(stack)
+			if obj.Name == "GunDrop" then gunDropHandle(obj) end
+			if obj == Workspace or obj:IsA("Model") or obj:IsA("Folder") then
+				local kids = obj:GetChildren()
+				for i = 1, #kids do stack[#stack + 1] = kids[i] end
 			end
-		else
-			pcall(function()
-				for _, obj in ipairs(Workspace:GetDescendants()) do
-					if obj.Name == "GunDrop" then
-						if espEnabled and espTrackedGuns and not espTrackedGuns[obj] then
-							task.spawn(espHookGunDrop, obj)
-						end
-						if not gunDropAnnounced[obj] and not gameNotifGunDrops[obj] then
-							gunDropAnnounced[obj] = true
-							gameNotifGunDrops[obj] = true
-							gameNotifHookGunDrop(obj)
-							fireGunDroppedNotif()
-						end
-					end
-				end
-			end)
-			for g in pairs(gunDropAnnounced) do
-				if not g.Parent then gunDropAnnounced[g] = nil end
+			budget = budget + 1
+			if budget >= 300 then
+				budget = 0
+				RunService.Heartbeat:Wait()
 			end
 		end
+	end
+	task.wait(3)
+	while true do
+		if (espEnabled or gameNotifEnabled) and not sweepRunning then
+			sweepRunning = true
+			task.spawn(function()
+				pcall(gunDropSweep)
+				sweepRunning = false
+			end)
+		end
+		for g in pairs(gunDropAnnounced) do
+			if not g.Parent then gunDropAnnounced[g] = nil end
+		end
+		task.wait(4)
 	end
 end)
 
@@ -18542,6 +18843,12 @@ end
 -- scanning for a few seconds instead of doing one single pass.
 function deathScreenStartWatch()
 	if deathScreenWatching then return end
+	-- [VoteDupe lag fix] While the vote dupe is killing/respawning the character
+	-- every few seconds the death overlay is irrelevant - and this watcher would
+	-- scan EVERY enabled ScreenGui (all descendants) 4x per second for 8 s after
+	-- EACH death. That per-death GUI scan was part of the stutter right after
+	-- every vote, so it is skipped completely while the dupe is running.
+	if voteDupeActive then return end
 	deathScreenWatching = true
 	task.spawn(function()
 		-- 8 s covers games that fade in the overlay a couple of seconds after
@@ -20384,6 +20691,15 @@ function clumsyFreezeChar(ch)
 end
 
 function clumsyUnfreezeOthers()
+	-- [perf] Nothing is frozen (feature off / freeze never used): the cleanup
+	-- below would unanchor every part of every player for nothing. This runs on
+	-- EVERY death, so on a full server it was a real per-death cost - and the
+	-- vote dupe dies several times per press.
+	if not clumsy_on and clumsyFreezeLoop == nil
+		and (clumsyFreezeConns == nil or #clumsyFreezeConns == 0)
+		and (clumsyFrozenChars == nil or next(clumsyFrozenChars) == nil) then
+		return
+	end
 	if clumsyFreezeConns then
 		for _, cn in ipairs(clumsyFreezeConns) do pcall(function() cn:Disconnect() end) end
 	end
@@ -21205,9 +21521,25 @@ function antiLagSaveAndApply(inst)
 end
 
 function antiLagScanAll()
-	pcall(function()
-		for _, v in ipairs(game:GetDescendants()) do
-			antiLagSaveAndApply(v)
+	-- [perf] Chunked walk instead of game:GetDescendants(): that single call
+	-- built a table of EVERY instance in the game in one frame, which froze the
+	-- client for a moment on load and when restoring a config with Anti-Lag ON.
+	-- Now it processes ~300 nodes per frame, so the same work costs no hitch.
+	task.spawn(function()
+		local stack = { game }
+		local budget = 0
+		while #stack > 0 and antiLagEnabled do
+			local v = table.remove(stack)
+			if v == game or v.Parent then
+				antiLagSaveAndApply(v)
+				local kids = v:GetChildren()
+				for i = 1, #kids do stack[#stack + 1] = kids[i] end
+			end
+			budget = budget + 1
+			if budget >= 300 then
+				budget = 0
+				RunService.Heartbeat:Wait()
+			end
 		end
 	end)
 end
@@ -24244,6 +24576,9 @@ autofarmNoCoinSince = nil          -- os.clock() when we FIRST saw "no targetabl
 autofarmCoinDelay = 0              -- seconds to wait before flying to the next coin (0-5)
 autofarmLastTargetCoin = nil       -- coin the farm is currently flying to
 autofarmCoinDelayUntil = nil       -- os.clock() when the per-coin delay elapses
+-- First-coin teleport (once per round): the round is started by snapping onto
+-- the first coin instead of flying over to it from the spawn point.
+autofarmFirstCoinTeleported = false
 autofarmCharParts = {}             -- cached list of the character's BaseParts
 autofarmCharPartsChar = nil        -- character the cache belongs to
 autofarmCharPartsAt = 0            -- when the cache was last rebuilt
@@ -24605,6 +24940,38 @@ function autofarmTouchCoin(root, coin, coinPart)
 	safeFireTouch(root, coinPart)
 end
 
+-- [autofarm] FIRST-COIN TELEPORT -------------------------------------------
+-- A round starts with the character wherever it spawned (or died), so the farm
+-- used to spend the first seconds just flying over to the coin field. Instead
+-- the very FIRST coin of a round is collected by snapping the root straight
+-- onto it (once per round), and the normal flight continues from that coin to
+-- the next one. The touch itself goes through autofarmTouchCoin, so the pickup
+-- is claimed exactly like every other coin (no special-case counting).
+function autofarmTeleportToFirstCoin(root, coin, coinPart)
+	if not (root and root.Parent and coinPart and coinPart.Parent) then return false end
+	local target = coinPart.Position
+	local ok = pcall(function()
+		root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+		root.CFrame = CFrame.new(target)
+	end)
+	if not ok then return false end
+	-- Ride the rest of the body along with no collision, exactly like the flight
+	-- loop does, so the character does not get wedged in the map geometry.
+	pcall(function()
+		for _, p in ipairs(autofarmGetCharParts(root.Parent)) do
+			if p ~= root and p.CanCollide then p.CanCollide = false end
+		end
+	end)
+	-- Claim it right away: touch both ways (same path as the per-frame pickup)
+	-- and let the normal 1.2s verification count it if the server removes it.
+	pcall(function() autofarmTouchCoin(root, coin, coinPart) end)
+	if coin then
+		autofarmTouchedAt[coin] = os.clock()
+		autofarmClaimCoin(coin)
+	end
+	return true
+end
+
 -- [perf] Cached list of the character's BaseParts. The flight loop used to call
 -- char:GetDescendants() 2-3 times per frame (CanCollide loop + full-body touch
 -- volley); now the list is rebuilt only when the character changes or every 1s.
@@ -24836,6 +25203,8 @@ function autofarmDoEndTeleport()
 		end)
 	elseif mode == "Autofarm" then
 		pcall(tpToAutofarm)
+	elseif mode == "Above Lobby" then
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(537, 563, 38))
 	end
 	notify("Autofarm", "Auto TP: " .. mode, 2)
 end
@@ -24970,12 +25339,14 @@ function autofarmDoAvoidMurdererTp()
 		end)
 	elseif mode == "Autofarm" then
 		pcall(tpToAutofarm)
+	elseif mode == "Above Lobby" then
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(537, 563, 38))
 	end
 	notify("Autofarm", "Avoid Murderer TP: " .. mode, 2)
 end
 
 -- ===== Anti-Stop destination: where to teleport when the farm gets stuck =====
-autofarmStuckTpModes = {"Map", "Above Map", "Void", "Autofarm", "Lobby", "VoteMap"}
+autofarmStuckTpModes = {"Map", "Above Map", "Void", "Autofarm", "Lobby", "VoteMap", "Above Lobby"}
 autofarmStuckTpModeIndex = 1 -- default "Map" (old behaviour)
 
 function autofarmDoStuckTp()
@@ -24999,6 +25370,8 @@ function autofarmDoStuckTp()
 		end)
 	elseif mode == "Autofarm" then
 		pcall(tpToAutofarm)
+	elseif mode == "Above Lobby" then
+		pcall(doInstantTp, myHrp, myChar, CFrame.new(537, 563, 38))
 	end
 	notify("Autofarm", "Anti-Stop TP: " .. mode, 2)
 end
@@ -25068,6 +25441,7 @@ function startAutofarm()
 					autofarmBagWarmupUntil = os.clock() + AUTOFARM_BAG_WARMUP -- ignore the bag during the HUD rebuild
 					autofarmLastTargetCoin = nil -- new round = new coins
 					autofarmCoinDelayUntil = nil
+					autofarmFirstCoinTeleported = false -- teleport to this round's first coin
 					autofarmNoCoinSince = nil   -- restart the no-coin grace timer
 					autofarmRoundFinished = false
 					autofarmStuckSince = nil    -- reset stuck detector for new round
@@ -25195,6 +25569,18 @@ function startAutofarm()
 							autofarmPauseFlight()
 						end
 					else
+						-- FIRST-COIN TELEPORT: snap onto this round's first coin.
+						-- The round starts wherever the character spawned, so the old
+						-- behaviour wasted the first seconds flying over to the coin
+						-- field. The teleport runs ONCE per round; the target/delay
+						-- state is re-armed so the flight continues from coin #2.
+						if coin and not autofarmFirstCoinTeleported then
+							autofarmFirstCoinTeleported = true
+							if autofarmTeleportToFirstCoin(hrp, coin, part) then
+								autofarmLastTargetCoin = coin
+								autofarmCoinDelayUntil = nil
+							end
+						end
 						-- Avoid murderer: teleport away if too close during autofarm
 						if autofarmCheckAvoidMurderer(hrp) then
 							autofarmStopFlight()
@@ -25418,6 +25804,7 @@ function setAutofarmEnabled(state, target, silent)
 	if state then
 		autofarmTargetCoins = target or autofarmResolveTargetLimit()
 		autofarmActiveContainer = nil -- force per-round state refresh
+		autofarmFirstCoinTeleported = false -- start the next round ON the first coin
 		if not autofarmSessionStart then
 			autofarmSessionStart = os.clock()
 		end
@@ -25479,6 +25866,8 @@ function autofarmDoPreTp()
 		end
 	elseif mode == "Autofarm" then
 		pcall(tpToAutofarm)
+	elseif mode == "Above Lobby" then
+		fixedCF = CFrame.new(537, 563, 38)
 	end
 	if fixedCF then
 		pcall(doInstantTp, hrp, myChar, fixedCF)
@@ -25760,36 +26149,6 @@ autofarmModeDropdownFrame.ZIndex = 10
 autofarmModeDropdownFrame.Parent = autofarmModeRow
 Instance.new("UICorner", autofarmModeDropdownFrame).CornerRadius = UDim.new(0, 6)
 
--- Short description of the selected mode, so switching the dropdown visibly
--- changes the Autofarm tab (the three modes really do behave differently now).
-autofarmModeDesc = Instance.new("TextLabel")
-autofarmModeDesc.Name = "AutofarmModeDesc"
-autofarmModeDesc.Size = UDim2.new(1, 0, 0, 34)
-autofarmModeDesc.BackgroundTransparency = 1
-autofarmModeDesc.TextColor3 = Color3.fromRGB(180, 180, 180)
-autofarmModeDesc.Font = Enum.Font.SourceSans
-autofarmModeDesc.TextSize = 12
-autofarmModeDesc.TextXAlignment = Enum.TextXAlignment.Left
-autofarmModeDesc.TextYAlignment = Enum.TextYAlignment.Top
-autofarmModeDesc.TextWrapped = true
--- Grow with the wrapped text: on a narrow (mobile) menu the description needs
--- more than the fixed height, and a fixed label would clip the last line.
-autofarmModeDesc.AutomaticSize = Enum.AutomaticSize.Y
-autofarmModeDesc.LayoutOrder = 303.6
-autofarmModeDesc.Parent = categoryFrames["Autofarm"]
-
-autofarmModeDescriptions = {
-	"Default: flies under the floor and parks on every coin until it is collected (safest).",
-	"Fast: flies straight at the coins and never stops (fastest, most exposed).",
-	"Fast Safe: under-floor route like Default, but flies through coins without stopping.",
-}
-function refreshAutofarmModeDesc()
-	if autofarmModeDesc then
-		autofarmModeDesc.Text = autofarmModeDescriptions[autofarmMode] or ""
-	end
-end
-refreshAutofarmModeDesc()
-
 for i, modeName in ipairs(autofarmModeNames) do
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2.new(1, 0, 0, 30)
@@ -25806,7 +26165,6 @@ for i, modeName in ipairs(autofarmModeNames) do
 	btn.MouseButton1Click:Connect(function()
 		autofarmMode = i
 		autofarmModeSelect.Text = modeName .. " ▼"
-		refreshAutofarmModeDesc()
 		autofarmModeDropdownFrame.Visible = false
 		saveConfig()
 	end)
@@ -26320,7 +26678,7 @@ autofarmAutoAntiShootDelayBox.FocusLost:Connect(function()
 end)
 
 -- ===== Pre-farm TP: toggle + location dropdown on the same row =====
-autofarmPreTpModes = {"Lobby", "VoteMap", "Map", "Above Map", "Void", "Autofarm"}
+autofarmPreTpModes = {"Lobby", "VoteMap", "Map", "Above Map", "Void", "Autofarm", "Above Lobby"}
 autofarmPreTpRow = Instance.new("Frame")
 autofarmPreTpRow.Name = "AutofarmPreTpRow"
 autofarmPreTpRow.Size = UDim2.new(1, 0, 0, 42)
@@ -26395,7 +26753,7 @@ end)
 
 -- ===== Post-farm TP: toggle button + location dropdown =====
 autofarmTpEnabled = false
-autofarmTpModes = {"OFF", "Lobby", "VoteMap", "Map", "Above Map", "Void", "Autofarm"}
+autofarmTpModes = {"OFF", "Lobby", "VoteMap", "Map", "Above Map", "Void", "Autofarm", "Above Lobby"}
 autofarmTpModeIndex = 1
 
 autofarmTpRow = Instance.new("Frame")
@@ -26470,7 +26828,7 @@ autofarmTpSelect.MouseButton1Click:Connect(function()
 end)
 
 -- ===== Avoid Murderer: toggle + location dropdown + distance input =====
-autofarmAvoidMurdererModes = {"OFF", "Lobby", "VoteMap", "Map", "Above Map", "Void", "Autofarm"}
+autofarmAvoidMurdererModes = {"OFF", "Lobby", "VoteMap", "Map", "Above Map", "Void", "Autofarm", "Above Lobby"}
 
 autofarmAvoidMurdererRow = Instance.new("Frame")
 autofarmAvoidMurdererRow.Name = "AutofarmAvoidMurdererRow"
@@ -31871,6 +32229,10 @@ RunService.RenderStepped:Connect(function()
 		if bothData and bothData.fpsText and bothData.pingText then
 			if fpsChanged then bothData.fpsText.Text = lastFPSText end
 			if pingChanged then bothData.pingText.Text = lastPingText end
+			-- Re-fit the text after the value (and therefore its length) changed.
+			if bothData.fitText and (fpsChanged or pingChanged) then
+				pcall(bothData.fitText)
+			end
 		end
 	end
 end)
@@ -38913,7 +39275,29 @@ for bindOrder, feature in ipairs(btnFeatures) do
 			local data = { btn = popupBorder, popupBtn = nil, popupLockBtn = nil, dragConn = nil }
 
 			if isBoth then
-				local fpsText = Instance.new("TextLabel")
+				-- The FPS+Ping pill is user-resizable (Settings -> FPS+Ping Btn).
+				-- TextScaled proved unreliable on mobile executors: the text kept
+				-- its TextSize, so at small widths the tail after "FPS:"/"PING:"
+				-- was clipped. Size the text by hand instead, from the pill's
+				-- real AbsoluteSize, on every resize and on every value change.
+				local fpsText, pingText
+				local function fitFpsPingLabel(lbl)
+					local sz = popupBorder.AbsoluteSize
+					if not lbl or sz.X < 8 or sz.Y < 8 then return end
+					local chars = math.max(#tostring(lbl.Text or ""), 1)
+					-- Enum.Font.Code is monospace: advance ~= 0.62 * TextSize and
+					-- the line height ~= 1.32 * TextSize. Pick the largest size
+					-- that fits BOTH the label width and its half-pill height.
+					local byWidth = (sz.X - 4) / (0.62 * chars)
+					local byHeight = (sz.Y * 0.5 - 2) / 1.32
+					lbl.TextSize = math.clamp(math.floor(math.min(20, byWidth, byHeight)), 5, 20)
+				end
+				local function fitFpsPingText()
+					fitFpsPingLabel(fpsText)
+					fitFpsPingLabel(pingText)
+				end
+
+				fpsText = Instance.new("TextLabel")
 				fpsText.Size = UDim2.new(1, -4, 0.5, 0)
 				fpsText.Position = UDim2.new(0, 2, 0, 2)
 				fpsText.BackgroundTransparency = 1
@@ -38921,19 +39305,13 @@ for bindOrder, feature in ipairs(btnFeatures) do
 				fpsText.Text = string.format("FPS: %d", math.floor(displayedFPS))
 				fpsText.Font = Enum.Font.Code
 				fpsText.TextSize = 20
-				-- Scale the text down with the pill instead of letting it overflow
-				-- outside the frame (this pill is user-resizable).
-				fpsText.TextScaled = true
+				fpsText.TextScaled = false
 				fpsText.TextWrapped = false
 				fpsText.ClipsDescendants = true
 				fpsText.TextXAlignment = Enum.TextXAlignment.Left
 				fpsText.Parent = popupBorder
-				local fpsTextTSC = Instance.new("UITextSizeConstraint")
-				fpsTextTSC.MaxTextSize = 20
-				fpsTextTSC.MinTextSize = 6
-				fpsTextTSC.Parent = fpsText
 
-				local pingText = Instance.new("TextLabel")
+				pingText = Instance.new("TextLabel")
 				pingText.Size = UDim2.new(1, -4, 0.5, 0)
 				pingText.Position = UDim2.new(0, 2, 0.5, 0)
 				pingText.BackgroundTransparency = 1
@@ -38941,19 +39319,21 @@ for bindOrder, feature in ipairs(btnFeatures) do
 				pingText.Text = string.format("PING: %d", math.floor(displayedPing))
 				pingText.Font = Enum.Font.Code
 				pingText.TextSize = 20
-				-- Same shrink-to-fit treatment as the FPS line above.
-				pingText.TextScaled = true
+				pingText.TextScaled = false
 				pingText.TextWrapped = false
 				pingText.ClipsDescendants = true
 				pingText.TextXAlignment = Enum.TextXAlignment.Left
 				pingText.Parent = popupBorder
-				local pingTextTSC = Instance.new("UITextSizeConstraint")
-				pingTextTSC.MaxTextSize = 20
-				pingTextTSC.MinTextSize = 6
-				pingTextTSC.Parent = pingText
+
+				pcall(function()
+					popupBorder:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitFpsPingText)
+				end)
+				fitFpsPingText()
+				task.defer(fitFpsPingText)
 
 				data.fpsText = fpsText
 				data.pingText = pingText
+				data.fitText = fitFpsPingText
 				data.dragConn = fpsPingMakeDraggable(popupBorder)
 			elseif isBombTimer then
 				local bombText = Instance.new("TextLabel")
@@ -41596,7 +41976,6 @@ function restoreFullConfig()
 		if c.values.autofarmMode and autofarmModeNames[c.values.autofarmMode] then
 			autofarmMode = c.values.autofarmMode
 			if autofarmModeSelect then autofarmModeSelect.Text = autofarmModeNames[autofarmMode] .. " ▼" end
-			if refreshAutofarmModeDesc then pcall(refreshAutofarmModeDesc) end
 		end
 		if c.values.autofarmPreTpEnabled ~= nil then
 			autofarmPreTpEnabled = c.values.autofarmPreTpEnabled
