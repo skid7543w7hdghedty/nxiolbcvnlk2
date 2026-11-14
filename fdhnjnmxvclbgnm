@@ -22384,40 +22384,51 @@ tradeTitle.Parent = tradeBg
 local tradeChangesText = [[
 
 NEW ITEMS:
-Chroma Emberscythe corrected to 14,000 [13,000-15,000]
-Chroma Emberbow's range changed to [5,750-6,250]
-Chroma Embersickle reduced to 1,900 [1,850-1,950]
-
-Emberbow's range changed to [625-675]
-Emberscythe's range changed to [600-650]
-
-Embersickle's range changed to [130-140]
-Immortal reduced to 125 [120-130]
-Mortal reduced to 125 [120-130]
+Chroma Emberscythe reduced to 13,000 [12,000-14,000], rarity reduced to 5
+Immortal's demand reduced to 2
+Mortal's demand reduced to 2
 
 ANCIENTS:
-Traveler's Axe reduced to 6,900 [6,800-6,900]
-Vampire's Axe reduced to 1,375
-Harvester increased to 265
-Icepiercer increased to 175
+Traveler's Axe reduced to 6,800 [6,700-6,800]
+Vampire's Axe reduced to 1,350 [1,300-1,350], stability changed from "Stable" to "Underpaid For"
+Harvester increased to 270
+Icepiercer increased to 180
+Batwing reduced to 40
+Elderwood Scythe reduced to 35
+Swirly Axe reduced to 35
+Logchopper reduced to 17
 
 CHROMAS:
-Chroma Alienbeam reduced to 19,000 [18,000-19,000]
-Chroma Icecream reduced to 1,750 [1,700-1,750]
-Chroma Sands reduced to 1,025 [975-1,025]
-Chroma Beachy reduced to 975 [925-975]
+Chroma Alienbeam reduced to 18,500 [18,000-18,500]
+Chroma Icecream reduced to 1,700 [1,650-1,700]
+Chroma Sands reduced to 950 [900-950]
+Chroma Beachy reduced to 900 [850-900]
+Chroma Deathshard reduced to 33
+Chroma Slasher reduced to 30
+Chroma Seer reduced to 27
+Chroma Gingerblade reduced to 25
 
 GODLIES:
-Traveler's Gun reduced to 4,900 [4,800-4,900]
-Turkey increased to 1,875
-Snowcannon increased to 750 [750-800], stability changed from "Stable" to "Doing Well"
-Soul reduced to 550 [530-550]
-Spirit reduced to 540 [520-540]
-Snow Dagger reduced to 165
-Watergun reduced to 130
-
-RARES:
-Dungeon reduced to 110
+Traveler's Gun reduced to 4,800 [4,700-4,800]
+Turkey increased to 1,925
+Snowcannon increased to 800 [800-850], demand increased to 6
+Soul reduced to 530 [510-530]
+Spirit reduced to 520 [500-520]
+Bat increased to 135
+Candy increased to 85, demand increased to 2
+Beachy reduced to 70, rarity reduced to 2
+Sands reduced to 70, rarity reduced to 2
+Darkbringer reduced to 32
+Elderwood Revolver reduced to 32
+Iceblaster reduced to 32
+Phantom reduced to 32
+Spectre reduced to 32
+Candleflame reduced to 30
+Elderwood Blade reduced to 30
+Makeshift reduced to 30
+Sugar reduced to 30
+Luger increased to 20
+Cookiecane reduced to 12
 ]]
 
 -- Высота текста НЕ считается под фиксированную ширину 460 px: на телефоне
